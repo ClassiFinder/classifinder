@@ -26,9 +26,9 @@ The API is stateless by design. Nothing is stored. Request bodies are never logg
 | Models | Pydantic v2 |
 | Tests | pytest + FastAPI TestClient |
 | Container | Docker (python:3.12-slim) |
-| Database | None — stateless by design |
+| Database | Turso (hosted SQLite) — optional, for key provisioning and anonymous feedback |
 
-Dependencies are minimal: `fastapi`, `uvicorn[standard]`, `pydantic`, `httpx` (for TestClient), and `pytest`.
+Dependencies are minimal: `fastapi`, `uvicorn[standard]`, `pydantic`, `httpx` (for TestClient), `libsql-experimental` (Turso), and `pytest`.
 
 ---
 
@@ -39,12 +39,15 @@ classifinder/
 ├── app/
 │   ├── main.py                  # FastAPI app, lifespan, CORS, exception handlers
 │   ├── config.py                # Settings from environment variables
+│   ├── key_store.py             # Turso-backed API key lifecycle (generate, lookup, rotate)
+│   ├── feedback_store.py        # Anonymous feedback persistence + aggregate queries
 │   ├── routes/
 │   │   ├── scan.py              # POST /v1/scan
 │   │   ├── redact.py            # POST /v1/redact
 │   │   ├── types.py             # GET /v1/types
 │   │   ├── health.py            # GET /v1/health
-│   │   └── feedback.py          # POST /v1/feedback
+│   │   ├── feedback.py          # POST /v1/feedback (Turso + stdout fallback)
+│   │   └── keys.py              # POST /v1/keys/create, POST /v1/keys/rotate
 │   ├── engine/                  # Core scanner — pure functions, no I/O
 │   │   ├── scanner.py           # scan() function + Finding dataclass
 │   │   ├── redactor.py          # redact() function
@@ -65,9 +68,13 @@ classifinder/
 │       ├── auth.py              # API key validation
 │       ├── rate_limit.py        # In-memory sliding window rate limiter
 │       └── logging.py           # Safe metadata-only request logger
+├── scripts/
+│   └── feedback_report.py       # CLI tool for querying feedback trends
 ├── tests/
 │   ├── test_patterns.py         # 21 pattern accuracy tests
-│   └── test_api.py              # 36 API integration tests
+│   ├── test_api.py              # 36 API integration tests
+│   ├── test_feedback.py         # 15 feedback persistence + rate limit tests
+│   └── test_keys.py             # 12 key provisioning tests
 ├── Dockerfile
 ├── pyproject.toml
 ├── requirements.txt
@@ -243,7 +250,15 @@ Returns service status, version, pattern count, and uptime. No authentication re
 
 #### `POST /v1/feedback`
 
-Accepts false positive and false negative reports. For the MVP, validates input and returns `202 Accepted` immediately. Feedback metadata is logged to stdout (never the original text or secret values). No database backend yet.
+Accepts false positive and false negative reports. Returns `202 Accepted` immediately.
+
+- **Persistence:** Anonymous feedback metadata is stored in Turso when configured; falls back to stdout logging when Turso is unavailable.
+- **`expected_type` field:** For false negatives, users can specify which pattern type they expected (validated against the pattern registry).
+- **Anonymous by design:** No API key hash or user identity is stored alongside feedback records. Records contain only: feedback_id, request_id, finding_id, feedback_type, has_comment (boolean), expected_type, and timestamp.
+- **Rate limited:** 10 submissions per hour per API key (separate from the global rate limit). Enforced in-memory, never persisted.
+- **Security:** Comment text is never stored — only a `has_comment` boolean. No scanned text or secret values are ever persisted.
+
+Aggregate queries are available via `scripts/feedback_report.py` (CLI) to identify false positive hotspots and false negative gaps by pattern type.
 
 ### Pydantic Models (`app/models/`)
 
@@ -252,9 +267,9 @@ All request and response bodies are Pydantic v2 models with:
 - `model_config` with `json_schema_extra` examples (displayed in Swagger UI)
 - `model_validator` for enum-like field validation (`redaction_style`, `feedback_type`)
 
-**Request models** (`requests.py`): `ScanRequest`, `RedactRequest`, `FeedbackRequest`
+**Request models** (`requests.py`): `ScanRequest`, `RedactRequest`, `FeedbackRequest` (with `expected_type` validated against pattern registry), `KeyCreateRequest`
 
-**Response models** (`responses.py`): `ScanResponse`, `RedactResponse`, `FindingResponse`, `RedactFindingResponse`, `TypeInfo`, `TypesResponse`, `HealthResponse`, `FeedbackResponse`, `ErrorResponse`, `ErrorDetail`, `Span`, `SeveritySummary`
+**Response models** (`responses.py`): `ScanResponse`, `RedactResponse`, `FindingResponse`, `RedactFindingResponse`, `TypeInfo`, `TypesResponse`, `HealthResponse`, `FeedbackResponse`, `KeyCreateResponse`, `ErrorResponse`, `ErrorDetail`, `Span`, `SeveritySummary`
 
 `FindingResponse` has a `from_engine()` classmethod that converts the engine's `Finding` dataclass to the API response model.
 
@@ -324,14 +339,16 @@ All settings come from environment variables:
 | `CLASSIFINDER_RATE_LIMIT_PER_MINUTE` | `60` | Max requests per key per minute |
 | `CLASSIFINDER_MAX_PAYLOAD_BYTES` | `262144` (256 KB) | Max request body size |
 | `CLASSIFINDER_VERSION` | `1.0.0` | Version string returned by `/v1/health` |
+| `TURSO_DATABASE_URL` | `""` | Turso database URL (optional — enables key provisioning and feedback persistence) |
+| `TURSO_AUTH_TOKEN` | `""` | Turso auth token (required if `TURSO_DATABASE_URL` is set) |
 
-Settings are loaded once via `@lru_cache` and accessed through `get_settings()`.
+Settings are loaded once via `@lru_cache` and accessed through `get_settings()`. Turso is optional — if not configured, key provisioning is disabled and feedback falls back to stdout logging.
 
 ---
 
 ## Tests
 
-57 tests, all passing. Two test files:
+93 tests, all passing. Four test files:
 
 ### `tests/test_patterns.py` — 21 tests
 
@@ -355,6 +372,26 @@ Full HTTP integration tests via FastAPI's `TestClient`:
 - **Auth** (3 tests): missing header, empty header, error response shape
 
 Tests use a test API key (`ss_test_...`) injected via environment variable before app import, with a high rate limit (1000/min) to avoid interference.
+
+### `tests/test_feedback.py` — 15 tests
+
+Feedback persistence and rate limiting:
+
+- **Store init** (1 test): table creation with local SQLite
+- **Insert** (2 tests): row persistence with and without `expected_type`
+- **Validation** (4 tests): `expected_type` accepted/rejected against pattern registry, None accepted, JSON schema presence
+- **Route persistence** (3 tests): Turso persistence path, stdout fallback, `expected_type` propagation
+- **Aggregates** (3 tests): false positive counts by finding_id, false negative gaps by expected_type, volume by day
+- **Rate limit** (2 tests): under-limit succeeds, over-limit returns 429
+
+### `tests/test_keys.py` — 12 tests
+
+Key provisioning via Turso:
+
+- **Key creation** (6 tests): success, email normalization, duplicate rejection, invalid email, missing email, no-auth-required
+- **Key rotation** (3 tests): rotate success, old key invalidated, auth required
+- **Auth integration** (2 tests): Turso-provisioned key works, env var key still works
+- **IP rate limit** (1 test): 5 keys per IP per hour
 
 ### Running Tests
 
@@ -410,9 +447,9 @@ These are deliberate choices, not oversights:
 
 3. **API keys are never logged.** Only a SHA-256 hash prefix (first 8 chars) appears in logs.
 
-4. **Feedback comments are not logged.** They could contain secret context. Only `has_comment: true/false` is recorded.
+4. **Feedback is anonymous.** No API key hash or user identity is stored with feedback records. Comment text is never persisted — only a `has_comment` boolean. Abuse prevention uses ephemeral in-memory rate limiting, not stored identity.
 
-5. **The engine is a pure function.** No I/O, no state, no disk writes. Process in memory, return results, discard. This makes the security posture strong — there is nothing to breach because nothing is stored.
+5. **The engine is a pure function.** No I/O, no state, no disk writes. Process in memory, return results, discard. This makes the security posture strong — scanned text is never persisted.
 
 ---
 
@@ -420,13 +457,11 @@ These are deliberate choices, not oversights:
 
 | Feature | Reason |
 |---------|--------|
-| Database | Stateless by design. No request storage needed. |
 | User accounts | API keys only. No passwords to breach. |
 | Dashboard / Web UI | API-only product, built for machines. |
 | Redis rate limiting | In-memory is sufficient for MVP. Redis if/when multi-process deployment is needed. |
 | Batch endpoint | Post-MVP feature. Single-text scanning covers launch use cases. |
 | Framework integrations | LlamaIndex, etc. are post-MVP distribution plays beyond LangChain (which ships with the SDK). |
-| Automated key provisioning | Manual key distribution for early access. Build self-serve once there are 30-50 users. |
 | Stripe billing | Not needed until paid tiers are active. |
 
 ---
@@ -599,12 +634,14 @@ All project documentation lives in the project root:
 | MCP Server | March 25, 2026 | `pip install classifinder-mcp` — FastMCP server exposing `classifinder_scan` and `classifinder_redact` tools for Claude Code, Cursor, and any MCP-compatible agent. Published to PyPI. |
 | Open-source engine | March 2026 | `classifinder-engine/` — standalone MIT-licensed scanner so users can audit the code that touches their data. |
 | AI provider patterns | March 2026 | Added OpenAI, Anthropic, and Cohere API key detection patterns (4 patterns in `patterns/ai.py`). Total pattern count: 50. |
+| Key provisioning | March 2026 | Self-serve API key generation via `POST /v1/keys/create` and rotation via `POST /v1/keys/rotate`. Turso-backed with in-memory LRU cache, IP rate limiting (5 keys/IP/hour), email uniqueness. |
+| Feedback persistence | March 26, 2026 | `POST /v1/feedback` now persists anonymous metadata to Turso. Added `expected_type` field for false negatives (validated against pattern registry). Feedback-specific rate limit (10/hour/key). CLI report script for aggregate queries. 93 total tests. |
 
 ## What's Next
 
 Priority order for the next phase:
 
-1. **Key provisioning** — Self-serve API key generation with Turso. Design spec approved, implementation plan ready.
-2. **Launch** — Show HN, Product Hunt, r/LocalLLaMA, r/devops, X/Twitter. Narrative: "Every secret scanner was built for Git. This one's built for AI."
-3. **Expand pattern coverage** — Credit card Luhn validation (already in pattern-library.md), more provider-specific keys.
-4. **Content marketing** — Blog posts from the marketing strategy doc. "The $82,000 API Key" is the strongest story.
+1. **Launch** — Show HN, Product Hunt, r/LocalLLaMA, r/devops, X/Twitter. Narrative: "Every secret scanner was built for Git. This one's built for AI."
+2. **Expand pattern coverage** — More provider-specific keys, improved Luhn validation for credit cards.
+3. **Content marketing** — Blog posts from the marketing strategy doc. "The $82,000 API Key" is the strongest story.
+4. **Deploy feedback persistence to Fly.io** — The API server needs redeployment to include the new feedback store, expected_type validation, and rate limit.
