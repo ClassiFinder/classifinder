@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClassiFinder — Secret scanning for the AI era</title>
+<meta name="description" content="A lightweight API that strips leaked secrets from text before it reaches your LLM, your logs, or your users. Sub-50ms. Stateless. Built for agents.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,400;0,500;0,700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --bg-raised: #111116;
+    --bg-code: #16161d;
+    --border: #222230;
+    --border-bright: #333345;
+    --text: #c8c8d4;
+    --text-dim: #6e6e82;
+    --text-bright: #eeeef4;
+    --accent: #5cdb5c;
+    --accent-dim: #2a5c2a;
+    --red: #e85454;
+    --orange: #e8a054;
+    --blue: #5496e8;
+    --mono: 'DM Mono', 'Menlo', monospace;
+    --sans: 'DM Sans', -apple-system, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 100;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(10, 10, 12, 0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 1rem;
+    color: var(--text-bright);
+    letter-spacing: -0.02em;
+  }
+  .logo span { color: var(--accent); }
+  nav a {
+    font-size: 0.875rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    margin-left: 2rem;
+    transition: color 0.15s;
+  }
+  nav a:hover { color: var(--text-bright); }
+  .nav-cta {
+    color: var(--accent) !important;
+    border: 1px solid var(--accent-dim);
+    padding: 0.4rem 1rem;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .nav-cta:hover {
+    background: var(--accent-dim);
+    color: var(--text-bright) !important;
+  }
+
+  /* ── LAYOUT ── */
+  section { max-width: 860px; margin: 0 auto; padding: 0 2rem; }
+
+  /* ── HERO ── */
+  .hero {
+    padding-top: 10rem;
+    padding-bottom: 5rem;
+  }
+  .hero-badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--accent);
+    background: var(--accent-dim);
+    padding: 0.3rem 0.75rem;
+    border-radius: 3px;
+    margin-bottom: 1.5rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  h1 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-weight: 700;
+    color: var(--text-bright);
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+  }
+  h1 em {
+    font-style: normal;
+    color: var(--accent);
+  }
+  .hero-sub {
+    font-size: 1.15rem;
+    color: var(--text);
+    max-width: 600px;
+    margin-bottom: 2.5rem;
+  }
+  .hero-stats {
+    display: flex;
+    gap: 3rem;
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+  }
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 1.5rem;
+    color: var(--text-bright);
+    font-weight: 500;
+  }
+  .stat-label {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 0.25rem;
+  }
+
+  /* ── CODE DEMO ── */
+  .demo {
+    padding: 4rem 0;
+  }
+  .code-block {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 1.5rem 0;
+  }
+  .code-header {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    padding: 0.6rem 1.2rem;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: flex;
+    justify-content: space-between;
+  }
+  .code-body {
+    padding: 1.2rem;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text);
+  }
+  .code-body .kw { color: var(--blue); }
+  .code-body .str { color: var(--accent); }
+  .code-body .comment { color: var(--text-dim); }
+  .code-body .key { color: var(--orange); }
+  .code-body .val { color: var(--accent); }
+  .code-body .num { color: var(--orange); }
+  .code-body .sev { color: var(--red); }
+
+  .demo-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+  @media (max-width: 700px) {
+    .demo-pair { grid-template-columns: 1fr; }
+    .hero-stats { flex-direction: column; gap: 1.5rem; }
+  }
+
+  /* ── SECTIONS ── */
+  h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+  }
+  .section-intro {
+    color: var(--text);
+    margin-bottom: 2.5rem;
+    max-width: 600px;
+  }
+  .section-space { padding: 5rem 0; }
+
+  /* ── GAPS / FEATURES ── */
+  .gap-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+  @media (max-width: 700px) {
+    .gap-grid { grid-template-columns: 1fr; }
+  }
+  .gap-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.5rem;
+  }
+  .gap-card h3 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 0.5rem;
+    line-height: 1.3;
+  }
+  .gap-card p {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .gap-card .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--accent);
+    border: 1px solid var(--accent-dim);
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── COMPLIANCE ── */
+  .compliance-row {
+    display: flex;
+    gap: 2rem;
+    margin-top: 2rem;
+  }
+  .compliance-badge {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    flex: 1;
+  }
+  .compliance-badge h4 {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--text-bright);
+    margin-bottom: 0.4rem;
+  }
+  .compliance-badge p {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  @media (max-width: 700px) {
+    .compliance-row { flex-direction: column; }
+  }
+
+  /* ── PRICING ── */
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+  @media (max-width: 700px) {
+    .pricing-grid { grid-template-columns: 1fr; }
+  }
+  .pricing-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2rem 1.5rem;
+  }
+  .pricing-card.featured {
+    border-color: var(--accent-dim);
+    position: relative;
+  }
+  .pricing-card.featured::before {
+    content: 'Most Popular';
+    position: absolute;
+    top: -0.6rem;
+    left: 1.5rem;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--bg);
+    background: var(--accent);
+    padding: 0.15rem 0.6rem;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .pricing-name {
+    font-weight: 700;
+    color: var(--text-bright);
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+  }
+  .pricing-price {
+    font-family: var(--mono);
+    font-size: 2rem;
+    color: var(--text-bright);
+    font-weight: 500;
+    margin: 0.75rem 0 0.25rem;
+  }
+  .pricing-price span {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+  .pricing-detail {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .pricing-features {
+    list-style: none;
+    font-size: 0.82rem;
+    color: var(--text);
+  }
+  .pricing-features li {
+    padding: 0.3rem 0;
+    padding-left: 1.2rem;
+    position: relative;
+  }
+  .pricing-features li::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-size: 0.75rem;
+  }
+
+  /* ── CTA / FORM ── */
+  .cta-section {
+    padding: 5rem 0;
+    text-align: center;
+  }
+  .cta-section h2 { margin-bottom: 1rem; }
+  .cta-section p {
+    color: var(--text);
+    margin-bottom: 2rem;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .form-wrapper {
+    max-width: 480px;
+    margin: 0 auto;
+    text-align: left;
+  }
+  .form-wrapper label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 0.3rem;
+    margin-top: 1rem;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .form-wrapper input,
+  .form-wrapper textarea,
+  .form-wrapper select {
+    width: 100%;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.7rem 0.9rem;
+    color: var(--text-bright);
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-wrapper input:focus,
+  .form-wrapper textarea:focus,
+  .form-wrapper select:focus {
+    border-color: var(--accent-dim);
+  }
+  .form-wrapper textarea { resize: vertical; min-height: 80px; }
+  .form-wrapper select { appearance: none; cursor: pointer; }
+
+  .submit-btn {
+    width: 100%;
+    margin-top: 1.5rem;
+    padding: 0.8rem;
+    background: var(--accent);
+    color: var(--bg);
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 0.9rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: opacity 0.15s;
+  }
+  .submit-btn:hover { opacity: 0.85; }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 2.5rem 2rem;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  footer a { color: var(--text-dim); text-decoration: none; }
+  footer a:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">classi<span>.</span>finder</div>
+  <div>
+    <a href="#how-it-works">How It Works</a>
+    <a href="#pricing">Pricing</a>
+    <a href="https://api.classifinder.tech/docs" target="_blank">API Docs</a>
+    <a href="#request-access" class="nav-cta">Request Access</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">Now in early access</div>
+  <h1>Secret scanning<br>for the <em>AI era</em></h1>
+  <p class="hero-sub">A stateless API that strips credentials from text before it reaches your LLM, your logs, or your users. One call. Sub-50ms. Nothing stored.</p>
+
+  <div class="hero-stats">
+    <div>
+      <div class="stat-value">&lt;5ms</div>
+      <div class="stat-label">P50 scan time</div>
+    </div>
+    <div>
+      <div class="stat-value">46</div>
+      <div class="stat-label">Secret types detected</div>
+    </div>
+    <div>
+      <div class="stat-value">0 bytes</div>
+      <div class="stat-label">Request data stored</div>
+    </div>
+  </div>
+</section>
+
+<!-- DEMO -->
+<section class="demo" id="how-it-works">
+  <h2>Text in. Clean text out.</h2>
+  <p class="section-intro">POST your text to /v1/redact. Get it back with every secret stripped and replaced. Safe to forward to any model.</p>
+
+  <div class="demo-pair">
+    <div class="code-block">
+      <div class="code-header"><span>Request</span><span>POST /v1/redact</span></div>
+      <div class="code-body">{
+  <span class="key">"text"</span>: <span class="str">"DATABASE_URL=postgres://admin:s3cur3@db:5432/prod\nSTRIPE_KEY=sk_live_51H3aKLkdsjfh"</span>
+}</div>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span>Response</span><span>200 OK · 7ms</span></div>
+      <div class="code-body">{
+  <span class="key">"redacted_text"</span>: <span class="str">"DATABASE_URL=[DATABASE_CONN_REDACTED]\nSTRIPE_KEY=[STRIPE_LIVE_KEY_REDACTED]"</span>,
+  <span class="key">"findings_count"</span>: <span class="num">2</span>,
+  <span class="key">"findings"</span>: [
+    {
+      <span class="key">"type"</span>: <span class="str">"postgres_connection_string"</span>,
+      <span class="key">"severity"</span>: <span class="sev">"high"</span>,
+      <span class="key">"confidence"</span>: <span class="num">0.94</span>
+    },
+    {
+      <span class="key">"type"</span>: <span class="str">"stripe_live_secret_key"</span>,
+      <span class="key">"severity"</span>: <span class="sev">"critical"</span>,
+      <span class="key">"confidence"</span>: <span class="num">0.99</span>
+    }
+  ]
+}</div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY THIS EXISTS -->
+<section class="section-space">
+  <h2>Every secret scanner was built for Git.<br>This one's built for AI.</h2>
+  <p class="section-intro">Existing tools scan repos, commits, and CI pipelines. They assume your secrets leak through code pushes. In 2026, secrets leak when users paste .env files into ChatGPT, when RAG pipelines surface credentials, and when agents hardcode keys into generated code.</p>
+
+  <div class="gap-grid">
+    <div class="gap-card">
+      <div class="tag">vs GitGuardian</div>
+      <h3>We never return the full secret</h3>
+      <p>GitGuardian's scan API returns the complete secret value. If their response is logged or intercepted, the secret is exposed again. ClassiFinder returns only a masked preview — first 4, last 4 characters. The only scanner that doesn't become a leak.</p>
+    </div>
+    <div class="gap-card">
+      <div class="tag">vs GitGuardian</div>
+      <h3>Native redaction on the free tier</h3>
+      <p>GitGuardian doesn't offer redacted text output. If you need clean text to forward to an LLM, you build it yourself. Our /redact endpoint gives you safe text in one call, free.</p>
+    </div>
+    <div class="gap-card">
+      <div class="tag">vs Everyone</div>
+      <h3>Pricing for agents, not headcount</h3>
+      <p>GitHub charges $19/committer. Snyk charges $25/developer. ClassiFinder charges per request. Your pipeline processes 500k texts a day — you shouldn't pay per human.</p>
+    </div>
+    <div class="gap-card">
+      <div class="tag">vs Nightfall</div>
+      <h3>Numeric confidence your code can use</h3>
+      <p>Nightfall returns "VERY_LIKELY." We return 0.94. Your agent can threshold at 0.8 to block, 0.5 to flag, and below to pass. Programmatic decisions need precision, not categories.</p>
+    </div>
+  </div>
+</section>
+
+<!-- COMPLIANCE -->
+<section class="section-space">
+  <h2>Compliance built in, not bolted on</h2>
+  <p class="section-intro">OWASP LLM Top 10 (2025) explicitly recommends pre-model scanning and redaction. ClassiFinder implements LLM02 and LLM07 mitigations out of the box.</p>
+
+  <div class="compliance-row">
+    <div class="compliance-badge">
+      <h4>SOC 2 Type II</h4>
+      <p>Satisfies CC6.1, CC6.6, CC6.7 (access controls) and CC7.1, CC7.2 (monitoring). Structured JSON findings + metadata logs provide auditable evidence.</p>
+    </div>
+    <div class="compliance-badge">
+      <h4>PCI-DSS 4.0</h4>
+      <p>Requirement 8.6.3 mandates no hardcoded passwords in scripts or config. Our CI integration proves compliance. Also supports Requirements 3, 6, and 10.</p>
+    </div>
+    <div class="compliance-badge">
+      <h4>OWASP LLM Top 10</h4>
+      <p>LLM02 recommends "tokenization and redaction using pattern matching." LLM07 says never embed API keys in prompts. We do both.</p>
+    </div>
+  </div>
+</section>
+
+<!-- INTEGRATIONS TEASER -->
+<section class="section-space">
+  <h2>Two lines to make your pipeline leak-proof</h2>
+  <p class="section-intro">Drop ClassiFinder into any LLM pipeline as middleware. SDKs for Python and LangChain coming soon.</p>
+
+  <div class="code-block">
+    <div class="code-header"><span>Python — LangChain</span><span>Coming soon</span></div>
+    <div class="code-body"><span class="kw">from</span> classifinder.integrations.langchain <span class="kw">import</span> ClassiFinderGuard
+
+chain = prompt | ClassiFinderGuard() | llm | output_parser
+<span class="comment"># Every prompt is scanned and redacted before it hits the model</span></div>
+  </div>
+
+  <div class="code-block">
+    <div class="code-header"><span>curl</span><span>Works today</span></div>
+    <div class="code-body">curl -X POST https://api.classifinder.tech/v1/redact \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -H <span class="str">"X-API-Key: ss_live_your_key"</span> \
+  -d <span class="str">'{"text": "AWS_KEY=AKIAJGKJHSKLDJFH3284"}'</span></div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section-space" id="pricing">
+  <h2>Usage-based pricing</h2>
+  <p class="section-intro">Pay per request, not per developer seat. Start free, scale when you need to.</p>
+
+  <div class="pricing-grid">
+    <div class="pricing-card">
+      <div class="pricing-name">Free</div>
+      <div class="pricing-price">$0</div>
+      <div class="pricing-detail">10,000 requests / month</div>
+      <ul class="pricing-features">
+        <li>/scan and /redact endpoints</li>
+        <li>46 secret types</li>
+        <li>256 KB max payload</li>
+        <li>Community support</li>
+      </ul>
+    </div>
+    <div class="pricing-card featured">
+      <div class="pricing-name">Starter</div>
+      <div class="pricing-price">$19 <span>/ mo</span></div>
+      <div class="pricing-detail">200,000 requests / month</div>
+      <ul class="pricing-features">
+        <li>Everything in Free</li>
+        <li>512 KB max payload</li>
+        <li>Email support</li>
+        <li>Overage: $0.001 / request</li>
+      </ul>
+    </div>
+    <div class="pricing-card">
+      <div class="pricing-name">Pro</div>
+      <div class="pricing-price">$49 <span>/ mo</span></div>
+      <div class="pricing-detail">1,000,000 requests / month</div>
+      <ul class="pricing-features">
+        <li>Everything in Starter</li>
+        <li>1 MB max payload</li>
+        <li>Priority support</li>
+        <li>Batch endpoint</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- REQUEST ACCESS FORM -->
+<section class="cta-section" id="request-access">
+  <h2>Request early access</h2>
+  <p>We're onboarding developers one by one. Get your API key and start scanning in minutes.</p>
+
+  <div class="form-wrapper">
+    <form action="https://formspree.io/f/mkoqlpkn" method="POST">
+
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required placeholder="you@company.com">
+
+      <label for="use_case">What are you building?</label>
+      <select id="use_case" name="use_case" required>
+        <option value="" disabled selected>Select your use case</option>
+        <option value="llm_middleware">LLM / AI agent middleware</option>
+        <option value="cicd">CI/CD pipeline scanning</option>
+        <option value="chat_app">Chat application</option>
+        <option value="rag">RAG pipeline</option>
+        <option value="code_review">Code review tooling</option>
+        <option value="compliance">Compliance / audit</option>
+        <option value="other">Other</option>
+      </select>
+
+      <label for="details">Anything else? (optional)</label>
+      <textarea id="details" name="details" placeholder="Tell us about your project, expected volume, or questions you have."></textarea>
+
+      <input type="hidden" name="_subject" value="ClassiFinder: New access request">
+
+      <button type="submit" class="submit-btn">Request API Key</button>
+    </form>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>ClassiFinder &middot; Secret scanning for the AI era &middot; <a href="https://api.classifinder.tech/docs" target="_blank">API Docs</a></p>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+tests/
+*.md
+.pytest_cache
+fly.toml
+Dockerfile.lambda
+docs/
