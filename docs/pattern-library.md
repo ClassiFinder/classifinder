@@ -20,7 +20,7 @@ AWS IAM access key, 20 characters starting with AKIA (permanent) or ASIA (tempor
 
 AWS IAM secret access key, 40-character base64 string. Usually paired with an access key ID. Detected when preceded by context like `AWS_SECRET_ACCESS_KEY=`.
 
-**Example:** `AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`
+**Example:** `AWS_SECRET_ACCESS_KEY=aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ5A`
 
 **Regex:** `(?:AWS_SECRET_ACCESS_KEY|aws_secret_access_key|SecretAccessKey|secret_access_key)[\s]*[=:"'\s]+[A-Za-z0-9/+=]{40}`
 
@@ -30,7 +30,7 @@ AWS IAM secret access key, 40-character base64 string. Usually paired with an ac
 
 Google Cloud Platform API key, 39 characters starting with AIza. Also covers Google AI (Gemini) API keys which use the same format.
 
-**Example:** `AIzaSyA-FAKE-KEY-FOR-TESTING-1234567`
+**Example:** `AIzaSyAFAKEKEYFORTESTING123456789012345`
 
 **Regex:** `AIza[0-9A-Za-z\-_]{35}`
 
@@ -40,7 +40,7 @@ Google Cloud Platform API key, 39 characters starting with AIza. Also covers Goo
 
 Fragment of a Google Cloud service account JSON key file, identified by the `private_key` field containing a PEM-encoded RSA key.
 
-**Example:** `"private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIE..."`
+**Example:** `"private_key": "-----BEGIN RSA PRIVATE KEY-----MIIEfakeKeyDataAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-----END RSA PRIVATE KEY-----\n"`
 
 **Regex:** `"private_key"\s*:\s*"-----BEGIN\s(?:RSA\s)?PRIVATE\sKEY-----[^"]{50,2048}-----END\s(?:RSA\s)?PRIVATE\sKEY-----\\n"`
 
@@ -50,7 +50,7 @@ Fragment of a Google Cloud service account JSON key file, identified by the `pri
 
 Azure Storage account access key, 88-character base64 string ending with `==`. Detected when preceded by `AccountKey` or similar context.
 
-**Example:** `AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==`
+**Example:** `AccountKey=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/ABCDEFGHIJKLMNOPQRSTUV==`
 
 **Regex:** `(?:AccountKey|account_key|AZURE_STORAGE_KEY|azure_storage_key)[\s]*[=:"'\s]+[A-Za-z0-9+/]{86}==`
 
@@ -80,7 +80,7 @@ DigitalOcean API token with `dop_v1_` prefix followed by 64 hex characters.
 
 Heroku API key in UUID format, detected when preceded by `HEROKU_API_KEY` or similar context.
 
-**Example:** `HEROKU_API_KEY=12345678-abcd-1234-efgh-123456789012`
+**Example:** `HEROKU_API_KEY=12345678-abcd-1234-abcd-123456789abc`
 
 **Regex:** `(?:HEROKU_API_KEY|heroku_api_key|heroku.*api.*key)[\s]*[=:"'\s]+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
 
@@ -152,7 +152,7 @@ Stripe restricted API key with limited permissions. Still sensitive — may incl
 
 PayPal REST API client secret, used with client ID for OAuth authentication. Detected with context keywords.
 
-**Example:** `PAYPAL_CLIENT_SECRET=EBWKjlELKMYqRNQ6sYvFo64FtaRLRR5BdHEESmha49TM`
+**Example:** `PAYPAL_CLIENT_SECRET=EBWKjlELKMYqRNQ6sYvFo64FtaRLRR5BdHEESmha49TM3xY7z9A`
 
 **Regex:** `(?:PAYPAL_CLIENT_SECRET|paypal.*client.*secret|paypal.*secret)[\s]*[=:"'\s]+E[A-Za-z0-9\-]{50,80}`
 
@@ -196,7 +196,7 @@ GitHub classic personal access token with `ghp_` prefix.
 
 GitHub fine-grained PAT with `github_pat_` prefix and repository-level permissions.
 
-**Example:** `github_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`
+**Example:** `github_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`
 
 **Regex:** `github_pat_[A-Za-z0-9_]{82}`
 
@@ -308,7 +308,7 @@ Slack incoming webhook URL that allows posting messages to a specific channel wi
 
 Twilio Account SID, 34 characters starting with `AC`. Not secret alone but often found alongside auth tokens.
 
-**Example:** `ACa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5`
+**Example:** `ACa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6`
 
 **Regex:** `AC[a-f0-9]{32}`
 
@@ -433,7 +433,8 @@ PEM-encoded private key block. Matches RSA, EC, DSA, ED25519, OPENSSH, and encry
 **Example:**
 ```
 -----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/...
+MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/ygAAbB3cD4eF5
+gBBjkKMYqRNQ6sYvFo64FtaRLRR5BdHEESmha49TM3xY7z
 -----END RSA PRIVATE KEY-----
 ```
 
