@@ -472,9 +472,9 @@ These are deliberate choices, not oversights:
 
 | Component | Platform | URL |
 |-----------|----------|-----|
-| Landing page | Cloudflare Pages | https://classifinder.tech |
-| API | Fly.io (SJC region) | https://api.classifinder.tech |
-| Domain registrar | Hostinger | classifinder.tech |
+| Landing page | Cloudflare Pages | https://classifinder.ai |
+| API | Fly.io (SJC region) | https://api.classifinder.ai |
+| Domain registrar | Hostinger | classifinder.ai |
 | DNS | Cloudflare (free tier) | Nameservers: jose.ns.cloudflare.com, pearl.ns.cloudflare.com |
 | Form submissions | Formspree (free tier) | Early access request form on landing page |
 | TLS certificates | Let's Encrypt (via Fly.io for API, Cloudflare for landing page) | Auto-renewing |
@@ -485,8 +485,8 @@ These are deliberate choices, not oversights:
 |------|------|---------|-------------|
 | A | api | 66.241.125.248 | DNS only |
 | AAAA | api | 2a09:8280:1::e7:9e62:0 | DNS only |
-| Worker | classifinder.tech | classifinder-site | Proxied |
-| Worker | www.classifinder.tech | classifinder-site | Proxied |
+| Worker | classifinder.ai | classifinder-site | Proxied |
+| Worker | www.classifinder.ai | classifinder-site | Proxied |
 
 ### Fly.io Configuration
 

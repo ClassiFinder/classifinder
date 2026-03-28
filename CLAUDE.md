@@ -58,9 +58,9 @@ docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
 
 | Component | Platform | URL |
 |-----------|----------|-----|
-| Landing page | Cloudflare Pages | https://classifinder.tech |
-| API | Fly.io (SJC region) | https://api.classifinder.tech |
-| Domain registrar | Hostinger | classifinder.tech |
+| Landing page | Cloudflare Pages | https://classifinder.ai |
+| API | Fly.io (SJC region) | https://api.classifinder.ai |
+| Domain registrar | Hostinger | classifinder.ai |
 | DNS | Cloudflare (free tier) | jose.ns.cloudflare.com, pearl.ns.cloudflare.com |
 | Form submissions | Formspree (free tier) | Early access form on landing page |
 

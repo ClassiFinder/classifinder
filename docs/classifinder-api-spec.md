@@ -1,7 +1,7 @@
 # ClassiFinder — API Specification
 
 Version: 1.0.0-draft
-Base URL: `https://api.classifinder.tech/v1`
+Base URL: `https://api.classifinder.ai/v1`
 
 ---
 
@@ -379,7 +379,7 @@ app.use("/api/chat", secretSweepMiddleware({
 ## OpenAPI 3.1 Spec Location
 
 The full machine-readable OpenAPI spec will be served at:
-- `https://api.classifinder.tech/v1/openapi.json`
-- `https://api.classifinder.tech/docs` (Swagger UI)
+- `https://api.classifinder.ai/v1/openapi.json`
+- `https://api.classifinder.ai/docs` (Swagger UI)
 
 This is critical for agent function-calling. Agents using OpenAI/Anthropic function calling can import the spec directly to auto-generate tool definitions.
