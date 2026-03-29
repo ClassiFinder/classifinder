@@ -506,18 +506,22 @@ These are deliberate choices, not oversights:
 | `CLASSIFINDER_MAX_PAYLOAD_BYTES` | `fly secrets` |
 | `CLASSIFINDER_VERSION` | `fly secrets` |
 
-### Landing Page
+### Landing Page (`classifinder-site/`)
 
-Single-file HTML (`index.html`) deployed via Cloudflare Pages from a GitHub repo. Includes:
+Astro-based static site deployed via GitHub Actions to Cloudflare Workers. Noir/pulp fiction visual identity with Playfair Display, Source Serif 4, and DM Mono fonts. Dark mode default with a "Light?" toggle that reveals hidden secrets as background watermarks.
 
-- Hero section with product one-liner and key stats (<5ms P50, 46 types, 0 bytes stored)
-- Live code demo showing /v1/redact request and response
-- Competitive positioning section (vs GitGuardian, vs Nightfall, vs everyone on pricing)
-- Compliance section (SOC 2, PCI-DSS 4.0, OWASP LLM Top 10)
-- LangChain integration teaser
-- Usage-based pricing tiers (Free / Starter $19 / Pro $49)
-- Early access request form (Formspree)
-- Footer linking to API docs
+Sections: hero with stats (50 types, <5ms, 0 bytes of your text stored, open source engine), interactive demo calling `/v1/demodemo`, "How It Works" (install/scan/ship + LangChain + MCP examples), competitive comparison table, trust section (open source engine, honest limitations, compliance), pricing tiers (Free + Coming Soon), self-serve key provisioning form, and footer.
+
+Key provisioning form calls `POST /v1/keys/create` directly, with Formspree as a fallback.
+
+### CI/CD Pipeline
+
+Push to `main` triggers GitHub Actions (`.github/workflows/deploy.yml`):
+
+1. **Test** — Installs dependencies, runs full pytest suite (93 tests)
+2. **Deploy** — If tests pass, deploys to Fly.io via `flyctl deploy --remote-only`
+
+Uses `FLY_API_TOKEN` secret for Fly.io authentication. No manual deploys needed.
 
 ### Deployment Files
 
@@ -526,6 +530,7 @@ Single-file HTML (`index.html`) deployed via Cloudflare Pages from a GitHub repo
 | `Dockerfile` | Standard deployment (Fly.io, Railway, etc.) |
 | `Dockerfile.lambda` | AWS Lambda deployment with Lambda Web Adapter |
 | `fly.toml` | Fly.io configuration |
+| `.github/workflows/deploy.yml` | CI/CD: test → deploy to Fly.io |
 | `.dockerignore` | Excludes tests, docs, .git from Docker builds |
 
 ---
@@ -547,7 +552,7 @@ Gives any MCP-compatible agent (Claude Code, Cursor, etc.) two tools:
 |-----------|------------|
 | Framework | FastMCP (`mcp>=1.0.0`) |
 | Transport | stdio |
-| HTTP client | ClassiFinder Python SDK (`classifinder>=0.1.2`) |
+| HTTP client | ClassiFinder Python SDK (`classifinder>=0.1.3`) |
 | Package manager | Hatch |
 | Python | 3.10+ |
 
@@ -598,6 +603,104 @@ Agent config (Claude Code / Cursor):
 
 ---
 
+## Pattern Quality Testing Framework (`classifinder-tests/`) — Built March 28–29, 2026
+
+A dedicated testing and analysis framework for measuring detection quality across both engines (API server and standalone open-source). Separate from the API server's unit/integration tests — this framework validates pattern accuracy, confidence calibration, false positive rates, and cross-engine parity.
+
+### What It Does
+
+- **Corpus-based testing** — Organized test data (known secrets, benign text, adversarial edge cases) with self-documenting `# expect:` headers in each file
+- **Cross-engine parity** — Verifies the API engine and standalone `classifinder-engine` produce identical results
+- **Baseline regression detection** — Tracks false positive counts and true positive confidence scores against committed baselines; flags regressions
+- **Report generation** — Produces JSON reports for corpus stats, confidence distributions, parity divergences, FP analysis, and TP tracking
+
+### Project Structure
+
+```
+classifinder-tests/
+├── lib/                        # Shared utilities
+│   ├── engine_wrapper.py       # Unified interface to both scanner engines
+│   ├── schema.py               # Pydantic models for JSON report output
+│   ├── corpus_parser.py        # Parse "# expect:" headers from test files
+│   ├── pattern_library_parser.py # Parse pattern-library.md into structured data
+│   ├── comparator.py           # Cross-engine parity comparison
+│   └── parity_allowlist.py     # Known intentional divergences (empty by default)
+├── corpus/                     # Test data (50 patterns × 4 corpus types)
+│   ├── known-secrets/          # Text that SHOULD trigger findings (by category)
+│   ├── benign/                 # Text that should NOT trigger findings
+│   │   ├── prose/              # Real documentation and blog content
+│   │   ├── code/               # Source code without secrets
+│   │   ├── config-templates/   # .env.example, docker-compose templates
+│   │   └── encoded/            # Base64, UUIDs, hashes
+│   └── adversarial/            # Edge cases: truncated keys, near-misses, wrong prefixes
+├── tests/                      # pytest CI gates (11 test files)
+│   ├── test_pattern_library.py # Validates all 50 pattern examples from docs
+│   ├── test_known_secrets.py   # All known-secrets corpus files detected correctly
+│   ├── test_benign.py          # Benign corpus produces zero findings
+│   ├── test_adversarial.py     # Edge cases behave correctly
+│   ├── test_parity.py          # Both engines produce identical results
+│   ├── test_engine_wrapper.py  # Engine abstraction tests
+│   ├── test_corpus_parser.py   # Header parsing tests
+│   ├── test_pattern_library_parser.py
+│   ├── test_comparator.py      # Parity logic tests
+│   └── test_schema.py          # Pydantic model tests
+├── reports/                    # Analysis scripts → JSON output
+│   ├── corpus_report.py        # Per-pattern precision, recall, confidence
+│   ├── confidence_analysis.py  # Confidence distributions, flags weak patterns
+│   ├── parity_report.py        # Detailed cross-engine divergence report
+│   ├── fp_report.py            # False positives + baseline regression detection
+│   ├── tp_report.py            # True positive confidence + baseline regression
+│   └── format_text.py          # Pretty-print any report JSON as table
+├── baselines/                  # Committed regression baselines
+│   ├── fp_baseline.json        # False positive counts per pattern
+│   └── tp_baseline.json        # True positive confidence per pattern
+├── scripts/
+│   └── check_engine_sync.sh    # Verify both engines have identical code
+└── output/                     # Generated JSON reports (gitignored)
+```
+
+### Corpus File Convention
+
+Every test file is self-documenting with headers:
+
+```
+# expect: aws_access_key
+# expect: aws_secret_key >= 0.8
+# description: AWS credentials in a shell script
+export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+export AWS_SECRET_ACCESS_KEY=aB3dE6gH9jK2mN5pQ8sT...
+```
+
+No external manifest needed. The parser extracts expected types, optional confidence floors, and description from headers, then passes the body text to the scanner.
+
+### Engine Wrapper
+
+All tests and reports use `EngineWrapper("api")` or `EngineWrapper("standalone")` — never import scanner engines directly. This normalizes the two different engine interfaces into a consistent `EngineResult` dataclass and handles monorepo path resolution.
+
+### Running
+
+```bash
+cd classifinder-tests
+
+# Run all tests
+PYTHONPATH=. python -m pytest tests/ -v
+
+# Skip slow corpus scans
+PYTHONPATH=. python -m pytest -m "not slow" -v
+
+# Generate reports
+PYTHONPATH=. python reports/corpus_report.py        # precision, recall, confidence
+PYTHONPATH=. python reports/confidence_analysis.py  # distribution + weak pattern flags
+PYTHONPATH=. python reports/parity_report.py        # cross-engine divergences
+PYTHONPATH=. python reports/fp_report.py            # false positive baseline regression
+PYTHONPATH=. python reports/tp_report.py            # true positive confidence regression
+
+# Pretty-print any report
+PYTHONPATH=. python reports/format_text.py output/*.json
+```
+
+---
+
 ## Documentation Files
 
 All project documentation lives in the project root:
@@ -636,6 +739,9 @@ All project documentation lives in the project root:
 | AI provider patterns | March 2026 | Added OpenAI, Anthropic, and Cohere API key detection patterns (4 patterns in `patterns/ai.py`). Total pattern count: 50. |
 | Key provisioning | March 2026 | Self-serve API key generation via `POST /v1/keys/create` and rotation via `POST /v1/keys/rotate`. Turso-backed with in-memory LRU cache, IP rate limiting (5 keys/IP/hour), email uniqueness. |
 | Feedback persistence | March 26, 2026 | `POST /v1/feedback` now persists anonymous metadata to Turso. Added `expected_type` field for false negatives (validated against pattern registry). Feedback-specific rate limit (10/hour/key). CLI report script for aggregate queries. 93 total tests. |
+| CI/CD pipeline | March 27, 2026 | GitHub Actions: push to main → run 93 tests → deploy to Fly.io. No manual deploys needed. |
+| Domain migration | March 27, 2026 | Migrated from `classifinder.tech` to `classifinder.ai` across all 6 repos. Updated DNS, Fly.io cert, Cloudflare Workers route, SDK 0.1.3 + MCP 0.1.1 published to PyPI with new default URL. `.tech` 301-redirects to `.ai`. |
+| Pattern quality framework | March 28–29, 2026 | `classifinder-tests/` — dedicated testing framework with corpus-based testing, cross-engine parity validation, confidence analysis, false positive/true positive baseline regression detection, and 5 report generators. |
 
 ## What's Next
 
@@ -644,4 +750,4 @@ Priority order for the next phase:
 1. **Launch** — Show HN, Product Hunt, r/LocalLLaMA, r/devops, X/Twitter. Narrative: "Every secret scanner was built for Git. This one's built for AI."
 2. **Expand pattern coverage** — More provider-specific keys, improved Luhn validation for credit cards.
 3. **Content marketing** — Blog posts from the marketing strategy doc. "The $82,000 API Key" is the strongest story.
-4. **Deploy feedback persistence to Fly.io** — The API server needs redeployment to include the new feedback store, expected_type validation, and rate limit.
+4. **Cursor Directory submission** — Submit `classifinder-mcp` as a plugin to cursor.directory.
