@@ -7,13 +7,13 @@ Lightweight, stateless API that scans text for leaked secrets and credentials. R
 - Python 3.12+
 - FastAPI + Uvicorn
 - Pydantic v2
-- No database — the API is stateless by design
-- No external dependencies beyond FastAPI/Pydantic/uvicorn
+- Turso (hosted SQLite) — optional, for key provisioning and anonymous feedback persistence
+- libsql-experimental for Turso connectivity
 
 ## Commands
 
 ```bash
-python -m pytest tests/ -v                    # run all tests (57 tests)
+python -m pytest tests/ -v                    # run all tests (93 tests)
 python tests/test_patterns.py                 # run pattern tests standalone
 uvicorn app.main:app --reload --port 8000     # dev server
 docker build -t classifinder .                # build Docker image
@@ -27,24 +27,31 @@ docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
   - `redactor.py` — `redact(text, findings, style) -> (redacted_text, redaction_map)`
   - `entropy.py` — Shannon entropy calculator
   - `patterns/registry.py` — `PATTERN_REGISTRY` list and `SecretPattern` dataclass
-  - `patterns/{cloud,payment,vcs,comms,database,generic}.py` — 46 detection patterns
+  - `patterns/{cloud,payment,vcs,comms,database,generic,ai}.py` — 50 detection patterns
+- `app/key_store.py` — Turso-backed API key lifecycle (generate, lookup, rotate)
+- `app/feedback_store.py` — Anonymous feedback persistence + aggregate queries
 - `app/routes/` — FastAPI route handlers
   - `scan.py` — `POST /v1/scan`
   - `redact.py` — `POST /v1/redact`
   - `types.py` — `GET /v1/types`
   - `health.py` — `GET /v1/health` (no auth required)
-  - `feedback.py` — `POST /v1/feedback` (202 Accepted, logs metadata to stdout)
+  - `feedback.py` — `POST /v1/feedback` (Turso persistence + stdout fallback, feedback-specific rate limit)
+  - `keys.py` — `POST /v1/keys/create`, `POST /v1/keys/rotate`
+  - `demo.py` — `POST /v1/demodemo` (no auth, for landing page demo)
 - `app/models/` — Pydantic v2 request/response models
-  - `requests.py` — `ScanRequest`, `RedactRequest`, `FeedbackRequest`
-  - `responses.py` — `ScanResponse`, `RedactResponse`, `FindingResponse`, `TypesResponse`, `HealthResponse`, etc.
+  - `requests.py` — `ScanRequest`, `RedactRequest`, `FeedbackRequest` (with `expected_type`), `KeyCreateRequest`
+  - `responses.py` — `ScanResponse`, `RedactResponse`, `FindingResponse`, `TypesResponse`, `HealthResponse`, `KeyCreateResponse`, etc.
 - `app/middleware/` — Auth, rate limiting, logging
-  - `auth.py` — API key validation via `X-API-Key` header
+  - `auth.py` — API key validation via `X-API-Key` header (env vars + Turso lookup)
   - `rate_limit.py` — In-memory sliding window per key hash
   - `logging.py` — Metadata-only JSON log lines to stdout
-- `app/config.py` — Settings from env vars (`CLASSIFINDER_API_KEYS`, `CLASSIFINDER_RATE_LIMIT_PER_MINUTE`, `CLASSIFINDER_MAX_PAYLOAD_BYTES`, `CLASSIFINDER_VERSION`)
+- `app/config.py` — Settings from env vars (`CLASSIFINDER_API_KEYS`, `CLASSIFINDER_RATE_LIMIT_PER_MINUTE`, `CLASSIFINDER_MAX_PAYLOAD_BYTES`, `CLASSIFINDER_VERSION`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`)
 - `app/main.py` — App factory, CORS, middleware wiring, exception handlers
+- `scripts/feedback_report.py` — CLI tool for querying feedback trends
 - `tests/test_patterns.py` — 21 engine/pattern tests
 - `tests/test_api.py` — 36 API integration tests
+- `tests/test_feedback.py` — 15 feedback persistence + rate limit tests
+- `tests/test_keys.py` — 12 key provisioning tests
 
 ## Key Design Rules
 
@@ -73,6 +80,7 @@ Fly.io config: `shared-cpu-1x`, 256MB RAM, scale-to-zero enabled. Secrets manage
 | `Dockerfile` | Standard deployment (Fly.io) |
 | `Dockerfile.lambda` | AWS Lambda with Lambda Web Adapter |
 | `fly.toml` | Fly.io configuration |
+| `.github/workflows/deploy.yml` | CI/CD: push to main → test (93 tests) → deploy to Fly.io |
 | `.dockerignore` | Excludes tests, docs, .git from Docker builds |
 
 ## Reference Docs (in `docs/`)
@@ -97,15 +105,8 @@ Fly.io config: `shared-cpu-1x`, 256MB RAM, scale-to-zero enabled. Secrets manage
 
 ## Important Notes
 
-- The engine is a pure function: text in, findings out. No I/O, no state. Keep the FastAPI layer equally stateless.
+- The engine is a pure function: text in, findings out. No I/O, no state.
 - The `/v1/redact` endpoint is our strongest differentiator. Its `redacted_text` output is what agents use as LLM preprocessing middleware.
 - Competitor GitGuardian returns full secret values in their API. We intentionally do not — this is a security feature, not a limitation.
-- No one has published LangChain/LlamaIndex integrations for secret scanning. First-mover opportunity.
-
-## What's Next
-
-1. **Python SDK + LangChain integration** — `pip install classifinder` with LangChain callback handler
-2. **Launch** — Show HN, Product Hunt, r/LocalLLaMA, r/devops. Narrative: "Every secret scanner was built for Git. This one's built for AI."
-3. **Automated key provisioning** — Self-serve API key generation with Stripe (build at 30-50 users)
-4. **Expand pattern coverage** — Credit card numbers, OpenAI/Anthropic/Cohere API key patterns
-5. **Content marketing** — "The $82,000 API Key" blog post is the strongest story
+- Feedback is anonymous by design — no API key hash stored with feedback records.
+- Engine code in `app/engine/` must stay in sync with `classifinder-engine/`. Use `classifinder-tests/scripts/check_engine_sync.sh` to verify.
