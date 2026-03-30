@@ -109,4 +109,16 @@ Fly.io config: `shared-cpu-1x`, 256MB RAM, scale-to-zero enabled. Secrets manage
 - The `/v1/redact` endpoint is our strongest differentiator. Its `redacted_text` output is what agents use as LLM preprocessing middleware.
 - Competitor GitGuardian returns full secret values in their API. We intentionally do not — this is a security feature, not a limitation.
 - Feedback is anonymous by design — no API key hash stored with feedback records.
-- Engine code in `app/engine/` must stay in sync with `classifinder-engine/`. Use `classifinder-tests/scripts/check_engine_sync.sh` to verify.
+- Engine code in `app/engine/` must stay in sync with `classifinder-engine/`. A pre-commit hook enforces this, but **hooks don't transfer on clone**. After cloning, run:
+  ```bash
+  cp scripts/check_engine_sync.sh .git/hooks/pre-commit-sync
+  cat > .git/hooks/pre-commit << 'HOOK'
+  #!/usr/bin/env bash
+  STAGED=$(git diff --cached --name-only)
+  if echo "$STAGED" | grep -q "^app/engine/"; then
+      echo "Engine files staged — checking sync with classifinder-engine/..."
+      bash "$(git rev-parse --show-toplevel)/scripts/check_engine_sync.sh"
+  fi
+  HOOK
+  chmod +x .git/hooks/pre-commit
+  ```
