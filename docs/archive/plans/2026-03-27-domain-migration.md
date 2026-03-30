@@ -1,6 +1,8 @@
 # Domain Migration: classifinder.tech → classifinder.ai
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **STATUS: COMPLETED** — Executed 2026-03-27. DNS zone on Cloudflare, Fly.io TLS cert, Cloudflare Workers route, .tech 301 redirects, all code/docs updated across 6 repos, SDK 0.1.4 and MCP 0.1.1 published to PyPI. Termly embeds re-exported. This plan is archived for historical reference.
+
+> ~~**For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.~~
 
 **Goal:** Migrate all production services and references from `classifinder.tech` to `classifinder.ai`, keeping `.tech` as a redirect for existing users.
 

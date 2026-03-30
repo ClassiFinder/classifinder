@@ -1,6 +1,8 @@
 # Pattern Quality Testing Framework — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **STATUS: COMPLETED** — Implemented 2026-03-28/29. Full testing framework in `classifinder-tests/` with corpus-based testing, cross-engine parity, baseline regression detection, 5 report generators, and 11 test files. This plan is archived for historical reference.
+
+> ~~**For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.~~
 
 **Goal:** Build `classifinder-tests/`, a standalone test project that validates all 50 scanner patterns against documented examples, synthetic corpus data, and cross-engine parity checks — producing both pytest CI gates and structured JSON reports for a future UI.
 

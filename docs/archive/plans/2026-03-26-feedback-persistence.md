@@ -1,6 +1,8 @@
 # Feedback Persistence Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **STATUS: COMPLETED** — Implemented 2026-03-26. Feedback persists anonymous metadata to Turso, `expected_type` field validates against pattern registry, feedback-specific rate limit (10/hour/key), CLI report script for aggregates. Subsequently revised to drop `api_key_hash` from storage for privacy. 93 tests passing. This plan is archived for historical reference.
+
+> ~~**For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.~~
 
 **Goal:** Make the feedback endpoint persist structured metadata to Turso, add an `expected_type` field for false negatives, and provide a CLI script for querying feedback trends.
 
