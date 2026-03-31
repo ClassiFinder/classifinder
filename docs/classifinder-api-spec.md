@@ -354,21 +354,22 @@ from classifinder.integrations.langchain import ClassiFinderGuard
 chain = prompt | ClassiFinderGuard(api_key="ss_live_...") | llm | output_parser
 ```
 
-### GitHub Action
+### GitHub Action (Coming Soon)
 ```yaml
+# Not yet published — planned integration
 - uses: classifinder/scan-action@v1
   with:
-    api-key: ${{ secrets.SECRETSWEEP_KEY }}
+    api-key: ${{ secrets.CLASSIFINDER_API_KEY }}
     path: "."
     fail-on: "critical,high"
 ```
 
 ### Express/Node Middleware
 ```javascript
-const { secretSweepMiddleware } = require("classifinder");
+const { classiFinderMiddleware } = require("classifinder");
 
-app.use("/api/chat", secretSweepMiddleware({
-  apiKey: process.env.SECRETSWEEP_KEY,
+app.use("/api/chat", classiFinderMiddleware({
+  apiKey: process.env.CLASSIFINDER_API_KEY,
   redact: true,
   field: "body.message"
 }));
