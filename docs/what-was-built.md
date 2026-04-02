@@ -165,7 +165,7 @@ The `hash` style is useful for deduplication — the same secret always produces
 
 ### Pattern Library (`app/engine/patterns/`)
 
-82 detection patterns across 7 categories:
+88 detection patterns across 7 categories:
 
 | Category | Module | Examples |
 |----------|--------|----------|
@@ -510,7 +510,7 @@ These are deliberate choices, not oversights:
 
 Astro-based static site deployed via GitHub Actions to Cloudflare Workers. Noir/pulp fiction visual identity with Playfair Display, Source Serif 4, and DM Mono fonts. Dark mode default with a "Light?" toggle that reveals hidden secrets as background watermarks.
 
-Sections: hero with stats (82 types, <5ms, 0 bytes of your text stored, open source engine), interactive demo calling `/v1/demodemo`, "How It Works" (install/scan/ship + LangChain + MCP examples), competitive comparison table, trust section (open source engine, honest limitations, compliance), pricing tiers (Free + Coming Soon), self-serve key provisioning form, and footer.
+Sections: hero with stats (88 types, <5ms, 0 bytes of your text stored, open source engine), interactive demo calling `/v1/demodemo`, "How It Works" (install/scan/ship + LangChain + MCP examples), competitive comparison table, trust section (open source engine, honest limitations, compliance), pricing tiers (Free + Coming Soon), self-serve key provisioning form, and footer.
 
 Key provisioning form calls `POST /v1/keys/create` directly, with Formspree as a fallback.
 
@@ -625,7 +625,7 @@ classifinder-tests/
 │   ├── pattern_library_parser.py # Parse pattern-library.md into structured data
 │   ├── comparator.py           # Cross-engine parity comparison
 │   └── parity_allowlist.py     # Known intentional divergences (empty by default)
-├── corpus/                     # Test data (82 patterns × 4 corpus types)
+├── corpus/                     # Test data (88 patterns × 4 corpus types)
 │   ├── known-secrets/          # Text that SHOULD trigger findings (by category)
 │   ├── benign/                 # Text that should NOT trigger findings
 │   │   ├── prose/              # Real documentation and blog content
@@ -634,7 +634,7 @@ classifinder-tests/
 │   │   └── encoded/            # Base64, UUIDs, hashes
 │   └── adversarial/            # Edge cases: truncated keys, near-misses, wrong prefixes
 ├── tests/                      # pytest CI gates (11 test files)
-│   ├── test_pattern_library.py # Validates all 82 pattern examples from docs
+│   ├── test_pattern_library.py # Validates all 88 pattern examples from docs
 │   ├── test_known_secrets.py   # All known-secrets corpus files detected correctly
 │   ├── test_benign.py          # Benign corpus produces zero findings
 │   ├── test_adversarial.py     # Edge cases behave correctly

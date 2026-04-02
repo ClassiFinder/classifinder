@@ -814,6 +814,132 @@ def test_pypi_wrong_prefix():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 3: IBM CLOUD
+# ═══════════════════════════════════════════════
+
+def test_ibm_cloud_api_key():
+    """IBM Cloud API keys with IBM context should be detected."""
+    text = "IBM_API_KEY=aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789-_ABCDEF"
+    findings = scan(text)
+    ibm_findings = [f for f in findings if f.type == "ibm_cloud_api_key"]
+    assert len(ibm_findings) == 1
+    assert ibm_findings[0].severity == "high"
+
+
+def test_ibm_cloud_44char_without_context_not_matched():
+    """44-char string without IBM context should not trigger ibm_cloud_api_key."""
+    text = "SOME_TOKEN=aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789-_ABCDEF"
+    findings = scan(text)
+    ibm_findings = [f for f in findings if f.type == "ibm_cloud_api_key"]
+    assert len(ibm_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# BATCH 3: FIGMA
+# ═══════════════════════════════════════════════
+
+def test_figma_pat():
+    """Figma PATs with UUID-like format and Figma context should be detected."""
+    text = "FIGMA_TOKEN=123456-abcdef01-2345-6789-abcd-ef0123456789"
+    findings = scan(text)
+    fg_findings = [f for f in findings if f.type == "figma_pat"]
+    assert len(fg_findings) == 1
+    assert fg_findings[0].severity == "high"
+
+
+def test_figma_uuid_without_context_not_matched():
+    """UUID-like string without Figma context should not trigger figma_pat."""
+    text = "SESSION_ID=123456-abcdef01-2345-6789-abcd-ef0123456789"
+    findings = scan(text)
+    fg_findings = [f for f in findings if f.type == "figma_pat"]
+    assert len(fg_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# BATCH 3: AUTH0
+# ═══════════════════════════════════════════════
+
+def test_auth0_management_token():
+    """Auth0 management tokens (JWT with auth0 context) should be detected."""
+    text = "AUTH0_TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2V4YW1wbGUuYXV0aDAuY29tLyIsInN1YiI6ImF1dGgwfDEyMzQ1Njc4OTAifQ.ABC123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+    findings = scan(text)
+    a0_findings = [f for f in findings if f.type == "auth0_management_token"]
+    assert len(a0_findings) == 1
+    assert a0_findings[0].severity == "critical"
+
+
+def test_auth0_jwt_without_context_not_matched():
+    """JWT without auth0 context should not trigger auth0_management_token."""
+    text = "TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2V4YW1wbGUuY29tLyIsInN1YiI6InVzZXJ8MTIzNDU2Nzg5MCJ9.ABC123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+    findings = scan(text)
+    a0_findings = [f for f in findings if f.type == "auth0_management_token"]
+    assert len(a0_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# BATCH 3: SUPABASE
+# ═══════════════════════════════════════════════
+
+def test_supabase_service_key():
+    """Supabase service role keys (HS256 JWT with supabase context) should be detected."""
+    text = "SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2QxMjM0ZWZnaCIsInJvbGUiOiJzZXJ2aWNlX3JvbGUifQ.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop"
+    findings = scan(text)
+    sb_findings = [f for f in findings if f.type == "supabase_service_key"]
+    assert len(sb_findings) == 1
+    assert sb_findings[0].severity == "critical"
+
+
+def test_supabase_jwt_without_context_not_matched():
+    """HS256 JWT without supabase context should not trigger supabase_service_key."""
+    text = "TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJvdGhlci1zZXJ2aWNlIiwic3ViIjoiMTIzNDU2Nzg5MCJ9.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop"
+    findings = scan(text)
+    sb_findings = [f for f in findings if f.type == "supabase_service_key"]
+    assert len(sb_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# BATCH 3: ETHEREUM
+# ═══════════════════════════════════════════════
+
+def test_ethereum_private_key():
+    """Ethereum private keys (0x + 64 hex with ETH context) should be detected."""
+    text = "ETH_PRIVATE_KEY=0x4c0883a69102937d6231471b5dbb6204fe512961708279f73ec0b1a1b287cc58"
+    findings = scan(text)
+    eth_findings = [f for f in findings if f.type == "ethereum_private_key"]
+    assert len(eth_findings) == 1
+    assert eth_findings[0].severity == "critical"
+
+
+def test_ethereum_hex_without_context_not_matched():
+    """0x + 64 hex without Ethereum context should not trigger ethereum_private_key."""
+    text = "HASH=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    findings = scan(text)
+    eth_findings = [f for f in findings if f.type == "ethereum_private_key"]
+    assert len(eth_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# BATCH 3: BITCOIN
+# ═══════════════════════════════════════════════
+
+def test_bitcoin_wif_key():
+    """Bitcoin WIF keys with BTC context should be detected."""
+    text = "BTC_PRIVATE_KEY=5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ"
+    findings = scan(text)
+    btc_findings = [f for f in findings if f.type == "bitcoin_wif_key"]
+    assert len(btc_findings) == 1
+    assert btc_findings[0].severity == "critical"
+
+
+def test_bitcoin_wif_without_context_not_matched():
+    """Base58 string without Bitcoin context should not trigger bitcoin_wif_key."""
+    text = "DATA=5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ"
+    findings = scan(text)
+    btc_findings = [f for f in findings if f.type == "bitcoin_wif_key"]
+    assert len(btc_findings) == 0
+
+
+# ═══════════════════════════════════════════════
 # REDACTION
 # ═══════════════════════════════════════════════
 

@@ -1,10 +1,10 @@
-# ClassiFinder — Pattern Library (82 Patterns)
+# ClassiFinder — Pattern Library (88 Patterns)
 
-All 82 secret detection patterns supported by ClassiFinder, organized by category. Each entry includes the pattern ID, what it detects, an example of what triggers it, and the core regex used for matching.
+All 88 secret detection patterns supported by ClassiFinder, organized by category. Each entry includes the pattern ID, what it detects, an example of what triggers it, and the core regex used for matching.
 
 ---
 
-## Cloud Providers (18 patterns)
+## Cloud Providers (19 patterns)
 
 ### 1. `aws_access_key` — AWS Access Key ID
 
@@ -186,9 +186,19 @@ Netlify personal access token with `nfp_` prefix followed by 36 alphanumeric cha
 
 ---
 
-## Payment & Financial (11 patterns)
+### 19. `ibm_cloud_api_key` — IBM Cloud API Key
 
-### 19. `stripe_live_secret_key` — Stripe Live Secret Key
+IBM Cloud IAM API key, a 44-character alphanumeric string. Detected when preceded by IBM-specific context keywords like `IBM_API_KEY` or `IBM_CLOUD_API_KEY`.
+
+**Example:** `IBM_API_KEY=aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789-_ABCDEF`
+
+**Regex:** `(?:IBM_API_KEY|IBM_CLOUD_API_KEY|ibm.*api.*key|ibm.*token)[\s]*[=:"'\s]+[A-Za-z0-9_\-]{44}`
+
+---
+
+## Payment & Financial (13 patterns)
+
+### 20. `stripe_live_secret_key` — Stripe Live Secret Key
 
 Stripe live-mode secret API key. Grants full access to a live Stripe account including charges, refunds, and customer data.
 
@@ -198,7 +208,7 @@ Stripe live-mode secret API key. Grants full access to a live Stripe account inc
 
 ---
 
-### 20. `stripe_test_secret_key` — Stripe Test Secret Key
+### 21. `stripe_test_secret_key` — Stripe Test Secret Key
 
 Stripe test-mode secret API key. Cannot process real payments but reveals account structure.
 
@@ -208,7 +218,7 @@ Stripe test-mode secret API key. Cannot process real payments but reveals accoun
 
 ---
 
-### 21. `stripe_live_publishable_key` — Stripe Live Publishable Key
+### 22. `stripe_live_publishable_key` — Stripe Live Publishable Key
 
 Stripe live-mode publishable key. Semi-public by design but shouldn't appear in server-side code or logs.
 
@@ -218,7 +228,7 @@ Stripe live-mode publishable key. Semi-public by design but shouldn't appear in 
 
 ---
 
-### 22. `stripe_webhook_secret` — Stripe Webhook Signing Secret
+### 23. `stripe_webhook_secret` — Stripe Webhook Signing Secret
 
 Stripe webhook endpoint signing secret, used to verify incoming webhook payloads.
 
@@ -228,7 +238,7 @@ Stripe webhook endpoint signing secret, used to verify incoming webhook payloads
 
 ---
 
-### 23. `stripe_restricted_key` — Stripe Restricted API Key
+### 24. `stripe_restricted_key` — Stripe Restricted API Key
 
 Stripe restricted API key with limited permissions. Still sensitive — may include read access to customer or payment data.
 
@@ -238,7 +248,7 @@ Stripe restricted API key with limited permissions. Still sensitive — may incl
 
 ---
 
-### 24. `paypal_client_secret` — PayPal Client Secret
+### 25. `paypal_client_secret` — PayPal Client Secret
 
 PayPal REST API client secret, used with client ID for OAuth authentication. Detected with context keywords.
 
@@ -248,7 +258,7 @@ PayPal REST API client secret, used with client ID for OAuth authentication. Det
 
 ---
 
-### 25. `square_access_token` — Square Access Token
+### 26. `square_access_token` — Square Access Token
 
 Square API access token with `EAA` prefix.
 
@@ -258,7 +268,7 @@ Square API access token with `EAA` prefix.
 
 ---
 
-### 26. `credit_card_number` — Credit Card Number
+### 27. `credit_card_number` — Credit Card Number
 
 Credit card number (Visa, Mastercard, Amex, Discover) with Luhn checksum validation. Supports numbers with or without dashes/spaces.
 
@@ -270,7 +280,7 @@ Credit card number (Visa, Mastercard, Amex, Discover) with Luhn checksum validat
 
 ---
 
-### 27. `shopify_access_token` — Shopify Admin API Access Token
+### 28. `shopify_access_token` — Shopify Admin API Access Token
 
 Shopify Admin API access token with `shpat_` prefix followed by 32 hex characters. Grants access to a Shopify store's admin API.
 
@@ -280,7 +290,7 @@ Shopify Admin API access token with `shpat_` prefix followed by 32 hex character
 
 ---
 
-### 28. `shopify_custom_token` — Shopify Custom App Access Token
+### 29. `shopify_custom_token` — Shopify Custom App Access Token
 
 Shopify custom app access token with `shpca_` prefix followed by 32 hex characters.
 
@@ -290,7 +300,7 @@ Shopify custom app access token with `shpca_` prefix followed by 32 hex characte
 
 ---
 
-### 29. `shopify_private_token` — Shopify Private App Access Token
+### 30. `shopify_private_token` — Shopify Private App Access Token
 
 Shopify private app access token with `shppa_` prefix followed by 32 hex characters.
 
@@ -300,9 +310,29 @@ Shopify private app access token with `shppa_` prefix followed by 32 hex charact
 
 ---
 
+### 31. `ethereum_private_key` — Ethereum Private Key
+
+Ethereum private key — `0x` followed by 64 hexadecimal characters (256 bits). Detected when preceded by Ethereum or wallet context keywords. Controls an Ethereum wallet and all its assets.
+
+**Example:** `ETH_PRIVATE_KEY=0x4c0883a69102937d6231471b5dbb6204fe512961708279f73ec0b1a1b287cc58`
+
+**Regex:** `(?:ETH_PRIVATE_KEY|ETHEREUM_PRIVATE_KEY|ethereum.*private.*key|eth.*key|wallet.*key|private.*key.*eth)[\s]*[=:"'\s]+0x[a-fA-F0-9]{64}`
+
+---
+
+### 32. `bitcoin_wif_key` — Bitcoin WIF Private Key
+
+Bitcoin private key in Wallet Import Format (WIF). Starts with `5` (uncompressed), `K`, or `L` (compressed) followed by 50–51 Base58Check characters. Detected with Bitcoin context keywords.
+
+**Example:** `BTC_PRIVATE_KEY=5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ`
+
+**Regex:** `(?:BTC_PRIVATE_KEY|BITCOIN_PRIVATE_KEY|bitcoin.*private.*key|bitcoin.*wif|btc.*key|wallet.*wif)[\s]*[=:"'\s]+[5KL][1-9A-HJ-NP-Za-km-z]{50,51}`
+
+---
+
 ## Version Control & CI/CD (14 patterns)
 
-### 30. `github_pat_classic` — GitHub Personal Access Token (Classic)
+### 33. `github_pat_classic` — GitHub Personal Access Token (Classic)
 
 GitHub classic personal access token with `ghp_` prefix.
 
@@ -312,7 +342,7 @@ GitHub classic personal access token with `ghp_` prefix.
 
 ---
 
-### 31. `github_pat_fine_grained` — GitHub Fine-Grained Personal Access Token
+### 34. `github_pat_fine_grained` — GitHub Fine-Grained Personal Access Token
 
 GitHub fine-grained PAT with `github_pat_` prefix and repository-level permissions.
 
@@ -322,7 +352,7 @@ GitHub fine-grained PAT with `github_pat_` prefix and repository-level permissio
 
 ---
 
-### 32. `github_oauth_secret` — GitHub OAuth App Client Secret
+### 35. `github_oauth_secret` — GitHub OAuth App Client Secret
 
 GitHub OAuth application client secret with `gho_` prefix.
 
@@ -332,7 +362,7 @@ GitHub OAuth application client secret with `gho_` prefix.
 
 ---
 
-### 33. `github_app_installation_token` — GitHub App Installation Access Token
+### 36. `github_app_installation_token` — GitHub App Installation Access Token
 
 GitHub App installation token with `ghs_` prefix. Short-lived (1 hour) but grants repository access.
 
@@ -342,7 +372,7 @@ GitHub App installation token with `ghs_` prefix. Short-lived (1 hour) but grant
 
 ---
 
-### 34. `github_user_to_server_token` — GitHub User-to-Server Token
+### 37. `github_user_to_server_token` — GitHub User-to-Server Token
 
 GitHub user-to-server token with `ghu_` prefix, used by GitHub Apps acting on behalf of a user.
 
@@ -352,7 +382,7 @@ GitHub user-to-server token with `ghu_` prefix, used by GitHub Apps acting on be
 
 ---
 
-### 35. `gitlab_pat` — GitLab Personal Access Token
+### 38. `gitlab_pat` — GitLab Personal Access Token
 
 GitLab personal access token with `glpat-` prefix.
 
@@ -362,7 +392,7 @@ GitLab personal access token with `glpat-` prefix.
 
 ---
 
-### 36. `gitlab_pipeline_trigger` — GitLab Pipeline Trigger Token
+### 39. `gitlab_pipeline_trigger` — GitLab Pipeline Trigger Token
 
 GitLab CI pipeline trigger token with `glptt-` prefix. Can trigger arbitrary pipelines.
 
@@ -372,7 +402,7 @@ GitLab CI pipeline trigger token with `glptt-` prefix. Can trigger arbitrary pip
 
 ---
 
-### 37. `bitbucket_app_password` — Bitbucket App Password
+### 40. `bitbucket_app_password` — Bitbucket App Password
 
 Bitbucket app password, detected with context keywords like `BITBUCKET_APP_PASSWORD`.
 
@@ -382,7 +412,7 @@ Bitbucket app password, detected with context keywords like `BITBUCKET_APP_PASSW
 
 ---
 
-### 38. `circleci_token` — CircleCI API Token
+### 41. `circleci_token` — CircleCI API Token
 
 CircleCI personal or project API token, 40-character hex string. Detected with context.
 
@@ -392,7 +422,7 @@ CircleCI personal or project API token, 40-character hex string. Detected with c
 
 ---
 
-### 39. `npm_token` — npm Access Token
+### 42. `npm_token` — npm Access Token
 
 npm access token with `npm_` prefix followed by 36 alphanumeric characters. Grants publish access to npm packages.
 
@@ -402,7 +432,7 @@ npm access token with `npm_` prefix followed by 36 alphanumeric characters. Gran
 
 ---
 
-### 40. `pypi_token` — PyPI API Token
+### 43. `pypi_token` — PyPI API Token
 
 PyPI API token with `pypi-AgEIcHlwaS5vcmc` prefix. Grants publish access to Python packages on PyPI.
 
@@ -412,7 +442,7 @@ PyPI API token with `pypi-AgEIcHlwaS5vcmc` prefix. Grants publish access to Pyth
 
 ---
 
-### 41. `rubygems_token` — RubyGems API Key
+### 44. `rubygems_token` — RubyGems API Key
 
 RubyGems API key with `rubygems_` prefix followed by 48 alphanumeric characters. Grants publish access to Ruby gems.
 
@@ -422,7 +452,7 @@ RubyGems API key with `rubygems_` prefix followed by 48 alphanumeric characters.
 
 ---
 
-### 42. `airtable_api_key` — Airtable Personal Access Token
+### 45. `airtable_api_key` — Airtable Personal Access Token
 
 Airtable personal access token with `pat` prefix followed by 14 alphanumeric characters, a dot separator, and 64 hex characters. Grants access to Airtable bases and records.
 
@@ -432,7 +462,7 @@ Airtable personal access token with `pat` prefix followed by 14 alphanumeric cha
 
 ---
 
-### 43. `nuget_api_key` — NuGet API Key
+### 46. `nuget_api_key` — NuGet API Key
 
 NuGet API key with `oy2` prefix followed by 43 lowercase alphanumeric characters. Grants publish access to NuGet packages.
 
@@ -442,9 +472,9 @@ NuGet API key with `oy2` prefix followed by 43 lowercase alphanumeric characters
 
 ---
 
-## Communications & SaaS (20 patterns)
+## Communications & SaaS (22 patterns)
 
-### 44. `slack_bot_token` — Slack Bot Token
+### 47. `slack_bot_token` — Slack Bot Token
 
 Slack bot user OAuth token with `xoxb-` prefix. Grants bot-level access to a workspace.
 
@@ -454,7 +484,7 @@ Slack bot user OAuth token with `xoxb-` prefix. Grants bot-level access to a wor
 
 ---
 
-### 45. `slack_user_token` — Slack User Token
+### 48. `slack_user_token` — Slack User Token
 
 Slack user OAuth token with `xoxp-` prefix. More privileged than bot tokens — has the permissions of the authorizing user.
 
@@ -464,7 +494,7 @@ Slack user OAuth token with `xoxp-` prefix. More privileged than bot tokens — 
 
 ---
 
-### 46. `slack_webhook_url` — Slack Incoming Webhook URL
+### 49. `slack_webhook_url` — Slack Incoming Webhook URL
 
 Slack incoming webhook URL that allows posting messages to a specific channel without authentication.
 
@@ -474,7 +504,7 @@ Slack incoming webhook URL that allows posting messages to a specific channel wi
 
 ---
 
-### 47. `twilio_account_sid` — Twilio Account SID
+### 50. `twilio_account_sid` — Twilio Account SID
 
 Twilio Account SID, 34 characters starting with `AC`. Not secret alone but often found alongside auth tokens.
 
@@ -484,7 +514,7 @@ Twilio Account SID, 34 characters starting with `AC`. Not secret alone but often
 
 ---
 
-### 48. `twilio_auth_token` — Twilio Auth Token
+### 51. `twilio_auth_token` — Twilio Auth Token
 
 Twilio Auth Token, 32-character hex string. Used with Account SID for API authentication. Detected with context.
 
@@ -494,7 +524,7 @@ Twilio Auth Token, 32-character hex string. Used with Account SID for API authen
 
 ---
 
-### 49. `sendgrid_api_key` — SendGrid API Key
+### 52. `sendgrid_api_key` — SendGrid API Key
 
 SendGrid API key with distinctive `SG.` prefix and two dot-separated segments.
 
@@ -504,7 +534,7 @@ SendGrid API key with distinctive `SG.` prefix and two dot-separated segments.
 
 ---
 
-### 50. `mailgun_api_key` — Mailgun API Key
+### 53. `mailgun_api_key` — Mailgun API Key
 
 Mailgun API key with `key-` prefix followed by a 32-character hex string.
 
@@ -514,7 +544,7 @@ Mailgun API key with `key-` prefix followed by a 32-character hex string.
 
 ---
 
-### 51. `discord_bot_token` — Discord Bot Token
+### 54. `discord_bot_token` — Discord Bot Token
 
 Discord bot token. Three base64 segments separated by dots. The first segment starts with M or N.
 
@@ -524,7 +554,7 @@ Discord bot token. Three base64 segments separated by dots. The first segment st
 
 ---
 
-### 52. `telegram_bot_token` — Telegram Bot Token
+### 55. `telegram_bot_token` — Telegram Bot Token
 
 Telegram Bot API token. Numeric bot ID followed by a colon and a 35-character alphanumeric string.
 
@@ -534,7 +564,7 @@ Telegram Bot API token. Numeric bot ID followed by a colon and a 35-character al
 
 ---
 
-### 53. `newrelic_admin_api_key` — New Relic Admin API Key
+### 56. `newrelic_admin_api_key` — New Relic Admin API Key
 
 New Relic Admin API key with `NRAA-` prefix followed by 27 hex characters. Grants full administrative access to New Relic.
 
@@ -544,7 +574,7 @@ New Relic Admin API key with `NRAA-` prefix followed by 27 hex characters. Grant
 
 ---
 
-### 54. `newrelic_insights_key` — New Relic Insights Insert/Query Key
+### 57. `newrelic_insights_key` — New Relic Insights Insert/Query Key
 
 New Relic Insights key with `NRII-` or `NRIQ-` prefix followed by 32 alphanumeric characters. Used for inserting or querying event data.
 
@@ -554,7 +584,7 @@ New Relic Insights key with `NRII-` or `NRIQ-` prefix followed by 32 alphanumeri
 
 ---
 
-### 55. `newrelic_user_api_key` — New Relic User API Key
+### 58. `newrelic_user_api_key` — New Relic User API Key
 
 New Relic user API key with `NRAK-` prefix followed by 27 lowercase alphanumeric characters.
 
@@ -564,7 +594,7 @@ New Relic user API key with `NRAK-` prefix followed by 27 lowercase alphanumeric
 
 ---
 
-### 56. `grafana_api_key` — Grafana Service Account Token
+### 59. `grafana_api_key` — Grafana Service Account Token
 
 Grafana service account token with `glsa_` prefix, 32 alphanumeric characters, underscore separator, and 8 hex characters.
 
@@ -574,7 +604,7 @@ Grafana service account token with `glsa_` prefix, 32 alphanumeric characters, u
 
 ---
 
-### 57. `linear_api_key` — Linear API Key
+### 60. `linear_api_key` — Linear API Key
 
 Linear API key with `lin_api_` prefix followed by 40 alphanumeric characters. Grants access to Linear project management.
 
@@ -584,7 +614,7 @@ Linear API key with `lin_api_` prefix followed by 40 alphanumeric characters. Gr
 
 ---
 
-### 58. `notion_api_key` — Notion Integration Token
+### 61. `notion_api_key` — Notion Integration Token
 
 Notion integration token with `secret_` prefix followed by 43 alphanumeric characters. Grants access to Notion workspaces.
 
@@ -594,7 +624,7 @@ Notion integration token with `secret_` prefix followed by 43 alphanumeric chara
 
 ---
 
-### 59. `sentry_org_token` — Sentry Organization Auth Token
+### 62. `sentry_org_token` — Sentry Organization Auth Token
 
 Sentry organization auth token with `sntrys_eyJ` prefix followed by base64-encoded payload. Grants access to Sentry organization resources and error monitoring data.
 
@@ -604,7 +634,7 @@ Sentry organization auth token with `sntrys_eyJ` prefix followed by base64-encod
 
 ---
 
-### 60. `sentry_user_token` — Sentry User Auth Token
+### 63. `sentry_user_token` — Sentry User Auth Token
 
 Sentry user auth token with `sntryu_` prefix followed by 64 hex characters. Grants user-level access to Sentry projects and error monitoring.
 
@@ -614,7 +644,7 @@ Sentry user auth token with `sntryu_` prefix followed by 64 hex characters. Gran
 
 ---
 
-### 61. `datadog_api_key` — Datadog API Key
+### 64. `datadog_api_key` — Datadog API Key
 
 Datadog API key, a 32-character hex string detected with Datadog-specific context keywords. Grants access to Datadog monitoring and observability platform.
 
@@ -624,7 +654,7 @@ Datadog API key, a 32-character hex string detected with Datadog-specific contex
 
 ---
 
-### 62. `datadog_app_key` — Datadog Application Key
+### 65. `datadog_app_key` — Datadog Application Key
 
 Datadog application key, a 40-character hex string detected with Datadog-specific context keywords. Used alongside API keys for full Datadog API access.
 
@@ -634,7 +664,7 @@ Datadog application key, a 40-character hex string detected with Datadog-specifi
 
 ---
 
-### 63. `pagerduty_api_key` — PagerDuty API Key
+### 66. `pagerduty_api_key` — PagerDuty API Key
 
 PagerDuty API key in `u+` format detected with PagerDuty-specific context keywords. Grants access to PagerDuty incident management and alerting.
 
@@ -644,9 +674,29 @@ PagerDuty API key in `u+` format detected with PagerDuty-specific context keywor
 
 ---
 
-## Database & Infrastructure (7 patterns)
+### 67. `figma_pat` — Figma Personal Access Token
 
-### 64. `postgres_connection_string` — PostgreSQL Connection String
+Figma personal access token with a distinctive UUID-like structure: 5–6 digit numeric prefix followed by hyphenated hex segments. Detected with Figma context keywords.
+
+**Example:** `FIGMA_TOKEN=123456-abcdef01-2345-6789-abcd-ef0123456789`
+
+**Regex:** `(?:FIGMA_TOKEN|FIGMA_PAT|FIGMA_API_TOKEN|figma.*token|figma.*key)[\s]*[=:"'\s]+[0-9]{5,6}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
+
+---
+
+### 68. `auth0_management_token` — Auth0 Management API Token
+
+Auth0 Management API token in JWT format. Detected when preceded by Auth0 context keywords. Grants access to manage Auth0 tenants, users, and applications.
+
+**Example:** `AUTH0_TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2V4YW1wbGUuYXV0aDAuY29tLyIsInN1YiI6ImF1dGgwfDEyMzQ1Njc4OTAifQ.ABC123def456ghi789jkl012mno345pqr678stu901vwx234yz`
+
+**Regex:** `(?:AUTH0_MANAGEMENT_TOKEN|AUTH0_TOKEN|AUTH0_API_TOKEN|auth0.*token|auth0.*key|auth0.*secret)[\s]*[=:"'\s]+eyJ[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{10,1000}\.[A-Za-z0-9_-]{10,500}`
+
+---
+
+## Database & Infrastructure (8 patterns)
+
+### 69. `postgres_connection_string` — PostgreSQL Connection String
 
 PostgreSQL connection URI with embedded username and password.
 
@@ -656,7 +706,7 @@ PostgreSQL connection URI with embedded username and password.
 
 ---
 
-### 65. `mysql_connection_string` — MySQL Connection String
+### 70. `mysql_connection_string` — MySQL Connection String
 
 MySQL connection URI with embedded credentials. Supports `+pymysql` and `+mysqlconnector` drivers.
 
@@ -666,7 +716,7 @@ MySQL connection URI with embedded credentials. Supports `+pymysql` and `+mysqlc
 
 ---
 
-### 66. `mongodb_connection_string` — MongoDB Connection String
+### 71. `mongodb_connection_string` — MongoDB Connection String
 
 MongoDB connection URI with embedded credentials. Matches both `mongodb://` and `mongodb+srv://` schemes.
 
@@ -676,7 +726,7 @@ MongoDB connection URI with embedded credentials. Matches both `mongodb://` and 
 
 ---
 
-### 67. `redis_connection_string` — Redis Connection String
+### 72. `redis_connection_string` — Redis Connection String
 
 Redis connection URI with embedded password.
 
@@ -686,7 +736,7 @@ Redis connection URI with embedded password.
 
 ---
 
-### 68. `password_in_url` — Password Embedded in URL
+### 73. `password_in_url` — Password Embedded in URL
 
 Generic URL with embedded `user:password@host` credentials. Catches database URLs, API endpoints, and service connections not covered by specific patterns.
 
@@ -696,7 +746,7 @@ Generic URL with embedded `user:password@host` credentials. Catches database URL
 
 ---
 
-### 69. `env_database_password` — Database Password in Environment Variable
+### 74. `env_database_password` — Database Password in Environment Variable
 
 Database password in a `.env` file or shell export. Matches variable names like `DB_PASSWORD`, `POSTGRES_PASSWORD`, `MYSQL_ROOT_PASSWORD`.
 
@@ -706,7 +756,7 @@ Database password in a `.env` file or shell export. Matches variable names like 
 
 ---
 
-### 70. `ssh_private_key` — SSH/RSA/EC Private Key
+### 75. `ssh_private_key` — SSH/RSA/EC Private Key
 
 PEM-encoded private key block. Matches RSA, EC, DSA, ED25519, OPENSSH, and encrypted private keys.
 
@@ -722,9 +772,19 @@ gBBjkKMYqRNQ6sYvFo64FtaRLRR5BdHEESmha49TM3xY7z
 
 ---
 
+### 76. `supabase_service_key` — Supabase Service Role Key
+
+Supabase service role key — a JWT with the standard HS256 header (`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`) detected by Supabase context. Bypasses Row Level Security and grants full database access.
+
+**Example:** `SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2QxMjM0ZWZnaCIsInJvbGUiOiJzZXJ2aWNlX3JvbGUifQ.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop`
+
+**Regex:** `(?:SUPABASE_SERVICE_ROLE_KEY|SUPABASE_KEY|SUPABASE_SECRET|supabase.*service.*key|supabase.*token)[\s]*[=:"'\s]+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{20,500}\.[A-Za-z0-9_-]{20,500}`
+
+---
+
 ## AI / LLM Providers (7 patterns)
 
-### 71. `openai_api_key` — OpenAI API Key
+### 77. `openai_api_key` — OpenAI API Key
 
 OpenAI API key starting with `sk-` prefix. Covers both standard keys and project-scoped keys (`sk-proj-`). Grants access to GPT models, DALL-E, embeddings, and other OpenAI services.
 
@@ -734,7 +794,7 @@ OpenAI API key starting with `sk-` prefix. Covers both standard keys and project
 
 ---
 
-### 72. `anthropic_api_key` — Anthropic API Key
+### 78. `anthropic_api_key` — Anthropic API Key
 
 Anthropic API key with highly distinctive `sk-ant-` prefix. Grants access to Claude models.
 
@@ -744,7 +804,7 @@ Anthropic API key with highly distinctive `sk-ant-` prefix. Grants access to Cla
 
 ---
 
-### 73. `cohere_api_key` — Cohere API Key
+### 79. `cohere_api_key` — Cohere API Key
 
 Cohere API key, a 40-character alphanumeric string. No distinctive prefix — relies on context keywords like `COHERE_API_KEY` for detection.
 
@@ -754,7 +814,7 @@ Cohere API key, a 40-character alphanumeric string. No distinctive prefix — re
 
 ---
 
-### 74. `huggingface_token` — HuggingFace Token
+### 80. `huggingface_token` — HuggingFace Token
 
 HuggingFace token with `hf_` prefix followed by 34+ alphanumeric characters. Grants access to HuggingFace models and datasets.
 
@@ -764,7 +824,7 @@ HuggingFace token with `hf_` prefix followed by 34+ alphanumeric characters. Gra
 
 ---
 
-### 75. `replicate_api_token` — Replicate API Token
+### 81. `replicate_api_token` — Replicate API Token
 
 Replicate API token with `r8_` prefix followed by 36+ alphanumeric characters. Grants access to Replicate model inference.
 
@@ -774,7 +834,7 @@ Replicate API token with `r8_` prefix followed by 36+ alphanumeric characters. G
 
 ---
 
-### 76. `groq_api_key` — Groq API Key
+### 82. `groq_api_key` — Groq API Key
 
 Groq API key with `gsk_` prefix followed by 52+ alphanumeric characters. Grants access to Groq LPU inference.
 
@@ -784,7 +844,7 @@ Groq API key with `gsk_` prefix followed by 52+ alphanumeric characters. Grants 
 
 ---
 
-### 77. `deepseek_api_key` — DeepSeek API Key
+### 83. `deepseek_api_key` — DeepSeek API Key
 
 DeepSeek API key with `sk-` prefix followed by 32 hex characters, detected with DeepSeek-specific context keywords. Grants access to DeepSeek LLM inference.
 
@@ -796,7 +856,7 @@ DeepSeek API key with `sk-` prefix followed by 32 hex characters, detected with 
 
 ## Generic & Auth Tokens (5 patterns)
 
-### 78. `jwt_token` — JSON Web Token (JWT)
+### 84. `jwt_token` — JSON Web Token (JWT)
 
 JWT identified by the `eyJ` prefix (base64-encoded JSON header) and three dot-separated segments.
 
@@ -806,7 +866,7 @@ JWT identified by the `eyJ` prefix (base64-encoded JSON header) and three dot-se
 
 ---
 
-### 79. `bearer_token` — Bearer Token in Authorization Header
+### 85. `bearer_token` — Bearer Token in Authorization Header
 
 Bearer token found in an Authorization header pattern. The token itself could be any format.
 
@@ -816,7 +876,7 @@ Bearer token found in an Authorization header pattern. The token itself could be
 
 ---
 
-### 80. `basic_auth_header` — Basic Auth Credentials in Header
+### 86. `basic_auth_header` — Basic Auth Credentials in Header
 
 Base64-encoded `username:password` in a Basic authorization header.
 
@@ -826,7 +886,7 @@ Base64-encoded `username:password` in a Basic authorization header.
 
 ---
 
-### 81. `generic_api_key_env` — Generic API Key in Environment Variable
+### 87. `generic_api_key_env` — Generic API Key in Environment Variable
 
 API key, secret key, or access token assigned in an environment variable. Catches patterns like `API_KEY=...`, `SECRET_KEY=...`, `ACCESS_TOKEN=...` that don't match a specific provider.
 
@@ -836,7 +896,7 @@ API key, secret key, or access token assigned in an environment variable. Catche
 
 ---
 
-### 82. `generic_high_entropy` — Generic High-Entropy String
+### 88. `generic_high_entropy` — Generic High-Entropy String
 
 A long, high-entropy alphanumeric string near context keywords suggesting it may be a secret. Lowest-confidence catch-all pattern — requires Shannon entropy above 4.0 to survive scoring.
 
@@ -850,11 +910,11 @@ A long, high-entropy alphanumeric string near context keywords suggesting it may
 
 | Category | Count | Severity Range |
 |----------|-------|---------------|
-| Cloud Providers | 18 | critical – high |
-| Payment & Financial | 11 | critical – low |
+| Cloud Providers | 19 | critical – high |
+| Payment & Financial | 13 | critical – low |
 | Version Control & CI/CD | 14 | critical – high |
-| Communications & SaaS | 20 | critical – medium |
-| Database & Infrastructure | 7 | critical – high |
+| Communications & SaaS | 22 | critical – medium |
+| Database & Infrastructure | 8 | critical – high |
 | AI / LLM Providers | 7 | critical – high |
 | Generic & Auth Tokens | 5 | high – low |
 | **Total** | **82** | |

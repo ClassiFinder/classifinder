@@ -1,6 +1,6 @@
 # Benign Corpus Collection Plan
 
-> **For agentic workers:** This plan describes data to collect and place into `classifinder-tests/corpus/benign/`. The goal is to build a corpus of text that should NOT trigger secret detection — used to measure false positive rates across ClassiFinder's 82 patterns.
+> **For agentic workers:** This plan describes data to collect and place into `classifinder-tests/corpus/benign/`. The goal is to build a corpus of text that should NOT trigger secret detection — used to measure false positive rates across ClassiFinder's 88 patterns.
 
 **Goal:** Populate `classifinder-tests/corpus/benign/` with diverse, realistic text that exercises ClassiFinder's pattern regexes without containing real secrets. High false positive rates on this corpus reveal patterns that are too permissive.
 

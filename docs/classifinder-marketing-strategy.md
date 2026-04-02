@@ -277,7 +277,7 @@ Publish this list on the landing page. It builds trust, answers the buyer's firs
 - Generic High-Entropy String (context-dependent catch-all)
 
 **Landing page copy:**
-"82 secret types across 7 categories. Cloud keys, payment credentials, database passwords, private keys, AI provider tokens, and more. See the full list."
+"88 secret types across 7 categories. Cloud keys, payment credentials, database passwords, private keys, AI provider tokens, and more. See the full list."
 
 ---
 
