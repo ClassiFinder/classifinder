@@ -203,12 +203,12 @@ Startups going through their first SOC 2 audit. Mid-market companies with PCI-DS
 | Latency | <50ms | Unknown | ~100-500ms | Fast (local) |
 | LangChain integration | Yes (planned) | Experimental MCP | No | No |
 | Target audience | AI agents & pipelines | Security teams | Enterprise DLP | Developers |
-| Secret types | 50 (launch), growing | 550+ | 150+ | 160+ |
+| Secret types | 71 (launch), growing | 550+ | 150+ | 160+ |
 | Free tier | 10,000 calls/month | 10,000 calls/month | 3 GB/month | Unlimited (self-host) |
 
 ---
 
-## Detection Coverage (50 Secret Types)
+## Detection Coverage (71 Secret Types)
 
 Publish this list on the landing page. It builds trust, answers the buyer's first question ("does it catch what I care about?"), and is SEO-rich for searches like "detect OpenAI API key leak."
 
@@ -277,7 +277,7 @@ Publish this list on the landing page. It builds trust, answers the buyer's firs
 - Generic High-Entropy String (context-dependent catch-all)
 
 **Landing page copy:**
-"50 secret types across 7 categories. Cloud keys, payment credentials, database passwords, private keys, AI provider tokens, and more. See the full list."
+"71 secret types across 7 categories. Cloud keys, payment credentials, database passwords, private keys, AI provider tokens, and more. See the full list."
 
 ---
 

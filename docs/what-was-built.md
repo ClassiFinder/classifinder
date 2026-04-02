@@ -165,7 +165,7 @@ The `hash` style is useful for deduplication — the same secret always produces
 
 ### Pattern Library (`app/engine/patterns/`)
 
-50 detection patterns across 7 categories:
+71 detection patterns across 7 categories:
 
 | Category | Module | Examples |
 |----------|--------|----------|
@@ -240,7 +240,7 @@ Redact findings are slimmer than scan findings — they include `redacted_as` bu
 
 #### `GET /v1/types`
 
-Returns metadata for all 50 registered detection patterns. Agents use this for self-discovery — to learn what the API detects and build type filter lists.
+Returns metadata for all 71 registered detection patterns. Agents use this for self-discovery — to learn what the API detects and build type filter lists.
 
 Response fields per type: `id`, `name`, `provider`, `severity`, `description`, `tags`.
 
@@ -510,7 +510,7 @@ These are deliberate choices, not oversights:
 
 Astro-based static site deployed via GitHub Actions to Cloudflare Workers. Noir/pulp fiction visual identity with Playfair Display, Source Serif 4, and DM Mono fonts. Dark mode default with a "Light?" toggle that reveals hidden secrets as background watermarks.
 
-Sections: hero with stats (50 types, <5ms, 0 bytes of your text stored, open source engine), interactive demo calling `/v1/demodemo`, "How It Works" (install/scan/ship + LangChain + MCP examples), competitive comparison table, trust section (open source engine, honest limitations, compliance), pricing tiers (Free + Coming Soon), self-serve key provisioning form, and footer.
+Sections: hero with stats (71 types, <5ms, 0 bytes of your text stored, open source engine), interactive demo calling `/v1/demodemo`, "How It Works" (install/scan/ship + LangChain + MCP examples), competitive comparison table, trust section (open source engine, honest limitations, compliance), pricing tiers (Free + Coming Soon), self-serve key provisioning form, and footer.
 
 Key provisioning form calls `POST /v1/keys/create` directly, with Formspree as a fallback.
 
@@ -625,7 +625,7 @@ classifinder-tests/
 │   ├── pattern_library_parser.py # Parse pattern-library.md into structured data
 │   ├── comparator.py           # Cross-engine parity comparison
 │   └── parity_allowlist.py     # Known intentional divergences (empty by default)
-├── corpus/                     # Test data (50 patterns × 4 corpus types)
+├── corpus/                     # Test data (71 patterns × 4 corpus types)
 │   ├── known-secrets/          # Text that SHOULD trigger findings (by category)
 │   ├── benign/                 # Text that should NOT trigger findings
 │   │   ├── prose/              # Real documentation and blog content
@@ -634,7 +634,7 @@ classifinder-tests/
 │   │   └── encoded/            # Base64, UUIDs, hashes
 │   └── adversarial/            # Edge cases: truncated keys, near-misses, wrong prefixes
 ├── tests/                      # pytest CI gates (11 test files)
-│   ├── test_pattern_library.py # Validates all 50 pattern examples from docs
+│   ├── test_pattern_library.py # Validates all 71 pattern examples from docs
 │   ├── test_known_secrets.py   # All known-secrets corpus files detected correctly
 │   ├── test_benign.py          # Benign corpus produces zero findings
 │   ├── test_adversarial.py     # Edge cases behave correctly
@@ -736,7 +736,7 @@ All project documentation lives in the project root:
 | Python SDK + LangChain integration | March 2026 | `pip install classifinder` — thin httpx client with sync/async, built-in retries, LangChain `ClassiFinderGuard` Runnable. Published to PyPI. |
 | MCP Server | March 25, 2026 | `pip install classifinder-mcp` — FastMCP server exposing `classifinder_scan` and `classifinder_redact` tools for Claude Code, Cursor, and any MCP-compatible agent. Published to PyPI. |
 | Open-source engine | March 2026 | `classifinder-engine/` — standalone MIT-licensed scanner so users can audit the code that touches their data. |
-| AI provider patterns | March 2026 | Added OpenAI, Anthropic, and Cohere API key detection patterns (4 patterns in `patterns/ai.py`). Total pattern count: 50. |
+| AI provider patterns | March 2026 | Added OpenAI, Anthropic, and Cohere API key detection patterns (4 patterns in `patterns/ai.py`). Total pattern count: 71. |
 | Key provisioning | March 2026 | Self-serve API key generation via `POST /v1/keys/create` and rotation via `POST /v1/keys/rotate`. Turso-backed with in-memory LRU cache, IP rate limiting (5 keys/IP/hour), email uniqueness. |
 | Feedback persistence | March 26, 2026 | `POST /v1/feedback` now persists anonymous metadata to Turso. Added `expected_type` field for false negatives (validated against pattern registry). Feedback-specific rate limit (10/hour/key). CLI report script for aggregate queries. 93 total tests. |
 | CI/CD pipeline | March 27, 2026 | GitHub Actions: push to main → run 93 tests → deploy to Fly.io. No manual deploys needed. |

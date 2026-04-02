@@ -211,7 +211,7 @@ List all supported secret types with metadata.
 
 ```json
 {
-  "types_count": 50,
+  "types_count": 71,
   "types": [
     {
       "id": "aws_access_key",
@@ -245,7 +245,7 @@ This endpoint is essential for agent self-discovery. An agent can call this to l
 {
   "status": "healthy",
   "version": "1.0.0",
-  "patterns_loaded": 50,
+  "patterns_loaded": 71,
   "uptime_seconds": 86400
 }
 ```

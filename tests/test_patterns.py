@@ -302,6 +302,366 @@ def test_credit_card_amex():
 
 
 # ═══════════════════════════════════════════════
+# HUGGINGFACE
+# ═══════════════════════════════════════════════
+
+def test_huggingface_token():
+    """HuggingFace tokens with hf_ prefix should be detected."""
+    text = "HF_TOKEN=hf_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+    findings = scan(text)
+    hf_findings = [f for f in findings if f.type == "huggingface_token"]
+    assert len(hf_findings) == 1
+    assert hf_findings[0].confidence >= 0.95
+
+
+# ═══════════════════════════════════════════════
+# REPLICATE
+# ═══════════════════════════════════════════════
+
+def test_replicate_api_token():
+    """Replicate tokens with r8_ prefix should be detected."""
+    text = "REPLICATE_API_TOKEN=r8_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+    findings = scan(text)
+    rep_findings = [f for f in findings if f.type == "replicate_api_token"]
+    assert len(rep_findings) == 1
+    assert rep_findings[0].confidence >= 0.95
+
+
+# ═══════════════════════════════════════════════
+# GROQ
+# ═══════════════════════════════════════════════
+
+def test_groq_api_key():
+    """Groq API keys with gsk_ prefix should be detected."""
+    text = "GROQ_API_KEY=gsk_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    findings = scan(text)
+    groq_findings = [f for f in findings if f.type == "groq_api_key"]
+    assert len(groq_findings) == 1
+    assert groq_findings[0].severity == "critical"
+
+
+# ═══════════════════════════════════════════════
+# DOPPLER
+# ═══════════════════════════════════════════════
+
+def test_doppler_token():
+    """Doppler tokens with dp.pt. prefix should be detected (40-44 char range)."""
+    # 43 chars (most common observed length)
+    text = "DOPPLER_TOKEN=dp.pt.ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890abcdef"
+    findings = scan(text)
+    dp_findings = [f for f in findings if f.type == "doppler_token"]
+    assert len(dp_findings) == 1
+    assert dp_findings[0].confidence >= 0.95
+
+
+def test_doppler_token_length_boundaries():
+    """Doppler tokens at 40 and 44 chars should match; 39 should not."""
+    # 40 chars (minimum per Doppler spec)
+    text_40 = "dp.pt." + "A" * 40
+    assert len([f for f in scan(text_40) if f.type == "doppler_token"]) == 1
+    # 44 chars (maximum per Doppler spec)
+    text_44 = "dp.pt." + "A" * 44
+    assert len([f for f in scan(text_44) if f.type == "doppler_token"]) == 1
+    # 39 chars (too short)
+    text_39 = "dp.pt." + "A" * 39
+    assert len([f for f in scan(text_39) if f.type == "doppler_token"]) == 0
+
+
+# ═══════════════════════════════════════════════
+# TERRAFORM CLOUD
+# ═══════════════════════════════════════════════
+
+def test_terraform_cloud_token():
+    """Terraform Cloud tokens with .atlasv1. segment should be detected."""
+    text = "TF_TOKEN=ABCDEFGHIJKLmn.atlasv1.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ABCDE"
+    findings = scan(text)
+    tf_findings = [f for f in findings if f.type == "terraform_cloud_token"]
+    assert len(tf_findings) == 1
+    assert tf_findings[0].severity == "critical"
+
+
+# ═══════════════════════════════════════════════
+# HASHICORP VAULT
+# ═══════════════════════════════════════════════
+
+def test_vault_token():
+    """Vault tokens with hvs. prefix should be detected."""
+    text = "VAULT_TOKEN=hvs.ABCDEFGHIJKLMNOPQRSTUVwx"
+    findings = scan(text)
+    vault_findings = [f for f in findings if f.type == "vault_token"]
+    assert len(vault_findings) == 1
+    assert vault_findings[0].confidence >= 0.95
+
+
+# ═══════════════════════════════════════════════
+# PULUMI
+# ═══════════════════════════════════════════════
+
+def test_pulumi_access_token():
+    """Pulumi tokens with pul- prefix should be detected."""
+    text = "PULUMI_ACCESS_TOKEN=pul-abcdef0123456789abcdef0123456789abcdef01"
+    findings = scan(text)
+    pul_findings = [f for f in findings if f.type == "pulumi_access_token"]
+    assert len(pul_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# FLY.IO
+# ═══════════════════════════════════════════════
+
+def test_fly_api_token():
+    """Fly.io tokens with fo1_ prefix should be detected."""
+    text = "FLY_API_TOKEN=fo1_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm"
+    findings = scan(text)
+    fly_findings = [f for f in findings if f.type == "fly_api_token"]
+    assert len(fly_findings) == 1
+    assert fly_findings[0].severity == "critical"
+
+
+# ═══════════════════════════════════════════════
+# ALIBABA CLOUD
+# ═══════════════════════════════════════════════
+
+def test_alibaba_access_key():
+    """Alibaba Cloud keys with LTAI prefix should be detected."""
+    text = "ALIBABA_ACCESS_KEY=LTAIabcdefghijklmnopq"
+    findings = scan(text)
+    ali_findings = [f for f in findings if f.type == "alibaba_access_key"]
+    assert len(ali_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# NEW RELIC
+# ═══════════════════════════════════════════════
+
+def test_newrelic_admin_api_key():
+    """New Relic admin keys with NRAA- prefix should be detected."""
+    text = "NEW_RELIC_API_KEY=NRAA-abcdef0123456789abcdef01234"
+    findings = scan(text)
+    nr_findings = [f for f in findings if f.type == "newrelic_admin_api_key"]
+    assert len(nr_findings) == 1
+
+
+def test_newrelic_insights_key():
+    """New Relic Insights keys with NRII/NRIQ prefix should be detected."""
+    text = "NEW_RELIC_INSERT_KEY=NRII-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    findings = scan(text)
+    nr_findings = [f for f in findings if f.type == "newrelic_insights_key"]
+    assert len(nr_findings) == 1
+
+
+def test_newrelic_user_api_key():
+    """New Relic user API keys with NRAK- prefix should be detected."""
+    text = "NEW_RELIC_API_KEY=NRAK-abc0123456789def0123456789a"
+    findings = scan(text)
+    nr_findings = [f for f in findings if f.type == "newrelic_user_api_key"]
+    assert len(nr_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# GRAFANA
+# ═══════════════════════════════════════════════
+
+def test_grafana_api_key():
+    """Grafana service account tokens with glsa_ prefix should be detected."""
+    text = "GRAFANA_API_KEY=glsa_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef_abcdef01"
+    findings = scan(text)
+    gf_findings = [f for f in findings if f.type == "grafana_api_key"]
+    assert len(gf_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# LINEAR
+# ═══════════════════════════════════════════════
+
+def test_linear_api_key():
+    """Linear API keys with lin_api_ prefix should be detected."""
+    text = "LINEAR_API_KEY=lin_api_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+    findings = scan(text)
+    lin_findings = [f for f in findings if f.type == "linear_api_key"]
+    assert len(lin_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# NOTION
+# ═══════════════════════════════════════════════
+
+def test_notion_api_key():
+    """Notion integration tokens with secret_ prefix should be detected."""
+    text = "NOTION_API_KEY=secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890abcdef"
+    findings = scan(text)
+    notion_findings = [f for f in findings if f.type == "notion_api_key"]
+    assert len(notion_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# SHOPIFY
+# ═══════════════════════════════════════════════
+
+def test_shopify_access_token():
+    """Shopify access tokens with shpat_ prefix should be detected."""
+    text = "SHOPIFY_ACCESS_TOKEN=shpat_abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    sh_findings = [f for f in findings if f.type == "shopify_access_token"]
+    assert len(sh_findings) == 1
+    assert sh_findings[0].severity == "critical"
+
+
+def test_shopify_custom_token():
+    """Shopify custom app tokens with shpca_ prefix should be detected."""
+    text = "SHOPIFY_TOKEN=shpca_abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    sh_findings = [f for f in findings if f.type == "shopify_custom_token"]
+    assert len(sh_findings) == 1
+
+
+def test_shopify_private_token():
+    """Shopify private app tokens with shppa_ prefix should be detected."""
+    text = "SHOPIFY_PRIVATE=shppa_abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    sh_findings = [f for f in findings if f.type == "shopify_private_token"]
+    assert len(sh_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# NPM
+# ═══════════════════════════════════════════════
+
+def test_npm_token():
+    """npm tokens with npm_ prefix should be detected."""
+    text = "NPM_TOKEN=npm_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+    findings = scan(text)
+    npm_findings = [f for f in findings if f.type == "npm_token"]
+    assert len(npm_findings) == 1
+    assert npm_findings[0].severity == "critical"
+
+
+# ═══════════════════════════════════════════════
+# PYPI
+# ═══════════════════════════════════════════════
+
+def test_pypi_token():
+    """PyPI tokens with pypi-AgEIcHlwaS5vcmc prefix should be detected."""
+    text = "PYPI_TOKEN=pypi-AgEIcHlwaS5vcmcCJGI4ZjE3YjFkLTk1NDMtNGRiMS1hYjFhLThlOTIxMTk3N2YzNgACKlszLCJhMTRiNjcx"
+    findings = scan(text)
+    pypi_findings = [f for f in findings if f.type == "pypi_token"]
+    assert len(pypi_findings) == 1
+    assert pypi_findings[0].confidence >= 0.97
+
+
+# ═══════════════════════════════════════════════
+# RUBYGEMS
+# ═══════════════════════════════════════════════
+
+def test_rubygems_token():
+    """RubyGems tokens with rubygems_ prefix should be detected."""
+    text = "GEM_HOST_API_KEY=rubygems_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv"
+    findings = scan(text)
+    rg_findings = [f for f in findings if f.type == "rubygems_token"]
+    assert len(rg_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# FALSE POSITIVE TESTS (NEW PATTERNS)
+# ═══════════════════════════════════════════════
+
+def test_notion_secret_prefix_too_short():
+    """Strings starting with secret_ but too short should not match notion_api_key."""
+    text = "secret_tooshort1234"
+    findings = scan(text)
+    notion_findings = [f for f in findings if f.type == "notion_api_key"]
+    assert len(notion_findings) == 0, f"False positive on short secret_ string"
+
+
+def test_notion_secret_in_prose():
+    """The word 'secret_' in documentation should not trigger notion_api_key."""
+    text = "The secret_key field is used for HMAC signing."
+    findings = scan(text)
+    notion_findings = [f for f in findings if f.type == "notion_api_key"]
+    assert len(notion_findings) == 0
+
+
+def test_hf_prefix_too_short():
+    """Short hf_ strings should not match huggingface_token."""
+    text = "hf_short"
+    findings = scan(text)
+    hf_findings = [f for f in findings if f.type == "huggingface_token"]
+    assert len(hf_findings) == 0
+
+
+def test_gsk_prefix_too_short():
+    """Short gsk_ strings should not match groq_api_key."""
+    text = "gsk_notlongenoughtobearealtokenvalue"
+    findings = scan(text)
+    groq_findings = [f for f in findings if f.type == "groq_api_key"]
+    assert len(groq_findings) == 0
+
+
+def test_npm_prefix_too_short():
+    """Short npm_ strings should not match npm_token."""
+    text = "npm_install is not a token"
+    findings = scan(text)
+    npm_findings = [f for f in findings if f.type == "npm_token"]
+    assert len(npm_findings) == 0
+
+
+def test_vault_hvs_too_short():
+    """Short hvs. strings should not match vault_token."""
+    text = "hvs.tooshort"
+    findings = scan(text)
+    vault_findings = [f for f in findings if f.type == "vault_token"]
+    assert len(vault_findings) == 0
+
+
+def test_doppler_dp_not_token():
+    """Strings with dp. but wrong format should not match doppler_token."""
+    text = "dp.something.else"
+    findings = scan(text)
+    dp_findings = [f for f in findings if f.type == "doppler_token"]
+    assert len(dp_findings) == 0
+
+
+def test_alibaba_ltai_too_short():
+    """LTAI followed by too few chars should not match alibaba_access_key."""
+    text = "LTAIshort"
+    findings = scan(text)
+    ali_findings = [f for f in findings if f.type == "alibaba_access_key"]
+    assert len(ali_findings) == 0
+
+
+def test_fly_fo1_wrong_length():
+    """fo1_ followed by wrong-length string should not match fly_api_token."""
+    text = "fo1_tooshort"
+    findings = scan(text)
+    fly_findings = [f for f in findings if f.type == "fly_api_token"]
+    assert len(fly_findings) == 0
+
+
+def test_linear_lin_api_too_short():
+    """Short lin_api_ strings should not match linear_api_key."""
+    text = "lin_api_short"
+    findings = scan(text)
+    lin_findings = [f for f in findings if f.type == "linear_api_key"]
+    assert len(lin_findings) == 0
+
+
+def test_grafana_glsa_wrong_format():
+    """glsa_ without the underscore-hex suffix should not match grafana_api_key."""
+    text = "glsa_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    findings = scan(text)
+    gf_findings = [f for f in findings if f.type == "grafana_api_key"]
+    assert len(gf_findings) == 0
+
+
+def test_pypi_wrong_prefix():
+    """pypi- without the AgEIcHlwaS5vcmc prefix should not match pypi_token."""
+    text = "pypi-somethingrandom1234567890abcdef1234567890abcdef12345678"
+    findings = scan(text)
+    pypi_findings = [f for f in findings if f.type == "pypi_token"]
+    assert len(pypi_findings) == 0
+
+
+# ═══════════════════════════════════════════════
 # REDACTION
 # ═══════════════════════════════════════════════
 

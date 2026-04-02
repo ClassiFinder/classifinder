@@ -10,7 +10,7 @@ Test the complete user journey. Run each step in order. If any step fails, stop 
 curl https://api.classifinder.tech/v1/health
 ```
 
-**Expected:** `{"status": "healthy", "version": "1.0.0", "patterns_loaded": 50, ...}`
+**Expected:** `{"status": "healthy", "version": "1.0.0", "patterns_loaded": 71, ...}`
 
 ---
 
@@ -180,7 +180,7 @@ curl https://api.classifinder.tech/v1/types \
   -H "X-API-Key: YOUR_KEY"
 ```
 
-**Expected:** 200 with `types_count: 50` and a list of all pattern metadata.
+**Expected:** 200 with `types_count: 71` and a list of all pattern metadata.
 
 ---
 
@@ -237,7 +237,7 @@ curl -X POST https://api.classifinder.tech/v1/scan \
 ## Results Checklist
 
 ```
-[ ] Step 1:  Health — 200, 50 patterns
+[ ] Step 1:  Health — 200, 71 patterns
 [ ] Step 2:  Key create — 201, got key
 [ ] Step 3:  Duplicate — 409
 [ ] Step 4:  Auth works — 200
@@ -250,7 +250,7 @@ curl -X POST https://api.classifinder.tech/v1/scan \
 [ ] Step 11: Redact label — secrets replaced with labels
 [ ] Step 12: Redact mask — first 4 chars preserved
 [ ] Step 13: Redact hash — sha256 hash tokens
-[ ] Step 14: Types — 50 types listed
+[ ] Step 14: Types — 71 types listed
 [ ] Step 15: Feedback — 202 received
 [ ] Step 16: Rotate — new key works, old key rejected
 [ ] Step 17: Clean text — 0 findings

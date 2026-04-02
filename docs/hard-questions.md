@@ -26,13 +26,13 @@ The distinction: Turso is in the auth layer, not the data path. Your text goes f
 
 ---
 
-## 3. "50 patterns is thin. GitGuardian has 550+. What do you miss?"
+## 3. "71 patterns is thin. GitGuardian has 550+. What do you miss?"
 
-**Answer:** We'll miss some. If your user pastes a Datadog API key, a Vercel token, or a custom internal token format, we won't catch it today. We cover the 50 most common and highest-risk secret types — the ones that appear most frequently in LLM pipelines and .env files.
+**Answer:** We'll miss some. If your user pastes a Datadog API key, a Vercel token, or a custom internal token format, we won't catch it today. We cover the 71 most common and highest-risk secret types — the ones that appear most frequently in LLM pipelines and .env files.
 
 GitGuardian has been building their library for years with a large team. We're growing ours based on what our users actually encounter. You can report missing patterns via the `/v1/feedback` endpoint or GitHub issues, and we'll add them.
 
-**Honest framing:** "We catch the 50 most dangerous patterns. We're growing, and we're transparent about what we don't cover yet. No scanner catches everything — not even GitGuardian."
+**Honest framing:** "We catch the 71 most dangerous patterns. We're growing, and we're transparent about what we don't cover yet. No scanner catches everything — not even GitGuardian."
 
 ---
 
@@ -147,7 +147,7 @@ This is a fundamental limitation of pattern matching, and every regex-based scan
 
 ClassiFinder is honest about this: we catch known formats with high precision. We're one layer of defense, not the only layer.
 
-**Honest framing:** "We catch 50 known secret formats with high precision and low false positives. We don't catch custom formats, natural language passwords, or structureless secrets. No regex scanner does. Use us as one layer of a defense-in-depth strategy."
+**Honest framing:** "We catch 71 known secret formats with high precision and low false positives. We don't catch custom formats, natural language passwords, or structureless secrets. No regex scanner does. Use us as one layer of a defense-in-depth strategy."
 
 ---
 
@@ -157,7 +157,7 @@ ClassiFinder is honest about this: we catch known formats with high precision. W
 |---|----------|----------------------|
 | 1 | How do I verify no storage? | Strong — open-source engine + Dockerfile |
 | 2 | Database contradiction? | Strong — clear separation of auth vs data path |
-| 3 | Only 50 patterns? | Honest — growing, transparent about gaps |
+| 3 | Only 71 patterns? | Honest — growing, transparent about gaps |
 | 7 | API key auth security? | Adequate — standard model, rotation available |
 | 8 | Context leakage in redaction? | Strong — by design, multiple styles available |
 | 10 | Solo dev bus factor? | Strong — open source, no lock-in |
