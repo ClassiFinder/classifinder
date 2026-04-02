@@ -111,7 +111,7 @@ class SecretPattern:
     tags: list                 # e.g., ["cloud", "payment", "vcs"]
 ```
 
-### Pattern Categories (71 Types)
+### Pattern Categories (82 Types)
 
 **Cloud Provider Keys (15 patterns)**
 - AWS Access Key ID (AKIA prefix, 20 chars)

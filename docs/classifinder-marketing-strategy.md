@@ -208,7 +208,7 @@ Startups going through their first SOC 2 audit. Mid-market companies with PCI-DS
 
 ---
 
-## Detection Coverage (71 Secret Types)
+## Detection Coverage (82 Secret Types)
 
 Publish this list on the landing page. It builds trust, answers the buyer's first question ("does it catch what I care about?"), and is SEO-rich for searches like "detect OpenAI API key leak."
 
@@ -277,7 +277,7 @@ Publish this list on the landing page. It builds trust, answers the buyer's firs
 - Generic High-Entropy String (context-dependent catch-all)
 
 **Landing page copy:**
-"71 secret types across 7 categories. Cloud keys, payment credentials, database passwords, private keys, AI provider tokens, and more. See the full list."
+"82 secret types across 7 categories. Cloud keys, payment credentials, database passwords, private keys, AI provider tokens, and more. See the full list."
 
 ---
 

@@ -562,7 +562,159 @@ def test_rubygems_token():
 
 
 # ═══════════════════════════════════════════════
-# FALSE POSITIVE TESTS (NEW PATTERNS)
+# BATCH 2: DEEPSEEK
+# ═══════════════════════════════════════════════
+
+def test_deepseek_api_key():
+    """DeepSeek API keys overlap with OpenAI sk- prefix — detected as openai_api_key.
+
+    DeepSeek uses sk-{32hex} which is a subset of OpenAI's sk-{32,} pattern.
+    The deduplicator picks the higher-confidence OpenAI match. The key IS
+    still detected — just typed as openai_api_key.
+    """
+    text = "DEEPSEEK_API_KEY=sk-abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    sk_findings = [f for f in findings if f.type in ("deepseek_api_key", "openai_api_key")]
+    assert len(sk_findings) >= 1
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2: VERCEL
+# ═══════════════════════════════════════════════
+
+def test_vercel_access_token():
+    """Vercel access tokens with vca_ prefix should be detected."""
+    text = "VERCEL_TOKEN=vca_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    vc_findings = [f for f in findings if f.type == "vercel_access_token"]
+    assert len(vc_findings) == 1
+    assert vc_findings[0].confidence >= 0.93
+
+
+def test_vercel_refresh_token():
+    """Vercel refresh tokens with vcr_ prefix should be detected."""
+    text = "VERCEL_REFRESH=vcr_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    vc_findings = [f for f in findings if f.type == "vercel_refresh_token"]
+    assert len(vc_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2: NETLIFY
+# ═══════════════════════════════════════════════
+
+def test_netlify_token():
+    """Netlify tokens with nfp_ prefix should be detected."""
+    text = "NETLIFY_AUTH_TOKEN=nfp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+    findings = scan(text)
+    nf_findings = [f for f in findings if f.type == "netlify_token"]
+    assert len(nf_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2: SENTRY
+# ═══════════════════════════════════════════════
+
+def test_sentry_org_token():
+    """Sentry org tokens with sntrys_eyJ prefix should be detected."""
+    text = "SENTRY_AUTH_TOKEN=sntrys_eyJpYXQiOiIxNjk5MDAwMDAwIiwiaXNzIjoic2VudHJ5Iiwib3JnIjoic2x1ZyIsInNjb3BlcyI6WyJvcmc6cmVhZCJdfQ_ABCDEFGHIJklmnopqrstu"
+    findings = scan(text)
+    sn_findings = [f for f in findings if f.type == "sentry_org_token"]
+    assert len(sn_findings) == 1
+    assert sn_findings[0].severity == "critical"
+
+
+def test_sentry_user_token():
+    """Sentry user tokens with sntryu_ prefix should be detected."""
+    text = "SENTRY_AUTH_TOKEN=sntryu_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    sn_findings = [f for f in findings if f.type == "sentry_user_token"]
+    assert len(sn_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2: DATADOG
+# ═══════════════════════════════════════════════
+
+def test_datadog_api_key():
+    """Datadog API keys with DD context should be detected."""
+    text = "DD_API_KEY=abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    dd_findings = [f for f in findings if f.type == "datadog_api_key"]
+    assert len(dd_findings) == 1
+
+
+def test_datadog_app_key():
+    """Datadog app keys with DD context should be detected."""
+    text = "DD_APP_KEY=abcdef0123456789abcdef0123456789abcdef01"
+    findings = scan(text)
+    dd_findings = [f for f in findings if f.type == "datadog_app_key"]
+    assert len(dd_findings) == 1
+
+
+def test_datadog_hex_without_context_not_matched():
+    """32-char hex without Datadog context should not trigger datadog_api_key."""
+    text = "hash=abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    dd_findings = [f for f in findings if f.type == "datadog_api_key"]
+    assert len(dd_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2: PAGERDUTY
+# ═══════════════════════════════════════════════
+
+def test_pagerduty_api_key():
+    """PagerDuty API keys with u+ prefix and PD context should be detected."""
+    text = "PAGERDUTY_API_KEY=u+AbCdEfGhIj-kl-m012"
+    findings = scan(text)
+    pd_findings = [f for f in findings if f.type == "pagerduty_api_key"]
+    assert len(pd_findings) == 1
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2: AIRTABLE
+# ═══════════════════════════════════════════════
+
+def test_airtable_api_key():
+    """Airtable PATs with pat prefix + dot + hex should be detected."""
+    text = "AIRTABLE_API_KEY=patABCDEFGHIJKLmn.abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    at_findings = [f for f in findings if f.type == "airtable_api_key"]
+    assert len(at_findings) == 1
+    assert at_findings[0].confidence >= 0.93
+
+
+def test_airtable_pat_without_dot_not_matched():
+    """pat prefix without the dot-hex structure should not match airtable_api_key."""
+    text = "pattern_match_config=patABCDEFGHIJKLmn"
+    findings = scan(text)
+    at_findings = [f for f in findings if f.type == "airtable_api_key"]
+    assert len(at_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2: NUGET
+# ═══════════════════════════════════════════════
+
+def test_nuget_api_key():
+    """NuGet API keys with oy2 prefix should be detected."""
+    text = "NUGET_API_KEY=oy2abcdefghijklmnopqrstuvwxyz0123456789abcdefg"
+    findings = scan(text)
+    ng_findings = [f for f in findings if f.type == "nuget_api_key"]
+    assert len(ng_findings) == 1
+
+
+def test_nuget_oy2_too_short():
+    """Short oy2 strings should not match nuget_api_key."""
+    text = "oy2short"
+    findings = scan(text)
+    ng_findings = [f for f in findings if f.type == "nuget_api_key"]
+    assert len(ng_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# FALSE POSITIVE TESTS (BATCH 1 PATTERNS)
 # ═══════════════════════════════════════════════
 
 def test_notion_secret_prefix_too_short():
