@@ -111,7 +111,7 @@ class SecretPattern:
     tags: list                 # e.g., ["cloud", "payment", "vcs"]
 ```
 
-### Pattern Categories (82 Types)
+### Pattern Categories (88 Types)
 
 **Cloud Provider Keys (15 patterns)**
 - AWS Access Key ID (AKIA prefix, 20 chars)
@@ -196,7 +196,7 @@ Confidence is calculated per finding, not globally. The algorithm:
 ```
 confidence = base_confidence
            + context_boost      (0.0 to +0.10)
-           - low_entropy_penalty (0.0 to -0.30)
+           - low_entropy_penalty (0.0 to -0.50)
            - test_value_penalty  (0.0 to -0.80)
 
 Clamped to [0.05, 0.99]
@@ -209,7 +209,7 @@ Clamped to [0.05, 0.99]
 
 **context_boost**: +0.02 per context keyword found within 50 chars of the match (e.g., "key", "token", "secret", "password", "credential", "auth"). Max +0.10.
 
-**low_entropy_penalty**: For generic patterns only (base < 0.80), if Shannon entropy of the matched value is below the pattern's threshold, reduce confidence. This catches things like "AAAAAAAAAAAAAAAA" matching a generic key pattern.
+**low_entropy_penalty**: For generic patterns only (base < 0.80), if Shannon entropy of the matched value is below the pattern's threshold, apply a -0.50 confidence penalty. This catches things like "AAAAAAAAAAAAAAAA" matching a generic key pattern. Thresholds vary per pattern (e.g., `generic_high_entropy` uses 4.5, `generic_api_key_env` uses 3.0). Tuned in April 2026 using benchmark data from scanning ~10,000 public GitHub files — see `classifinder-benchmark/`.
 
 **test_value_penalty**: If the matched value is in the known_test_values set, reduce confidence to 0.15 and set a `is_likely_test_value: true` flag.
 
@@ -355,6 +355,17 @@ Run on every PR. Alert if any benchmark regresses by > 20%.
 - Oversized request handling (> 1MB rejection)
 - Unicode handling (secrets in UTF-8 documents)
 - Empty input, null fields, malformed JSON
+
+### Pattern Tuning via Public Benchmark
+
+The `classifinder-benchmark/` tool (private repo) crawls public GitHub files and scans them with the engine to collect metadata-only finding signals. No secret values are stored — only type, confidence, entropy, file extension, and structural context (near assignment, in comment, in code block).
+
+This data drives pattern tuning decisions. In April 2026, scanning ~10,000 public files revealed:
+
+- `generic_high_entropy` had 40% of findings below its entropy threshold, surviving the penalty as noise → threshold raised from 4.0 to 4.5, penalty from -0.30 to -0.50
+- `generic_api_key_env` clusters at 0.65-0.79 confidence, never reaching high-confidence → candidate for entropy bonus and file-type signals in a future tuning round
+
+After tuning, re-run `classifinder-tests/` to verify no regressions against the corpus. Publishable benchmark stats live in `classifinder-marketing/docs/benchmark-results-2026-04-03.md`.
 
 ---
 

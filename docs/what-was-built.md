@@ -138,7 +138,7 @@ Confidence is calculated per finding:
 ```
 confidence = base_confidence
            + context_boost       (+0.02 per nearby keyword, max +0.10)
-           - low_entropy_penalty (up to -0.30 for generic patterns)
+           - low_entropy_penalty (up to -0.50 for generic patterns)
            - test_value_penalty  (drops to 0.15 for known test values)
 
 Clamped to [0.05, 0.99]

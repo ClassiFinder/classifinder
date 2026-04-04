@@ -67,7 +67,7 @@ Three middleware layers, executed in this order on every request:
 ```
 confidence = pattern.confidence_base
            + context_keyword_boost   (up to +0.10, in +0.02 increments per keyword within 50 chars)
-           - entropy_penalty         (-0.30 if entropy < threshold, generic patterns only)
+           - entropy_penalty         (-0.50 if entropy < threshold, generic patterns only)
            → override to 0.15       (if value matches a known test credential)
            → clamp to [0.05, 0.99]
 ```
