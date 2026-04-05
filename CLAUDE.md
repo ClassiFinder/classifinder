@@ -13,7 +13,7 @@ Lightweight, stateless API that scans text for leaked secrets and credentials. R
 ## Commands
 
 ```bash
-python -m pytest tests/ -v                    # run all tests (93 tests)
+python -m pytest tests/ -v                    # run all tests (153 tests)
 python tests/test_patterns.py                 # run pattern tests standalone
 uvicorn app.main:app --reload --port 8000     # dev server
 docker build -t classifinder .                # build Docker image
