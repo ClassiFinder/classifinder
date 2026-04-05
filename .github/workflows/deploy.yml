@@ -17,6 +17,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.lock
 
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.lock
+
       - name: Run tests
         env:
           CLASSIFINDER_API_KEYS: "ss_test_abc123def456ghi789jkl012mno345pqr678stu901vwx"
