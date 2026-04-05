@@ -95,6 +95,13 @@ Fly.io config: `shared-cpu-1x`, 256MB RAM, scale-to-zero enabled. Secrets manage
 - `FASTAPI-IMPLEMENTATION-PLAN.md` — Plan used to build the FastAPI wrapper (historical, complete)
 - `files/DEPLOYMENT-PLAN.md` — Plan used to deploy to Fly.io and Lambda (historical, complete)
 
+## Health Stack
+
+- lint: ruff check .
+- test: python -m pytest tests/ -v
+- typecheck: mypy app/
+- shell: shellcheck scripts/check_engine_sync.sh
+
 ## Code Style
 
 - Type hints on all functions

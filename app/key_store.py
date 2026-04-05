@@ -12,7 +12,7 @@ If Turso is not configured, all operations raise RuntimeError.
 import hashlib
 import secrets
 import time
-from typing import Optional, Tuple
+from typing import Tuple
 
 import libsql_experimental as libsql
 

@@ -5,7 +5,7 @@ Pydantic v2 models for all API responses. These map from engine dataclasses
 to the JSON shapes defined in classifinder-api-spec.md.
 """
 
-from typing import Dict, List, Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from app.engine.scanner import Finding as EngineFinding

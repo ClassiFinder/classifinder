@@ -144,9 +144,9 @@ class TestExpectedTypeValidation:
         assert "expected_type" in schema["properties"]
 
 
-from unittest.mock import patch, MagicMock
-from fastapi.testclient import TestClient
-from app.main import app
+from unittest.mock import patch, MagicMock  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from app.main import app  # noqa: E402
 
 api_client = TestClient(app, raise_server_exceptions=True)
 TEST_KEY = "ss_test_abc123def456ghi789jkl012mno345pqr678stu901vwx"

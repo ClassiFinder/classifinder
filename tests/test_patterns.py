@@ -722,7 +722,7 @@ def test_notion_secret_prefix_too_short():
     text = "secret_tooshort1234"
     findings = scan(text)
     notion_findings = [f for f in findings if f.type == "notion_api_key"]
-    assert len(notion_findings) == 0, f"False positive on short secret_ string"
+    assert len(notion_findings) == 0, "False positive on short secret_ string"
 
 
 def test_notion_secret_in_prose():

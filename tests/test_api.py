@@ -9,7 +9,6 @@ Run with:
 """
 
 import os
-import pytest
 
 # Set test env vars before importing the app
 os.environ["CLASSIFINDER_API_KEYS"] = "ss_test_abc123def456ghi789jkl012mno345pqr678stu901vwx"
