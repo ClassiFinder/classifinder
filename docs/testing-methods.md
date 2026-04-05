@@ -2,7 +2,7 @@
 
 ## Context
 
-ClassiFinder's scanner engine uses 88 regex patterns to detect leaked secrets. We need systematic methods to evaluate and improve pattern quality — specifically false positive rates (matching non-secrets) and false negative rates (missing real secrets).
+ClassiFinder's scanner engine uses 101 regex patterns to detect leaked secrets. We need systematic methods to evaluate and improve pattern quality — specifically false positive rates (matching non-secrets) and false negative rates (missing real secrets).
 
 We cannot rely on user feedback for this because our no-storage security model means we never see the actual strings users report as incorrect. We need to test with our own data.
 
@@ -11,7 +11,7 @@ We cannot rely on user feedback for this because our no-storage security model m
 - **Engine:** `app/engine/` — scanner, redactor, entropy calculator, pattern modules
 - **Patterns:** `app/engine/patterns/` — registry + 7 category modules (cloud, database, ai, crypto, messaging, devops, generic)
 - **Existing tests:** `tests/test_patterns.py` (21 tests), `tests/test_api.py` (36 tests)
-- **Pattern docs:** `docs/pattern-library.md` — all 88 patterns with regexes and examples
+- **Pattern docs:** `docs/pattern-library.md` — all 101 patterns with regexes and examples
 - **Engine entry point:** `app/engine/scanner.py` — `scan_text()` function returns findings
 
 Read `CLAUDE.md` at the repo root for architecture overview and `classifinder/CLAUDE.md` for engine details.

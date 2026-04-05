@@ -34,7 +34,7 @@ All 8 repos: classifinder, classifinder-engine, classifinder-sdk, classifinder-s
 
 - No secrets in git history (all 8 repos scanned)
 - No SQL injection (all Turso queries use parameterized statements)
-- No ReDoS (all 88 regex patterns use bounded quantifiers)
+- No ReDoS (all 101 regex patterns use bounded quantifiers)
 - No SSRF (scanner is pure regex, no I/O)
 - No prompt injection (MCP server passes text to scan/redact only, no dynamic prompts)
 - Logging follows "never log bodies" rule (metadata only)

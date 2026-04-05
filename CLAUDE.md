@@ -27,7 +27,7 @@ docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
   - `redactor.py` — `redact(text, findings, style) -> (redacted_text, redaction_map)`
   - `entropy.py` — Shannon entropy calculator
   - `patterns/registry.py` — `PATTERN_REGISTRY` list and `SecretPattern` dataclass
-  - `patterns/{cloud,payment,vcs,comms,database,generic,ai}.py` — 88 detection patterns
+  - `patterns/{cloud,payment,vcs,comms,database,generic,ai}.py` — 101 detection patterns
 - `app/key_store.py` — Turso-backed API key lifecycle (generate, lookup, rotate)
 - `app/feedback_store.py` — Anonymous feedback persistence + aggregate queries
 - `app/routes/` — FastAPI route handlers

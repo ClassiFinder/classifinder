@@ -24,7 +24,7 @@ ClassiFinder is the first secret scanner designed for LLM pipelines, not Git rep
 >
 > GitGuardian scans repos. TruffleHog crawls commit histories. But in 2026, secrets leak when users paste .env files into ChatGPT, when RAG pipelines surface credentials, and when agents hardcode keys into generated code.
 >
-> ClassiFinder is a stateless API: POST your text, GET it back clean. 88 secret types, sub-5ms engine time, nothing stored. The engine is open source — the code that touches your data is auditable.
+> ClassiFinder is a stateless API: POST your text, GET it back clean. 101 secret types, sub-5ms engine time, nothing stored. The engine is open source — the code that touches your data is auditable.
 >
 > What's different:
 > - Never returns the full secret (masked preview only — the scanner doesn't become a leak)
@@ -47,7 +47,7 @@ ClassiFinder is the first secret scanner designed for LLM pipelines, not Git rep
 **Tips for HN:**
 - Post between 8-10am ET on a weekday (Tuesday-Thursday)
 - Reply to every comment personally and quickly
-- Be honest about limitations (88 patterns vs GitGuardian's 550+, regex can't catch everything)
+- Be honest about limitations (101 patterns vs GitGuardian's 550+, regex can't catch everything)
 - Don't be defensive — acknowledge good criticisms
 - The GitHub push protection anecdote is gold ("GitHub's own scanner flagged our pattern library")
 
@@ -63,7 +63,7 @@ ClassiFinder is the first secret scanner designed for LLM pipelines, not Git rep
 
 > 1/ I built a secret scanner for the AI era. Not for Git — for LLM pipelines.
 >
-> One API call. Text in, clean text out. 88 secret types. Sub-5ms. Nothing stored.
+> One API call. Text in, clean text out. 101 secret types. Sub-5ms. Nothing stored.
 >
 > Free and open source: https://classifinder.tech
 >
@@ -144,7 +144,7 @@ ClassiFinder is the first secret scanner designed for LLM pipelines, not Git rep
 >
 > I built a lightweight API for secret detection that works on arbitrary text — not just Git repos. POST your text, get structured findings with confidence scores (0.0-1.0) and optionally redacted text.
 >
-> 88 secret types: AWS, GCP, Azure, Stripe, GitHub, GitLab, Slack, database connection strings, private keys, credit cards (Luhn-validated), OpenAI/Anthropic keys, and more.
+> 101 secret types: AWS, GCP, Azure, Stripe, GitHub, GitLab, Slack, database connection strings, private keys, credit cards (Luhn-validated), OpenAI/Anthropic keys, and more.
 >
 > Designed for CI/CD pipelines, log scanning, and LLM preprocessing. Python SDK, LangChain integration, MCP server.
 >
@@ -169,7 +169,7 @@ ClassiFinder is the first secret scanner designed for LLM pipelines, not Git rep
 > chain = prompt | ClassiFinderGuard() | llm | output_parser
 > ```
 >
-> Catches 88 secret types (AWS keys, Stripe keys, database passwords, etc.). `fail_open=True` by default so your pipeline never breaks.
+> Catches 101 secret types (AWS keys, Stripe keys, database passwords, etc.). `fail_open=True` by default so your pipeline never breaks.
 >
 > `pip install classifinder[langchain]` — free tier, no credit card.
 >
@@ -218,7 +218,7 @@ Blog posts, in priority order:
 | Audience | What they care about | Lead with |
 |----------|---------------------|-----------|
 | AI/LLM developers | Speed, simplicity, pip install | LangChain integration, "two lines of code" |
-| DevOps/platform | Accuracy, false positives, pricing | 88 patterns, confidence scores, usage-based pricing |
+| DevOps/platform | Accuracy, false positives, pricing | 101 patterns, confidence scores, usage-based pricing |
 | Security engineers | Trust, open source, architecture | Open-source engine, no-storage architecture, Dockerfile |
 | Compliance buyers | Control IDs, audit evidence | SOC 2 / PCI-DSS support, structured JSON logs |
 

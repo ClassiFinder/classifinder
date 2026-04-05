@@ -1,6 +1,6 @@
 # ClassiFinder — Pattern Library (88 Patterns)
 
-All 88 secret detection patterns supported by ClassiFinder, organized by category. Each entry includes the pattern ID, what it detects, an example of what triggers it, and the core regex used for matching.
+All 101 secret detection patterns supported by ClassiFinder, organized by category. Each entry includes the pattern ID, what it detects, an example of what triggers it, and the core regex used for matching.
 
 ---
 

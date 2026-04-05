@@ -237,7 +237,7 @@ curl -X POST https://api.classifinder.tech/v1/scan \
 ## Results Checklist
 
 ```
-[ ] Step 1:  Health — 200, 88 patterns
+[ ] Step 1:  Health — 200, 101 patterns
 [ ] Step 2:  Key create — 201, got key
 [ ] Step 3:  Duplicate — 409
 [ ] Step 4:  Auth works — 200
@@ -250,7 +250,7 @@ curl -X POST https://api.classifinder.tech/v1/scan \
 [ ] Step 11: Redact label — secrets replaced with labels
 [ ] Step 12: Redact mask — first 4 chars preserved
 [ ] Step 13: Redact hash — sha256 hash tokens
-[ ] Step 14: Types — 88 types listed
+[ ] Step 14: Types — 101 types listed
 [ ] Step 15: Feedback — 202 received
 [ ] Step 16: Rotate — new key works, old key rejected
 [ ] Step 17: Clean text — 0 findings
