@@ -11,6 +11,7 @@ If Turso is down, logs a warning and falls through to env var.
 
 import asyncio
 import hashlib
+import hmac
 import logging
 
 from fastapi import Request
@@ -59,8 +60,8 @@ async def _validate_key(api_key: str) -> bool:
         except Exception as exc:
             logger.warning("Turso lookup failed, falling through to env var: %s", exc)
 
-    # Step 3: Env var fallback
-    if api_key in settings.api_keys:
+    # Step 3: Env var fallback (timing-safe comparison)
+    if any(hmac.compare_digest(api_key, k) for k in settings.api_keys):
         return True
 
     return False
