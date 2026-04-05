@@ -1048,9 +1048,305 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"  ✗ {test_fn.__name__}: EXCEPTION — {e}")
             failed += 1
-    
+
     print(f"\n{'='*50}")
     print(f"Results: {passed} passed, {failed} failed, {passed + failed} total")
-    
+
     if failed > 0:
         sys.exit(1)
+
+
+# ═══════════════════════════════════════════════
+# XAI (GROK) — NEW
+# ═══════════════════════════════════════════════
+
+def test_xai_api_key_true_positives():
+    cases = [
+        "XAI_API_KEY=xai-AbCdEfGhIjKlMnOpQrStUv",
+        'export XAI_KEY="xai-1234567890AbCdEfGhIjKl"',
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        xai_findings = [f for f in findings if f.type == "xai_api_key"]
+        assert len(xai_findings) >= 1, f"Failed to detect xAI key in: {text}"
+
+
+def test_xai_api_key_true_negatives():
+    cases = [
+        "xai-short",  # too short
+        "The xai-protocol is used for communication",  # not a key
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.3)
+        xai_findings = [f for f in findings if f.type == "xai_api_key"]
+        assert len(xai_findings) == 0, f"False positive on: {text}"
+
+
+# ═══════════════════════════════════════════════
+# ELEVENLABS — NEW
+# ═══════════════════════════════════════════════
+
+def test_elevenlabs_api_key_true_positives():
+    cases = [
+        "ELEVENLABS_API_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        "xi-api-key: f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6",
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        el_findings = [f for f in findings if f.type == "elevenlabs_api_key"]
+        assert len(el_findings) >= 1, f"Failed to detect ElevenLabs key in: {text}"
+
+
+def test_elevenlabs_hex_without_context_not_matched():
+    text = "random_value=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    findings = scan(text, min_confidence=0.3)
+    el_findings = [f for f in findings if f.type == "elevenlabs_api_key"]
+    assert len(el_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# ASSEMBLYAI — NEW
+# ═══════════════════════════════════════════════
+
+def test_assemblyai_api_key_true_positives():
+    cases = [
+        "ASSEMBLYAI_API_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        "assemblyai_key = f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4",
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        aa_findings = [f for f in findings if f.type == "assemblyai_api_key"]
+        assert len(aa_findings) >= 1, f"Failed to detect AssemblyAI key in: {text}"
+
+
+# ═══════════════════════════════════════════════
+# DEEPGRAM — NEW
+# ═══════════════════════════════════════════════
+
+def test_deepgram_api_key_true_positives():
+    cases = [
+        "DEEPGRAM_API_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+        "deepgram_key = f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0",
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        dg_findings = [f for f in findings if f.type == "deepgram_api_key"]
+        assert len(dg_findings) >= 1, f"Failed to detect Deepgram key in: {text}"
+
+
+# ═══════════════════════════════════════════════
+# LANGFUSE — NEW
+# ═══════════════════════════════════════════════
+
+def test_langfuse_secret_key_true_positives():
+    cases = [
+        "LANGFUSE_SECRET_KEY=sk-lf-AbCdEfGhIjKlMnOpQrStUv",
+        'key = "sk-lf-1234567890-AbCdEfGhIjKl"',
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        lf_findings = [f for f in findings if f.type == "langfuse_secret_key"]
+        assert len(lf_findings) >= 1, f"Failed to detect LangFuse key in: {text}"
+
+
+def test_langfuse_short_not_matched():
+    text = "sk-lf-short"
+    findings = scan(text, min_confidence=0.3)
+    lf_findings = [f for f in findings if f.type == "langfuse_secret_key"]
+    assert len(lf_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# MISTRAL — NEW
+# ═══════════════════════════════════════════════
+
+def test_mistral_api_key_true_positives():
+    cases = [
+        "MISTRAL_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYz123456",
+        "mistral_key = Z9Y8X7W6V5U4T3S2R1Q0P9O8N7M6L5K4",
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        m_findings = [f for f in findings if f.type == "mistral_api_key"]
+        assert len(m_findings) >= 1, f"Failed to detect Mistral key in: {text}"
+
+
+# ═══════════════════════════════════════════════
+# DISCORD WEBHOOK — NEW
+# ═══════════════════════════════════════════════
+
+def test_discord_webhook_url_true_positives():
+    cases = [
+        "https://discord.com/api/webhooks/12345678901234567/AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvWxYz12",
+        "https://discordapp.com/api/webhooks/98765432109876543/ZyXwVuTsRqPoNmLkJiHgFeDcBaZyXwVuTsRqPoNmLkJiHgFeDcBaZyXwVuTs12",
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        dw_findings = [f for f in findings if f.type == "discord_webhook_url"]
+        assert len(dw_findings) >= 1, f"Failed to detect Discord webhook in: {text}"
+
+
+# ═══════════════════════════════════════════════
+# TEAMS WEBHOOK — NEW
+# ═══════════════════════════════════════════════
+
+def test_teams_webhook_url_true_positives():
+    text = "https://myorg.webhook.office.com/webhookb2/a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6@f1e2d3c4-b5a6-f7e8-d9c0-b1a2f3e4d5c6/IncomingWebhook/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6/f1e2d3c4-b5a6-f7e8-d9c0-b1a2f3e4d5c6"
+    findings = scan(text, min_confidence=0.1)
+    tw_findings = [f for f in findings if f.type == "teams_webhook_url"]
+    assert len(tw_findings) >= 1
+
+
+# ═══════════════════════════════════════════════
+# MATTERMOST — NEW
+# ═══════════════════════════════════════════════
+
+def test_mattermost_token_true_positives():
+    text = "MATTERMOST_TOKEN=a1b2c3d4e5f6g7h8i9j0k1l2m3"
+    findings = scan(text, min_confidence=0.1)
+    mm_findings = [f for f in findings if f.type == "mattermost_token"]
+    assert len(mm_findings) >= 1
+
+
+# ═══════════════════════════════════════════════
+# OKTA — NEW
+# ═══════════════════════════════════════════════
+
+def test_okta_api_token_true_positives():
+    text = "OKTA_API_TOKEN=00AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd"
+    findings = scan(text, min_confidence=0.1)
+    ok_findings = [f for f in findings if f.type == "okta_api_token"]
+    assert len(ok_findings) >= 1
+
+
+# ═══════════════════════════════════════════════
+# BUILDKITE — NEW
+# ═══════════════════════════════════════════════
+
+def test_buildkite_token_true_positives():
+    text = "BUILDKITE_TOKEN=bkua_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd"
+    findings = scan(text)
+    bk_findings = [f for f in findings if f.type == "buildkite_token"]
+    assert len(bk_findings) == 1
+
+
+def test_buildkite_wrong_prefix_not_matched():
+    text = "bkub_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd"
+    findings = scan(text, min_confidence=0.3)
+    bk_findings = [f for f in findings if f.type == "buildkite_token"]
+    assert len(bk_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# RAILWAY — NEW
+# ═══════════════════════════════════════════════
+
+def test_railway_token_true_positives():
+    text = "RAILWAY_TOKEN=a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"
+    findings = scan(text, min_confidence=0.1)
+    rw_findings = [f for f in findings if f.type == "railway_token"]
+    assert len(rw_findings) >= 1
+
+
+# ═══════════════════════════════════════════════
+# RAZORPAY — NEW
+# ═══════════════════════════════════════════════
+
+def test_razorpay_key_true_positives():
+    cases = [
+        "RAZORPAY_KEY=rzp_live_AbCdEfGhIjKlMn",
+        "rzp_test_ZyXwVuTsRqPoNm",
+    ]
+    for text in cases:
+        findings = scan(text, min_confidence=0.1)
+        rz_findings = [f for f in findings if f.type == "razorpay_key"]
+        assert len(rz_findings) >= 1, f"Failed to detect Razorpay key in: {text}"
+
+
+def test_razorpay_wrong_prefix_not_matched():
+    text = "rzp_dev_AbCdEfGhIjKlMn"
+    findings = scan(text, min_confidence=0.3)
+    rz_findings = [f for f in findings if f.type == "razorpay_key"]
+    assert len(rz_findings) == 0
+
+
+# ═══════════════════════════════════════════════
+# CONTEXT VARIETY TESTS
+# ═══════════════════════════════════════════════
+# Tests key patterns embedded in different real-world contexts:
+# JSON, YAML, .env, shell, logs, Python code
+
+import pytest
+
+
+CONTEXT_TESTS = [
+    # (pattern_id, secret_value, context_templates)
+    (
+        "aws_access_key",
+        "AKIAJGKJHSKLDJFH3284",
+        [
+            '{"aws_access_key_id": "AKIAJGKJHSKLDJFH3284"}',
+            "aws_access_key_id: AKIAJGKJHSKLDJFH3284",
+            "export AWS_ACCESS_KEY_ID=AKIAJGKJHSKLDJFH3284",
+            "AWS_ACCESS_KEY_ID=AKIAJGKJHSKLDJFH3284",
+            '[INFO] Using key AKIAJGKJHSKLDJFH3284 for auth',
+            'aws_key = "AKIAJGKJHSKLDJFH3284"',
+        ],
+    ),
+    (
+        "stripe_live_secret_key",
+        "sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
+        [
+            '{"stripe_key": "sk_live_51H3aKLkdsjfhDKJSH38djfhksd"}',
+            "stripe_key: sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
+            "export STRIPE_SECRET_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
+            "STRIPE_SECRET_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
+            'curl -H "Authorization: Bearer sk_live_51H3aKLkdsjfhDKJSH38djfhksd"',
+            'key = "sk_live_51H3aKLkdsjfhDKJSH38djfhksd"',
+        ],
+    ),
+    (
+        "github_pat_classic",
+        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZzyxwvu",
+        [
+            '{"token": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZzyxwvu"}',
+            "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZzyxwvu",
+            "export GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZzyxwvu",
+            "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZzyxwvu",
+            'git clone https://ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZzyxwvu@github.com/repo',
+        ],
+    ),
+    (
+        "slack_bot_token",
+        "xoxb-1234567890-1234567890123-ABCDEFGHIJKLMNOPQRSTUVWx",
+        [
+            '{"slack_token": "xoxb-1234567890-1234567890123-ABCDEFGHIJKLMNOPQRSTUVWx"}',
+            "SLACK_BOT_TOKEN=xoxb-1234567890-1234567890123-ABCDEFGHIJKLMNOPQRSTUVWx",
+            'token = "xoxb-1234567890-1234567890123-ABCDEFGHIJKLMNOPQRSTUVWx"',
+        ],
+    ),
+    (
+        "sendgrid_api_key",
+        "SG.abcdefghijklmnopqrstuv.wxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abc",
+        [
+            '{"sendgrid_key": "SG.abcdefghijklmnopqrstuv.wxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abc"}',
+            "SENDGRID_API_KEY=SG.abcdefghijklmnopqrstuv.wxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abc",
+            '[DEBUG] Sending with SG.abcdefghijklmnopqrstuv.wxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abc',
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "pattern_id,secret,contexts",
+    CONTEXT_TESTS,
+    ids=[t[0] for t in CONTEXT_TESTS],
+)
+def test_pattern_in_varied_contexts(pattern_id, secret, contexts):
+    """Patterns should be detected regardless of surrounding context format."""
+    for ctx in contexts:
+        findings = scan(ctx, min_confidence=0.1)
+        matched = [f for f in findings if f.type == pattern_id]
+        assert len(matched) >= 1, (
+            f"Failed to detect {pattern_id} in context: {ctx[:80]}..."
+        )
