@@ -86,17 +86,16 @@ Fly.io config: `shared-cpu-1x`, 256MB RAM, scale-to-zero enabled. Secrets manage
 | `.github/workflows/deploy.yml` | CI/CD: push to main → test (423 tests) → deploy to Fly.io |
 | `.dockerignore` | Excludes tests, docs, .git from Docker builds |
 
-## Reference Docs (in `docs/`)
+## Reference Docs (in `classifinder-knowledge/`)
 
-- `what-was-built.md` — Complete technical description of everything implemented
-- `technical-description.md` — Detailed architecture and implementation reference
-- `layman-description.md` — Non-technical explanation of the product
-- `a-note-on-honesty.md` — Trust/verifiability analysis for the no-storage claim
+All project documentation lives in the `classifinder-knowledge/` Obsidian vault. Key files:
+
 - `classifinder-api-spec.md` — Complete API specification with request/response schemas. **Source of truth for endpoint contracts.**
 - `classifinder-architecture.md` — System design, security rules, confidence scoring algorithm, pattern library structure
-- `classifinder-marketing-strategy.md` — Competitive positioning, compliance messaging, launch channels
-- `FASTAPI-IMPLEMENTATION-PLAN.md` — Plan used to build the FastAPI wrapper (historical, complete)
-- `files/DEPLOYMENT-PLAN.md` — Plan used to deploy to Fly.io and Lambda (historical, complete)
+- `technical-description.md` — Detailed architecture and implementation reference
+- `what-was-built.md` — Complete technical description of everything implemented
+- `pattern-library.md` — All 101 detection patterns with regexes and examples
+- `2026-04-05-security-audit.md` — First CSO audit: 9 findings, 8 fixed
 
 ## Health Stack
 

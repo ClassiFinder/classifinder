@@ -111,7 +111,7 @@ Divergences involving allowlisted patterns are logged but don't fail `test_parit
 
 ## Pattern Library Validation
 
-`lib/pattern_library_parser.py` parses `classifinder/docs/pattern-library.md` and extracts per pattern:
+`lib/pattern_library_parser.py` parses `classifinder-knowledge/pattern-library.md` and extracts per pattern:
 - Pattern ID (e.g., `aws_access_key`)
 - Example string(s)
 - Documented regex
