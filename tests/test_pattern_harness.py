@@ -68,8 +68,6 @@ HARNESS_EXEMPT = {
     "vercel_refresh_token",
     "mysql_connection_string",
     "redis_connection_string",
-    # sk- prefix overlap with OpenAI — dedup drops DeepSeek finding
-    "deepseek_api_key",
 }
 
 

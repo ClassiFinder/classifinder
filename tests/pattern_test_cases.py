@@ -83,8 +83,17 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
-    # deepseek_api_key: EXEMPT — sk- prefix overlaps with OpenAI pattern,
-    # OpenAI wins dedup. Tested in test_patterns.py with adjusted expectations.
+    "deepseek_api_key": {
+        "positives": [
+            "DEEPSEEK_API_KEY=sk-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+            'export DEEPSEEK_KEY="sk-abcdef0123456789abcdef0123456789"',
+        ],
+        "negatives": [
+            "OPENAI_API_KEY=sk-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+            "sk-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+        ],
+        "min_confidence": 0.90,
+    },
 
     "xai_api_key": {
         "positives": [

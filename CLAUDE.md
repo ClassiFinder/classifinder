@@ -13,7 +13,7 @@ Lightweight, stateless API that scans text for leaked secrets and credentials. R
 ## Commands
 
 ```bash
-python -m pytest tests/ -v                    # run all tests (153 tests)
+python -m pytest tests/ -v                    # run all tests (423 tests)
 python tests/test_patterns.py                 # run pattern tests standalone
 uvicorn app.main:app --reload --port 8000     # dev server
 docker build -t classifinder .                # build Docker image
@@ -48,10 +48,13 @@ docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
 - `app/config.py` — Settings from env vars (`CLASSIFINDER_API_KEYS`, `CLASSIFINDER_RATE_LIMIT_PER_MINUTE`, `CLASSIFINDER_MAX_PAYLOAD_BYTES`, `CLASSIFINDER_VERSION`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`)
 - `app/main.py` — App factory, CORS, middleware wiring, exception handlers
 - `scripts/feedback_report.py` — CLI tool for querying feedback trends
-- `tests/test_patterns.py` — 21 engine/pattern tests
+- `tests/test_pattern_harness.py` — 231 data-driven pattern tests (auto-generated from `pattern_test_cases.py`)
+- `tests/test_patterns.py` — 113 engine/pattern tests (including context-variety tests)
 - `tests/test_api.py` — 36 API integration tests
 - `tests/test_feedback.py` — 15 feedback persistence + rate limit tests
 - `tests/test_keys.py` — 12 key provisioning tests
+- `tests/test_false_positives.py` — 8 FP wordlist filter tests
+- `tests/test_decoders.py` — 8 base64 decoder tests
 
 ## Key Design Rules
 
@@ -80,7 +83,7 @@ Fly.io config: `shared-cpu-1x`, 256MB RAM, scale-to-zero enabled. Secrets manage
 | `Dockerfile` | Standard deployment (Fly.io) |
 | `Dockerfile.lambda` | AWS Lambda with Lambda Web Adapter |
 | `fly.toml` | Fly.io configuration |
-| `.github/workflows/deploy.yml` | CI/CD: push to main → test (93 tests) → deploy to Fly.io |
+| `.github/workflows/deploy.yml` | CI/CD: push to main → test (423 tests) → deploy to Fly.io |
 | `.dockerignore` | Excludes tests, docs, .git from Docker builds |
 
 ## Reference Docs (in `docs/`)

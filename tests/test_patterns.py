@@ -566,16 +566,17 @@ def test_rubygems_token():
 # ═══════════════════════════════════════════════
 
 def test_deepseek_api_key():
-    """DeepSeek API keys overlap with OpenAI sk- prefix — detected as openai_api_key.
+    """DeepSeek API keys with DeepSeek context are correctly typed as deepseek_api_key.
 
-    DeepSeek uses sk-{32hex} which is a subset of OpenAI's sk-{32,} pattern.
-    The deduplicator picks the higher-confidence OpenAI match. The key IS
-    still detected — just typed as openai_api_key.
+    DeepSeek uses sk-{32hex} which overlaps with OpenAI's sk-{32,} pattern.
+    When DeepSeek context is present, the DeepSeek pattern wins dedup with
+    higher confidence (0.92 base + context boost > OpenAI's 0.90 base).
     """
     text = "DEEPSEEK_API_KEY=sk-abcdef0123456789abcdef0123456789"
     findings = scan(text)
-    sk_findings = [f for f in findings if f.type in ("deepseek_api_key", "openai_api_key")]
-    assert len(sk_findings) >= 1
+    sk_findings = [f for f in findings if f.type == "deepseek_api_key"]
+    assert len(sk_findings) == 1
+    assert sk_findings[0].confidence >= 0.92
 
 
 # ═══════════════════════════════════════════════
