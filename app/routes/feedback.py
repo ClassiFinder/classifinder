@@ -134,7 +134,7 @@ def _log_to_stdout(
         "Returns 202 Accepted immediately."
     ),
 )
-async def submit_feedback(request: Request, body: FeedbackRequest) -> FeedbackResponse:
+async def submit_feedback(request: Request, body: FeedbackRequest) -> FeedbackResponse | JSONResponse:
     """Validate and persist feedback. Never store or echo the original secret."""
     # Feedback-specific rate limit (in-memory, anonymous — no identity persisted)
     key_hash = getattr(request.state, "api_key_hash", None)

@@ -14,6 +14,8 @@ Each test case validates:
 import sys
 import os
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -1276,8 +1278,6 @@ def test_razorpay_wrong_prefix_not_matched():
 # ═══════════════════════════════════════════════
 # Tests key patterns embedded in different real-world contexts:
 # JSON, YAML, .env, shell, logs, Python code
-
-import pytest
 
 
 CONTEXT_TESTS = [

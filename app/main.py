@@ -129,7 +129,7 @@ def create_app() -> FastAPI:
             error = exc.detail
         else:
             error = {"code": "invalid_request", "message": str(exc.detail)}
-        error.setdefault("retry_after", None)
+        error.setdefault("retry_after", None)  # type: ignore[arg-type]
         return JSONResponse(status_code=exc.status_code, content={"error": error})
 
     # ── Routers ──────────────────────────────────────────────────────────────
