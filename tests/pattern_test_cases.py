@@ -33,7 +33,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
     "anthropic_api_key": {
         "positives": [
             "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
-            'ANTHROPIC_API_KEY="sk-ant-admin01-zYxWvUtSrQpOnMlKjIhGfEdCbA"',
+            'ANTHROPIC_API_KEY="sk-ant-api03-zYxWvUtSrQpOnMlKjIhGfEdCbA1234567890"',
         ],
         "negatives": [
             "sk-ant-short",
@@ -160,6 +160,62 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "random_key = AbCdEfGhIjKlMnOpQrStUvWxYz123456",
         ],
         "min_confidence": 0.30,
+    },
+
+    "anthropic_admin_api_key": {
+        "positives": [
+            "ANTHROPIC_ADMIN_KEY=sk-ant-admin01-" + ("B" * 93) + "AA",
+            "sk-ant-admin01-" + ("xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9j" * 2) + ("Q" * 25) + "AA",
+        ],
+        "negatives": [
+            "sk-ant-admin01-tooshort",
+            "sk-ant-api03-" + ("A" * 95),
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "aws_bedrock_long_lived_key": {
+        "positives": [
+            "BEDROCK_API_KEY=ABSK" + ("xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW4yZ" * 3),
+        ],
+        "negatives": [
+            "ABSKshort",
+            "AKIAIOSFODNN7EXAMPLE",
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "aws_bedrock_short_lived_key": {
+        "positives": [
+            "bedrock_key=bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29tABCDEFGHIJKLMNOPxYz1234567890",
+        ],
+        "negatives": [
+            "bedrock-api-key-short",
+            "bedrock-api-key-NotTheRightBase64Prefix",
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "vercel_ai_gateway_key": {
+        "positives": [
+            "AI_GATEWAY_API_KEY=vck_xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW4yZ7cA0fB",
+        ],
+        "negatives": [
+            "vck_short",
+            "vca_xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW4yZ7cA0fB",
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "weights_and_biases_v1_key": {
+        "positives": [
+            "WANDB_API_KEY=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",
+        ],
+        "negatives": [
+            "wandb_v1_short",
+            "wandb_xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW",
+        ],
+        "min_confidence": 0.50,
     },
 
     # ── Cloud / Infra ────────────────────────────────────────────────────
