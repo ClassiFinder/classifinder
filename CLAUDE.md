@@ -23,7 +23,7 @@ docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
 ## Architecture
 
 - `app/engine/` — Core scanner engine. **Do not modify.** Tested and working.
-  - **Pattern provenance audit is REQUIRED for any new pattern.** ClassiFinder is MIT; copying regexes from AGPL projects (TruffleHog) creates derivative-work exposure. Before adding a pattern: derive from official vendor docs, cross-check against `classifinder-reference-repos/trufflehog/`, never copy a TruffleHog regex verbatim, and add an inline `# Format per ...` or `# Pattern attribution: ...` citation comment above `regex=re.compile(...)`. Full procedure: `pattern-tuning-guide.md` in the classifinder-knowledge vault.
+  - **Pattern provenance is a HARD REQUIREMENT enforced by pre-commit hook.** Every `re.compile()` in `app/engine/patterns/*.py` must have a source comment within 5 lines above it — the hook blocks commits without one. Accepted formats: `# Source: <URL>`, `# Format per <URL>`, `# Pattern attribution: Betterleaks MIT` / `SPDB CC-BY-4.0`, `# Independently authored — <rationale>`, `# Vendor-published format`. TruffleHog (AGPL) must never be the source. Full checklist and license table: see `classifinder-engine/CLAUDE.md`. Full procedure: `pattern-tuning-guide.md` in the classifinder-knowledge vault.
   - `scanner.py` — `scan(text, types?, min_confidence?, include_context?) -> List[Finding]`
   - `redactor.py` — `redact(text, findings, style) -> (redacted_text, redaction_map)`
   - `entropy.py` — Shannon entropy calculator
