@@ -9,10 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MONOREPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ENGINE_API="$MONOREPO_ROOT/classifinder/app/engine"
-ENGINE_OSS="$MONOREPO_ROOT/classifinder-engine"
+ENGINE_OSS="$MONOREPO_ROOT/classifinder-engine/classifinder_engine"
 
 if [ ! -d "$ENGINE_OSS" ]; then
-    echo "WARNING: classifinder-engine/ not found at $ENGINE_OSS — skipping sync check"
+    echo "WARNING: classifinder-engine/classifinder_engine/ not found at $ENGINE_OSS — skipping sync check"
     exit 0
 fi
 
@@ -28,7 +28,7 @@ if ! diff -rq --exclude='__pycache__' --exclude='__init__.py' \
 fi
 
 # Compare core engine files
-for file in scanner.py entropy.py redactor.py; do
+for file in scanner.py entropy.py redactor.py decoders.py false_positives.py; do
     if [ -f "$ENGINE_API/$file" ] && [ -f "$ENGINE_OSS/$file" ]; then
         if ! diff -q "$ENGINE_API/$file" "$ENGINE_OSS/$file" > /dev/null 2>&1; then
             echo "ENGINE SYNC FAILURE: $file differs"
