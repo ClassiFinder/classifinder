@@ -336,3 +336,63 @@ class TestAuth:
         assert "error" in body
         assert "code" in body["error"]
         assert "message" in body["error"]
+
+
+# ── Rate limit window behavior ───────────────────────────────────────────────
+
+class TestRateLimit:
+    def setup_method(self):
+        from app.middleware.rate_limit import reset_request_log
+        reset_request_log()
+
+    def test_reset_request_log_clears_state(self):
+        from app.middleware.rate_limit import _request_log, reset_request_log
+        _request_log["fake_key"] = [1.0, 2.0]
+        reset_request_log()
+        assert len(_request_log) == 0
+
+    def test_window_expiration_drops_old_timestamps(self):
+        """Timestamps older than WINDOW_SECONDS are dropped on the next request."""
+        from unittest.mock import patch
+        from app.middleware.rate_limit import _request_log, WINDOW_SECONDS
+
+        with patch("time.monotonic") as mock_time:
+            mock_time.return_value = 100.0
+            for _ in range(5):
+                r = client.post("/v1/scan", json={"text": CLEAN_TEXT}, headers=HEADERS)
+                assert r.status_code == 200
+
+            key_hash = next(iter(_request_log))
+            assert len(_request_log[key_hash]) == 5
+
+            mock_time.return_value = 100.0 + WINDOW_SECONDS + 1
+            r = client.post("/v1/scan", json={"text": CLEAN_TEXT}, headers=HEADERS)
+            assert r.status_code == 200
+            assert len(_request_log[key_hash]) == 1
+
+    def test_partial_window_expiration_preserves_recent(self):
+        """Only timestamps older than WINDOW_SECONDS are dropped; newer ones remain in order."""
+        from unittest.mock import patch
+        from app.middleware.rate_limit import _request_log, WINDOW_SECONDS
+
+        with patch("time.monotonic") as mock_time:
+            mock_time.return_value = 100.0
+            for _ in range(2):
+                r = client.post("/v1/scan", json={"text": CLEAN_TEXT}, headers=HEADERS)
+                assert r.status_code == 200
+
+            mock_time.return_value = 130.0
+            for _ in range(2):
+                r = client.post("/v1/scan", json={"text": CLEAN_TEXT}, headers=HEADERS)
+                assert r.status_code == 200
+
+            key_hash = next(iter(_request_log))
+            assert len(_request_log[key_hash]) == 4
+
+            # t=171: cutoff=111. t=100 entries expire, t=130 entries kept, +1 new = 3.
+            mock_time.return_value = 100.0 + WINDOW_SECONDS + 11
+            r = client.post("/v1/scan", json={"text": CLEAN_TEXT}, headers=HEADERS)
+            assert r.status_code == 200
+            entries = list(_request_log[key_hash])
+            assert len(entries) == 3
+            assert all(t > 100.0 + WINDOW_SECONDS + 11 - WINDOW_SECONDS for t in entries)

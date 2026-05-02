@@ -11,8 +11,8 @@ import json
 import sys
 import time
 import uuid
-from collections import defaultdict
-from typing import Dict, List
+from collections import defaultdict, deque
+from typing import Deque, Dict
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -30,7 +30,8 @@ router = APIRouter()
 
 FEEDBACK_LIMIT_PER_HOUR = 10
 FEEDBACK_WINDOW_SECONDS = 3600
-_feedback_log: Dict[str, List[float]] = defaultdict(list)
+# Deque enables amortized O(1) expiration via popleft() vs O(R) list filter rebuild.
+_feedback_log: Dict[str, Deque[float]] = defaultdict(deque)
 
 
 def _check_feedback_rate_limit(key_hash: str) -> int | None:
@@ -41,13 +42,14 @@ def _check_feedback_rate_limit(key_hash: str) -> int | None:
     now = time.monotonic()
     cutoff = now - FEEDBACK_WINDOW_SECONDS
     timestamps = _feedback_log[key_hash]
-    _feedback_log[key_hash] = [t for t in timestamps if t > cutoff]
+    while timestamps and timestamps[0] <= cutoff:
+        timestamps.popleft()
 
-    if len(_feedback_log[key_hash]) >= FEEDBACK_LIMIT_PER_HOUR:
-        retry_after = int(FEEDBACK_WINDOW_SECONDS - (now - _feedback_log[key_hash][0]))
+    if len(timestamps) >= FEEDBACK_LIMIT_PER_HOUR:
+        retry_after = int(FEEDBACK_WINDOW_SECONDS - (now - timestamps[0]))
         return max(1, retry_after)
 
-    _feedback_log[key_hash].append(now)
+    timestamps.append(now)
     return None
 
 

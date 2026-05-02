@@ -9,8 +9,8 @@ event loop). Not suitable for multi-process deployments without a shared store.
 """
 
 import time
-from collections import defaultdict
-from typing import Dict, List
+from collections import defaultdict, deque
+from typing import Deque, Dict
 
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,10 +21,16 @@ from app.config import get_settings
 # Endpoints exempt from rate limiting (health check is unauthenticated anyway)
 _RATE_LIMIT_EXEMPT = {"/v1/health"}
 
-# {api_key_hash: [timestamp, ...]}
-_request_log: Dict[str, List[float]] = defaultdict(list)
+# {api_key_hash: deque([timestamp, ...])} — sorted ascending, oldest at left.
+# Deque enables amortized O(1) expiration via popleft() vs O(R) list filter rebuild.
+_request_log: Dict[str, Deque[float]] = defaultdict(deque)
 
 WINDOW_SECONDS = 60
+
+
+def reset_request_log() -> None:
+    """Clear the rate-limit state. Used in tests."""
+    _request_log.clear()
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -43,16 +49,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit = settings.rate_limit_per_minute
         now = time.monotonic()
 
-        # Slide the window
+        # Slide the window: amortized O(1) per request via popleft of expired entries.
+        # Timestamps are appended in monotonic order, so leading entries are always oldest.
         timestamps = _request_log[key_hash]
         cutoff = now - WINDOW_SECONDS
-        _request_log[key_hash] = [t for t in timestamps if t > cutoff]
+        while timestamps and timestamps[0] <= cutoff:
+            timestamps.popleft()
 
-        remaining = limit - len(_request_log[key_hash])
+        remaining = limit - len(timestamps)
         reset_at = int(time.time()) + WINDOW_SECONDS
 
         if remaining <= 0:
-            retry_after = WINDOW_SECONDS - int(now - _request_log[key_hash][0])
+            retry_after = WINDOW_SECONDS - int(now - timestamps[0])
             return JSONResponse(
                 status_code=429,
                 headers={"Retry-After": str(max(1, retry_after))},
@@ -66,7 +74,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         # Record this request
-        _request_log[key_hash].append(now)
+        timestamps.append(now)
         remaining -= 1
 
         response = await call_next(request)

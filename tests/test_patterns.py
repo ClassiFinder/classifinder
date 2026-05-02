@@ -961,13 +961,239 @@ def test_redaction_label_style():
 
 def test_redaction_mask_style():
     from app.engine.redactor import redact
-    
+
     text = "key=sk_live_51H3aKLkdsjfhDKJSH38djfhksd"
     findings = scan(text)
     redacted_text, _ = redact(text, findings, style="mask")
-    
+
     assert "sk_l" in redacted_text  # first 4 chars preserved
     assert "djfhksd" not in redacted_text  # rest should be masked
+
+
+# ─── Redactor algorithm edge cases (cursor / ordering / boundaries) ────────────
+
+def _make_finding(type_id: str, start: int, end: int, finding_id: str = "f_test"):
+    """Construct a minimal Finding with the fields redact() consumes."""
+    from app.engine.scanner import Finding
+    return Finding(
+        id=finding_id,
+        type=type_id,
+        type_name=type_id.replace("_", " ").title(),
+        provider="test",
+        severity="medium",
+        confidence=0.95,
+        value_preview="****",
+        span_start=start,
+        span_end=end,
+        context=None,
+        is_likely_test_value=False,
+        recommendation="rotate",
+        matched_pattern=type_id,
+    )
+
+
+def test_redact_no_findings_returns_text_unchanged():
+    from app.engine.redactor import redact
+    text, m = redact("hello world", [], style="label")
+    assert text == "hello world"
+    assert m == []
+
+
+def test_redact_finding_at_text_start():
+    """span_start=0 means there's no leading text before the replacement."""
+    from app.engine.redactor import redact
+    text = "AKIAIOSFODNN7EXAMPLE rest of line"
+    f = _make_finding("aws_access_key", 0, 20)
+    redacted, _ = redact(text, [f], style="label")
+    assert redacted == "[AWS_ACCESS_KEY_REDACTED] rest of line"
+
+
+def test_redact_finding_at_text_end():
+    """span_end=len(text) means there's no trailing text after the replacement."""
+    from app.engine.redactor import redact
+    text = "key=AKIAIOSFODNN7EXAMPLE"
+    f = _make_finding("aws_access_key", 4, 24)
+    redacted, _ = redact(text, [f], style="label")
+    assert redacted == "key=[AWS_ACCESS_KEY_REDACTED]"
+
+
+def test_redact_adjacent_findings():
+    """Two findings with no gap between them: span_end of first == span_start of second."""
+    from app.engine.redactor import redact
+    text = "AAAABBBB"
+    f1 = _make_finding("type_a", 0, 4, finding_id="f_1")
+    f2 = _make_finding("type_b", 4, 8, finding_id="f_2")
+    redacted, m = redact(text, [f1, f2], style="label")
+    assert redacted == "[TYPE_A_REDACTED][TYPE_B_REDACTED]"
+    assert [e["finding_id"] for e in m] == ["f_1", "f_2"]
+
+
+def test_redact_map_is_in_text_order_regardless_of_input_order():
+    """redaction_map is sorted by span_start ascending, even if findings are passed out of order."""
+    from app.engine.redactor import redact
+    text = "AAA xxx BBB yyy CCC"
+    f_a = _make_finding("type_a", 0, 3, finding_id="f_first")
+    f_b = _make_finding("type_b", 8, 11, finding_id="f_middle")
+    f_c = _make_finding("type_c", 16, 19, finding_id="f_last")
+    # Pass them in reverse to verify the redactor sorts them.
+    redacted, m = redact(text, [f_c, f_a, f_b], style="label")
+    assert redacted == "[TYPE_A_REDACTED] xxx [TYPE_B_REDACTED] yyy [TYPE_C_REDACTED]"
+    assert [e["finding_id"] for e in m] == ["f_first", "f_middle", "f_last"]
+
+
+def test_redact_preserves_text_between_findings():
+    """Text between two findings must appear exactly once between their replacements."""
+    from app.engine.redactor import redact
+    text = "PRE_AKIAIOSFODNN7EXAMPLE_MID_sk_live_FAKEKEY_POST"
+    f1 = _make_finding("aws_access_key", 4, 24, finding_id="f_aws")
+    f2 = _make_finding("stripe_live_secret_key", 29, 44, finding_id="f_stripe")
+    redacted, _ = redact(text, [f1, f2], style="label")
+    assert redacted == "PRE_[AWS_ACCESS_KEY_REDACTED]_MID_[STRIPE_LIVE_SECRET_KEY_REDACTED]_POST"
+
+
+# ─── Scanner dedup algorithm (greedy by confidence, overlap resolution) ────────
+
+def _f(type_id: str, start: int, end: int, conf: float):
+    """Construct a Finding for dedup unit tests."""
+    from app.engine.scanner import Finding
+    return Finding(
+        id=f"f_{type_id}",
+        type=type_id,
+        type_name=type_id,
+        provider="test",
+        severity="medium",
+        confidence=conf,
+        value_preview="****",
+        span_start=start,
+        span_end=end,
+        context=None,
+        is_likely_test_value=False,
+        recommendation="rotate",
+        matched_pattern=type_id,
+    )
+
+
+def test_dedup_no_overlaps_keeps_all():
+    from app.engine.scanner import _dedup_overlapping_findings
+    findings = [_f("a", 0, 10, 0.9), _f("b", 20, 30, 0.8), _f("c", 40, 50, 0.7)]
+    result = _dedup_overlapping_findings(findings)
+    assert [f.type for f in result] == ["a", "b", "c"]
+
+
+def test_dedup_two_overlapping_higher_confidence_wins():
+    from app.engine.scanner import _dedup_overlapping_findings
+    a = _f("a", 0, 10, 0.7)
+    b = _f("b", 5, 15, 0.95)
+    result = _dedup_overlapping_findings([a, b])
+    assert [f.type for f in result] == ["b"]
+
+
+def test_dedup_identical_span_keeps_higher_confidence():
+    from app.engine.scanner import _dedup_overlapping_findings
+    low = _f("low", 0, 10, 0.7)
+    high = _f("high", 0, 10, 0.95)
+    result = _dedup_overlapping_findings([low, high])
+    assert [f.type for f in result] == ["high"]
+
+
+def test_dedup_adjacent_findings_both_kept():
+    """Touching but non-overlapping (A.span_end == B.span_start) must keep both."""
+    from app.engine.scanner import _dedup_overlapping_findings
+    a = _f("a", 0, 10, 0.9)
+    b = _f("b", 10, 20, 0.8)
+    result = _dedup_overlapping_findings([a, b])
+    assert [f.type for f in result] == ["a", "b"]
+
+
+def test_dedup_transitive_overlap_preserves_non_overlapping_pair():
+    """A=[0,10] conf=0.9, B=[5,20] conf=0.7, C=[15,30] conf=0.85.
+
+    A and C don't overlap each other. The greedy-by-confidence algorithm should keep
+    both A and C, rejecting only B. A naive sweep that lumps them into one cluster
+    by transitivity through B would wrongly drop one of A or C.
+    """
+    from app.engine.scanner import _dedup_overlapping_findings
+    a = _f("a", 0, 10, 0.9)
+    b = _f("b", 5, 20, 0.7)
+    c = _f("c", 15, 30, 0.85)
+    result = _dedup_overlapping_findings([a, b, c])
+    assert [f.type for f in result] == ["a", "c"]
+
+
+def test_dedup_final_order_is_by_span_start():
+    """Even if input is in conf order, output must be sorted by span_start ascending."""
+    from app.engine.scanner import _dedup_overlapping_findings
+    # Pass in confidence order (highest first) which is the opposite of span order.
+    a = _f("a", 100, 110, 0.99)
+    b = _f("b", 50, 60, 0.95)
+    c = _f("c", 0, 10, 0.90)
+    result = _dedup_overlapping_findings([a, b, c])
+    assert [f.span_start for f in result] == [0, 50, 100]
+
+
+# ─── Base64 decode is single-pass (no recursive re-decoding) ───────────────────
+
+def test_scan_decodes_base64_only_once():
+    """Regression: scan() must invoke decode_base64_segments exactly once per call.
+
+    The decoder's docstring promises 'single-pass only'. Previously, scan()
+    recursed into each decoded segment by calling itself, and the inner scan
+    re-invoked the decoder on the decoded text — contradicting the docstring
+    and creating exponential blow-up on nested base64.
+    """
+    import base64
+    from unittest.mock import MagicMock, patch
+    from app.engine import scanner as scanner_module
+
+    real_decoder = scanner_module.decode_base64_segments
+    mock_decoder = MagicMock(wraps=real_decoder)
+
+    # A real secret encoded once. The decoded text is "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    # which by itself contains no further base64 segments, but the recursive call
+    # in the buggy version still re-invokes the decoder on this decoded text.
+    secret = "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    encoded = base64.b64encode(secret.encode()).decode()
+    text = f"data={encoded}"
+
+    with patch.object(scanner_module, "decode_base64_segments", mock_decoder):
+        scanner_module.scan(text)
+
+    assert mock_decoder.call_count == 1, (
+        f"decode_base64_segments was called {mock_decoder.call_count} times; "
+        f"expected exactly 1 (single-pass)"
+    )
+
+
+def test_scan_still_detects_secrets_inside_single_layer_base64():
+    """Sanity: the single-pass cap must not break the legitimate decode-then-detect path."""
+    import base64
+    from app.engine.scanner import scan
+
+    secret = "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    encoded = base64.b64encode(secret.encode()).decode()
+    text = f"config_data={encoded}"
+    findings = scan(text)
+    aws = [f for f in findings if f.type == "aws_access_key"]
+    assert len(aws) >= 1, "AWS key inside single-layer base64 must still be detected"
+    assert aws[0].encoding == "base64"
+
+
+def test_scan_does_not_detect_secret_inside_doubly_nested_base64():
+    """Documented limitation: a secret wrapped in two layers of base64 is not detected.
+
+    This is the deliberate trade-off behind 'single-pass only': we accept missing
+    pathological double-encoded payloads in exchange for bounded runtime.
+    """
+    import base64
+    from app.engine.scanner import scan
+
+    secret = "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    once = base64.b64encode(secret.encode()).decode()
+    twice = base64.b64encode(once.encode()).decode()
+    text = f"config_data={twice}"
+    findings = scan(text)
+    aws = [f for f in findings if f.type == "aws_access_key"]
+    assert aws == [], "Doubly-nested base64 must not be decoded (single-pass discipline)"
 
 
 # ═══════════════════════════════════════════════

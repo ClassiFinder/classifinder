@@ -304,3 +304,45 @@ class TestFeedbackRateLimit:
             data = r.json()
             assert data["error"]["code"] == "feedback_rate_limit_exceeded"
             assert "retry_after" in data["error"]
+
+    def test_window_expiration_drops_old_timestamps(self):
+        """Old timestamps drop out of the 1h window; a request after expiration succeeds."""
+        from app.routes.feedback import (
+            reset_feedback_rate_limit,
+            _feedback_log,
+            FEEDBACK_WINDOW_SECONDS,
+        )
+        reset_feedback_rate_limit()
+
+        with patch("app.routes.feedback.get_settings") as mock_settings, \
+             patch("time.monotonic") as mock_time:
+            mock_settings.return_value.turso_enabled = False
+
+            mock_time.return_value = 1000.0
+            for i in range(10):
+                r = api_client.post("/v1/feedback", json={
+                    "request_id": f"req_exp_{i}",
+                    "finding_id": "f_001",
+                    "feedback_type": "false_positive",
+                }, headers=API_HEADERS)
+                assert r.status_code == 202
+
+            # Within window: limit hit
+            r = api_client.post("/v1/feedback", json={
+                "request_id": "req_within_window",
+                "finding_id": "f_001",
+                "feedback_type": "false_positive",
+            }, headers=API_HEADERS)
+            assert r.status_code == 429
+
+            # Past window: old timestamps drop, request succeeds
+            mock_time.return_value = 1000.0 + FEEDBACK_WINDOW_SECONDS + 1
+            r = api_client.post("/v1/feedback", json={
+                "request_id": "req_after_expire",
+                "finding_id": "f_001",
+                "feedback_type": "false_positive",
+            }, headers=API_HEADERS)
+            assert r.status_code == 202
+
+            key_hash = next(iter(_feedback_log))
+            assert len(_feedback_log[key_hash]) == 1
