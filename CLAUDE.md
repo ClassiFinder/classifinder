@@ -28,7 +28,8 @@ docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
   - `redactor.py` — `redact(text, findings, style) -> (redacted_text, redaction_map)`
   - `entropy.py` — Shannon entropy calculator
   - `patterns/registry.py` — `PATTERN_REGISTRY` list and `SecretPattern` dataclass
-  - `patterns/{cloud,payment,vcs,comms,database,generic,ai}.py` — 106 detection patterns
+  - `patterns/{cloud,payment,vcs,comms,database,generic,ai}.py` — 106 secret detection patterns
+  - `patterns/prompt_injection.py` — 10 prompt-injection markers (4 phase-1 high-precision + 6 phase-2 medium-precision); `provider="prompt_injection"`
 - `app/key_store.py` — Turso-backed API key lifecycle (generate, lookup, rotate)
 - `app/feedback_store.py` — Anonymous feedback persistence + aggregate queries
 - `app/routes/` — FastAPI route handlers
@@ -95,7 +96,7 @@ All project documentation lives in the `classifinder-knowledge/` Obsidian vault.
 - `classifinder-architecture.md` — System design, security rules, confidence scoring algorithm, pattern library structure
 - `technical-description.md` — Detailed architecture and implementation reference
 - `what-was-built.md` — Complete technical description of everything implemented
-- `pattern-library.md` — All 106 detection patterns with regexes and examples
+- `pattern-library.md` — All 116 patterns (106 secret types + 10 prompt-injection markers) with regexes and examples <!-- pattern-count-ignore -->
 - `2026-04-05-security-audit.md` — First CSO audit: 9 findings, 8 fixed
 
 ## Health Stack
