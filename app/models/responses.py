@@ -51,6 +51,7 @@ class FindingResponse(BaseModel):
                 "is_likely_test_value": False,
                 "recommendation": "Rotate this key immediately in the AWS IAM console.",
                 "matched_pattern": "aws_access_key_v1",
+                "safe_mcp_ids": [],
             }
         }
     }
@@ -76,6 +77,14 @@ class FindingResponse(BaseModel):
     matched_pattern: str = Field(
         ..., description="Internal pattern ID that triggered (useful for reporting false positives)."
     )
+    safe_mcp_ids: List[str] = Field(
+        default_factory=list,
+        description=(
+            "SAFE-MCP technique IDs this finding maps to (e.g., 'SAFE-T1001', 'SAFE-T1102'). "
+            "Populated for prompt-injection findings; empty for secret findings. "
+            "See https://github.com/safe-mcp/safe-mcp for the technique catalog."
+        ),
+    )
 
     @classmethod
     def from_engine(cls, f: EngineFinding) -> "FindingResponse":
@@ -93,6 +102,7 @@ class FindingResponse(BaseModel):
             is_likely_test_value=f.is_likely_test_value,
             recommendation=f.recommendation,
             matched_pattern=f.matched_pattern,
+            safe_mcp_ids=list(f.safe_mcp_ids),
         )
 
 
