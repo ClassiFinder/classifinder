@@ -158,6 +158,52 @@ def test_gitlab_pat():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 PART 1.4 — Dropbox (2026-05-21)
+# ═══════════════════════════════════════════════
+# Vendor docs (developers.dropbox.com) confirm token TYPES (short-lived,
+# long-lived) but withhold format details. Body shapes from Betterleaks MIT
+# cmd/generate/config/rules/dropbox.go. The generic dropbox-api-token rule
+# in Betterleaks (15-char alphanumeric near "dropbox" keyword) is deliberately
+# omitted — its FP risk is unfavorable in ClassiFinder's scoring model.
+
+def test_dropbox_short_lived_api_token():
+    """Dropbox short-lived API tokens with sl. prefix (135-char body)."""
+    # 135 chars of lowercase alphanumeric + dash/underscore/equals
+    body = "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def123ghi456jkl789mno012pqr345stu678vwx901yz234abc567def890ghi123jkl456mn789"
+    assert len(body) == 135, f"sl. body must be 135 chars, got {len(body)}"
+    text = f"DROPBOX_TOKEN=sl.{body}"
+    findings = scan(text)
+    db = [f for f in findings if f.type == "dropbox_short_lived_api_token"]
+    assert len(db) == 1
+
+
+def test_dropbox_long_lived_api_token():
+    """Dropbox long-lived (legacy) API tokens — 11+10+43 char structure with AAAAAAAAAA marker."""
+    # 11 lowercase-alphanum + literal AAAAAAAAAA + 43 lowercase-alphanum-with-special
+    prefix11 = "abc123def45"  # 11 chars
+    middle = "AAAAAAAAAA"  # 10 A's (distinctive marker)
+    suffix43 = "_xyz789abc-def012ghi=jkl345mno678pqr901stu2"  # 43 chars
+    assert len(prefix11) == 11
+    assert middle == "AAAAAAAAAA"
+    assert len(suffix43) == 43, f"suffix must be 43 chars, got {len(suffix43)}"
+    token = f"{prefix11}{middle}{suffix43}"
+    text = f"DROPBOX_LONG_LIVED={token}"
+    findings = scan(text)
+    db = [f for f in findings if f.type == "dropbox_long_lived_api_token"]
+    assert len(db) == 1
+    assert db[0].severity == "critical"
+
+
+def test_dropbox_long_lived_rejects_without_aaa_marker():
+    """Tokens without the AAAAAAAAAA literal middle marker must NOT match long-lived pattern."""
+    # 64 chars but no AAAAAAAAAA marker — should NOT match
+    text = "DROPBOX_FAKE=abc123def45ZZZZZZZZZZ_xyz789abc-def012ghi=jkl345mno678pqr901stu234"
+    findings = scan(text)
+    db = [f for f in findings if f.type == "dropbox_long_lived_api_token"]
+    assert len(db) == 0
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 1.3 — GitLab variant expansions (2026-05-21)
 # ═══════════════════════════════════════════════
 # Prefixes confirmed by GitLab's own source (gitlabhq/doc/security/tokens/_index.md

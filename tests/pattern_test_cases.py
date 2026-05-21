@@ -394,6 +394,28 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    # Batch 4 Part 1.4 — Dropbox (2026-05-21)
+
+    "dropbox_short_lived_api_token": {
+        "positives": [
+            "DROPBOX_TOKEN=sl.abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def123ghi456jkl789mno012pqr345stu678vwx901yz234abc567def890ghi123jkl456mn789",
+        ],
+        "negatives": [
+            "sl.short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "dropbox_long_lived_api_token": {
+        "positives": [
+            "DROPBOX_LONG_LIVED=abc123def45AAAAAAAAAA_xyz789abc-def012ghi=jkl345mno678pqr901stu2",
+        ],
+        "negatives": [
+            "abc123def45ZZZZZZZZZZ_xyz789abc-def012ghi=jkl345mno678pqr901stu2",
+        ],
+        "min_confidence": 0.85,
+    },
+
     "okta_api_token": {
         "positives": [
             "OKTA_API_TOKEN=00AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd",
