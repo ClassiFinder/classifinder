@@ -1536,6 +1536,43 @@ def test_razorpay_wrong_prefix_not_matched():
 
 
 # ═══════════════════════════════════════════════
+# GENERIC API KEY ENV
+# ═══════════════════════════════════════════════
+
+def test_generic_api_key_env_low_entropy_drops_below_default():
+    """Low-entropy values in API_KEY=... assignments (e.g., template/test
+    strings like 'abc_def_ghi_jkl123') must drop below the default 0.5
+    threshold. Per benchmark-results-2026-05-19, 81% of mid-band findings
+    were entropy <4.0 — overwhelmingly fake/test content. Locks in the
+    entropy threshold raise from 3.0 → 4.0."""
+    # Entropy ~3.91 — currently passes the 3.0 threshold (no penalty applied,
+    # scores ~0.67 mid-band). After threshold raises to 4.0 the -0.50 entropy
+    # penalty fires, dropping confidence to ~0.17 (below default 0.5).
+    text = "ACCESS_TOKEN=abc_def_ghi_jkl123"
+    findings = scan(text, min_confidence=0.01)
+    gk = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(gk) == 1, "Pattern should still match the structural shape"
+    assert gk[0].confidence < 0.50, (
+        f"Low-entropy value in env assignment must drop below default 0.5 "
+        f"threshold, got {gk[0].confidence}"
+    )
+
+
+def test_generic_api_key_env_high_entropy_stays_visible():
+    """Real-looking high-entropy values (≥4.5) must remain visible at the
+    default 0.5 threshold — no recall regression from the entropy tuning."""
+    # Entropy ~5.48 — well above the new 4.0 threshold, no penalty applied.
+    text = "API_KEY=aB3xKp9LqVnT5mFw8zRy7sCdEhJ2gNiMbOvUyXr1Q4tHcW"
+    findings = scan(text, min_confidence=0.01)
+    gk = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(gk) == 1
+    assert gk[0].confidence >= 0.50, (
+        f"High-entropy real-looking value must remain visible at default "
+        f"threshold, got {gk[0].confidence}"
+    )
+
+
+# ═══════════════════════════════════════════════
 # CONTEXT VARIETY TESTS
 # ═══════════════════════════════════════════════
 # Tests key patterns embedded in different real-world contexts:
