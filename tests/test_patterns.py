@@ -158,6 +158,99 @@ def test_gitlab_pat():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 PART 2.3 — Data / Analytics / Dev Tools (2026-05-21)
+# ═══════════════════════════════════════════════
+
+def test_clickhouse_cloud_api_secret_key():
+    """ClickHouse Cloud API secret keys with 4b1d prefix (38 alphanumeric)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKl"  # 38 chars
+    assert len(body) == 38
+    text = f"CLICKHOUSE_API_SECRET=4b1d{body}"
+    findings = scan(text)
+    ch = [f for f in findings if f.type == "clickhouse_cloud_api_secret_key"]
+    assert len(ch) == 1
+
+
+def test_planetscale_api_token():
+    """PlanetScale API tokens with pscale_tkn_ prefix."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj"  # 36 chars (within 32-64)
+    text = f"PSCALE_TOKEN=pscale_tkn_{body}"
+    findings = scan(text)
+    ps = [f for f in findings if f.type == "planetscale_api_token"]
+    assert len(ps) == 1
+
+
+def test_planetscale_oauth_token():
+    """PlanetScale OAuth tokens with pscale_oauth_ prefix."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj"
+    text = f"PSCALE_OAUTH=pscale_oauth_{body}"
+    findings = scan(text)
+    ps = [f for f in findings if f.type == "planetscale_oauth_token"]
+    assert len(ps) == 1
+
+
+def test_planetscale_password():
+    """PlanetScale database passwords with pscale_pw_ prefix."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj"
+    text = f"DATABASE_URL=pscale_pw_{body}"
+    findings = scan(text)
+    ps = [f for f in findings if f.type == "planetscale_password"]
+    assert len(ps) == 1
+
+
+def test_posthog_project_api_key():
+    """PostHog project keys with phc_ prefix (43 alphanumeric)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ"  # 43 chars
+    assert len(body) == 43
+    text = f"POSTHOG_PROJECT_API_KEY=phc_{body}"
+    findings = scan(text)
+    ph = [f for f in findings if f.type == "posthog_project_api_key"]
+    assert len(ph) == 1
+
+
+def test_posthog_personal_api_key():
+    """PostHog personal keys with phx_ prefix (47 alphanumeric)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStU"  # 47 chars
+    assert len(body) == 47
+    text = f"POSTHOG_PERSONAL_API_KEY=phx_{body}"
+    findings = scan(text)
+    ph = [f for f in findings if f.type == "posthog_personal_api_key"]
+    assert len(ph) == 1
+    assert ph[0].severity == "critical"
+
+
+def test_postman_api_token():
+    """Postman API tokens with PMAK- prefix (24-hex + - + 34-hex)."""
+    first = "abcdef0123456789abcdef01"  # 24 hex
+    second = "abcdef0123456789abcdef0123456789ab"  # 34 hex
+    assert len(first) == 24 and len(second) == 34
+    text = f"POSTMAN_API_KEY=PMAK-{first}-{second}"
+    findings = scan(text)
+    pm = [f for f in findings if f.type == "postman_api_token"]
+    assert len(pm) == 1
+
+
+def test_algolia_api_key():
+    """Algolia API keys (32 hex, context-gated)."""
+    body = "abcdef0123456789abcdef0123456789"  # 32 hex
+    assert len(body) == 32
+    text = f"ALGOLIA_API_KEY={body}"
+    findings = scan(text)
+    al = [f for f in findings if f.type == "algolia_api_key"]
+    assert len(al) == 1
+
+
+def test_contentful_delivery_api_token():
+    """Contentful delivery tokens (43 alphanumeric, context-gated)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ"  # 43 chars
+    assert len(body) == 43
+    text = f"CONTENTFUL_DELIVERY_TOKEN={body}"
+    findings = scan(text)
+    cf = [f for f in findings if f.type == "contentful_delivery_api_token"]
+    assert len(cf) == 1
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 2.1 — DevOps / CI-CD / Observability (2026-05-21)
 # All fixtures use clearly-synthetic patterns per the push-protection lesson.
 # ═══════════════════════════════════════════════

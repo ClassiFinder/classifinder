@@ -451,6 +451,80 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.80,
     },
 
+    # Batch 4 Part 2.3 — Data / Analytics / Dev tools (2026-05-21)
+
+    "clickhouse_cloud_api_secret_key": {
+        "positives": [
+            "CLICKHOUSE_API_SECRET=4b1dAbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKl",
+        ],
+        "negatives": ["4b1d-short"],
+        "min_confidence": 0.85,
+    },
+
+    "planetscale_api_token": {
+        "positives": [
+            "PSCALE_TOKEN=pscale_tkn_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj",
+        ],
+        "negatives": ["pscale_tkn_short"],
+        "min_confidence": 0.90,
+    },
+
+    "planetscale_oauth_token": {
+        "positives": [
+            "PSCALE_OAUTH=pscale_oauth_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj",
+        ],
+        "negatives": ["pscale_oauth_short"],
+        "min_confidence": 0.90,
+    },
+
+    "planetscale_password": {
+        "positives": [
+            "DATABASE_URL=pscale_pw_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj",
+        ],
+        "negatives": ["pscale_pw_short"],
+        "min_confidence": 0.90,
+    },
+
+    "posthog_project_api_key": {
+        "positives": [
+            "POSTHOG_PROJECT_API_KEY=phc_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ",
+        ],
+        "negatives": ["phc_short"],
+        "min_confidence": 0.85,
+    },
+
+    "posthog_personal_api_key": {
+        "positives": [
+            "POSTHOG_PERSONAL_API_KEY=phx_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStU",
+        ],
+        "negatives": ["phx_short"],
+        "min_confidence": 0.90,
+    },
+
+    "postman_api_token": {
+        "positives": [
+            "POSTMAN_API_KEY=PMAK-abcdef0123456789abcdef01-abcdef0123456789abcdef0123456789ab",
+        ],
+        "negatives": ["PMAK-short"],
+        "min_confidence": 0.90,
+    },
+
+    "algolia_api_key": {
+        "positives": [
+            "ALGOLIA_API_KEY=abcdef0123456789abcdef0123456789",
+        ],
+        "negatives": ["random=abcdef0123456789abcdef0123456789"],
+        "min_confidence": 0.80,
+    },
+
+    "contentful_delivery_api_token": {
+        "positives": [
+            "CONTENTFUL_DELIVERY_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ",
+        ],
+        "negatives": ["random=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ"],
+        "min_confidence": 0.80,
+    },
+
     # Batch 4 Parts 2.1 + 2.2 — DevOps, observability, security tooling (2026-05-21)
     # All fixtures use clearly-synthetic patterns to avoid triggering external scanners.
 
