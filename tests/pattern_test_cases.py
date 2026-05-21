@@ -384,10 +384,13 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "vercel_personal_access_token": {
         "positives": [
-            "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
+            # 24-char body per Vercel 2024 format (regextokens.com + GitGuardian cross-ref)
+            "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWx",
         ],
         "negatives": [
             "vcp_short",
+            # 60-char body must NOT match — real PATs are exactly 24 chars
+            "vcp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvWx",
         ],
         "min_confidence": 0.90,
     },

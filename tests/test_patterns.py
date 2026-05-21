@@ -668,12 +668,28 @@ def test_vercel_integration_token():
 
 
 def test_vercel_personal_access_token():
-    """Vercel personal access tokens with vcp_ prefix should be detected as critical."""
-    text = "VERCEL_PAT=vcp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    """Vercel personal access tokens with vcp_ prefix should be detected as critical.
+
+    Body is 24 alphanumeric chars per Vercel's 2024 token format announcement
+    (cross-referenced at github.com/odomojuli/regextokens, citing Vercel +
+    GitGuardian).
+    """
+    text = "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWx"  # 24-char body after vcp_
     findings = scan(text)
     vc_findings = [f for f in findings if f.type == "vercel_personal_access_token"]
     assert len(vc_findings) == 1
     assert vc_findings[0].severity == "critical"
+
+
+def test_vercel_personal_access_token_rejects_oversized_body():
+    """A 60-char body must NOT match vcp_ — real PATs are exactly 24 chars."""
+    text = "VERCEL_PAT=vcp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    # The trailing word-boundary (?![A-Za-z0-9]) means a 60-char body can't
+    # be truncated to 24 — it either matches at exactly 24 with no trailing
+    # alphanum, or it doesn't match at all.
+    vc_findings = [f for f in findings if f.type == "vercel_personal_access_token"]
+    assert len(vc_findings) == 0
 
 
 def test_vercel_app_access_does_not_collide_with_oauth_access():
