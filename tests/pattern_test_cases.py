@@ -466,6 +466,90 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    # Batch 4 Part 1.3 — GitLab variant expansions (2026-05-21)
+    # All prefixes vendor-confirmed (gitlabhq/doc/security/tokens/_index.md);
+    # body shapes from Betterleaks slack.go.
+
+    "gitlab_deploy_token": {
+        "positives": [
+            "GITLAB_DEPLOY_TOKEN=gldt-AbCdEfGhIjKlMnOpQrSt",
+        ],
+        "negatives": [
+            "gldt-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "gitlab_feed_token": {
+        "positives": [
+            "GITLAB_FEED_TOKEN=glft-AbCdEfGhIjKlMnOpQrSt",
+        ],
+        "negatives": [
+            "glft-short",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    "gitlab_incoming_mail_token": {
+        "positives": [
+            "GITLAB_INCOMING_MAIL=glimt-AbCdEfGhIjKlMnOpQrStUvWxY",
+        ],
+        "negatives": [
+            "glimt-short",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    "gitlab_kubernetes_agent_token": {
+        "positives": [
+            "GITLAB_AGENT_TOKEN=glagent-AbCdEfGhIjKlMnOpQrStUvWxYz1234567890_-AbCdEfGhIjKl",
+        ],
+        "negatives": [
+            "glagent-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "gitlab_oauth_app_secret": {
+        "positives": [
+            "GITLAB_OAUTH_SECRET=gloas-AbCdEfGhIjKlMnOpQrStUvWxYz1234567890_-AbCdEfGhIjKlMnOpQrStUvWxYz",
+        ],
+        "negatives": [
+            "gloas-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "gitlab_runner_authentication_token": {
+        "positives": [
+            "GITLAB_RUNNER_TOKEN=glrt-AbCdEfGhIjKlMnOpQrSt",
+        ],
+        "negatives": [
+            "glrt-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "gitlab_scim_token": {
+        "positives": [
+            "GITLAB_SCIM_TOKEN=glsoat-AbCdEfGhIjKlMnOpQrSt",
+        ],
+        "negatives": [
+            "glsoat-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "gitlab_feature_flag_client_token": {
+        "positives": [
+            "GITLAB_FEATURE_FLAG_TOKEN=glffct-AbCdEfGhIjKlMnOpQrSt",
+        ],
+        "negatives": [
+            "glffct-short",
+        ],
+        "min_confidence": 0.85,
+    },
+
     "circleci_token": {
         "positives": [
             "CIRCLECI_TOKEN=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",

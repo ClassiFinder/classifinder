@@ -158,6 +158,102 @@ def test_gitlab_pat():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 PART 1.3 — GitLab variant expansions (2026-05-21)
+# ═══════════════════════════════════════════════
+# Prefixes confirmed by GitLab's own source (gitlabhq/doc/security/tokens/_index.md
+# and gitlabhq/app/models/clusters/agent_token.rb). Body shapes derived from
+# Betterleaks MIT slack.go; corroborated by Gitleaks, Cariddi, and TruffleHog
+# (where applicable; TruffleHog source observed for triangulation only).
+
+def test_gitlab_deploy_token():
+    """GitLab deploy tokens with gldt- prefix."""
+    text = "GITLAB_DEPLOY_TOKEN=gldt-AbCdEfGhIjKlMnOpQrSt"  # 20-char body
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_deploy_token"]
+    assert len(gl) == 1
+
+
+def test_gitlab_feed_token():
+    """GitLab feed tokens with glft- prefix."""
+    text = "GITLAB_FEED_TOKEN=glft-AbCdEfGhIjKlMnOpQrSt"
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_feed_token"]
+    assert len(gl) == 1
+
+
+def test_gitlab_incoming_mail_token():
+    """GitLab incoming mail tokens with glimt- prefix (25-char body, longer than peers)."""
+    text = "GITLAB_INCOMING_MAIL=glimt-AbCdEfGhIjKlMnOpQrStUvWxY"  # 25-char body
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_incoming_mail_token"]
+    assert len(gl) == 1
+
+
+def test_gitlab_kubernetes_agent_token():
+    """GitLab Kubernetes agent tokens with glagent- prefix (50-char body)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890_-AbCdEfGhIj"  # 48 chars... need 50
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890_-AbCdEfGhIjKl"  # 50 chars
+    assert len(body) == 50, f"agent body must be exactly 50 chars, got {len(body)}"
+    text = f"GITLAB_AGENT_TOKEN=glagent-{body}"
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_kubernetes_agent_token"]
+    assert len(gl) == 1
+    assert gl[0].severity == "critical"
+
+
+def test_gitlab_oauth_app_secret():
+    """GitLab OAuth app secrets with gloas- prefix (64-char body)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890_-AbCdEfGhIjKlMnOpQrStUvWxYz"  # 64 chars
+    assert len(body) == 64, f"oauth body must be exactly 64 chars, got {len(body)}"
+    text = f"GITLAB_OAUTH_SECRET=gloas-{body}"
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_oauth_app_secret"]
+    assert len(gl) == 1
+    assert gl[0].severity == "critical"
+
+
+def test_gitlab_runner_authentication_token():
+    """GitLab runner authentication tokens with glrt- prefix."""
+    text = "GITLAB_RUNNER_TOKEN=glrt-AbCdEfGhIjKlMnOpQrSt"  # 20-char body
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_runner_authentication_token"]
+    assert len(gl) == 1
+
+
+def test_gitlab_scim_token():
+    """GitLab SCIM tokens with glsoat- prefix."""
+    text = "GITLAB_SCIM_TOKEN=glsoat-AbCdEfGhIjKlMnOpQrSt"  # 20-char body
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_scim_token"]
+    assert len(gl) == 1
+
+
+def test_gitlab_feature_flag_client_token():
+    """GitLab feature flag client tokens with glffct- prefix."""
+    text = "GITLAB_FEATURE_FLAG_TOKEN=glffct-AbCdEfGhIjKlMnOpQrSt"  # 20-char body
+    findings = scan(text)
+    gl = [f for f in findings if f.type == "gitlab_feature_flag_client_token"]
+    assert len(gl) == 1
+
+
+def test_gitlab_new_patterns_do_not_collide_with_pat():
+    """New GitLab patterns must NOT trigger gitlab_pat (which is glpat-)."""
+    # All 8 new prefixes — none should match gitlab_pat
+    samples = [
+        "gldt-AbCdEfGhIjKlMnOpQrSt",
+        "glft-AbCdEfGhIjKlMnOpQrSt",
+        "glimt-AbCdEfGhIjKlMnOpQrStUvWxY",
+        "glrt-AbCdEfGhIjKlMnOpQrSt",
+        "glsoat-AbCdEfGhIjKlMnOpQrSt",
+        "glffct-AbCdEfGhIjKlMnOpQrSt",
+    ]
+    for sample in samples:
+        findings = scan(f"X={sample}")
+        types = [f.type for f in findings]
+        assert "gitlab_pat" not in types, f"new prefix wrongly matched gitlab_pat: {sample}"
+
+
+# ═══════════════════════════════════════════════
 # SLACK
 # ═══════════════════════════════════════════════
 
