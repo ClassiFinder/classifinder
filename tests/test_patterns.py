@@ -158,6 +158,80 @@ def test_gitlab_pat():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 PART 2.4 — Enterprise Identity / Collab (2026-05-21)
+# ═══════════════════════════════════════════════
+
+def test_atlassian_api_token():
+    """Atlassian API tokens with ATATT3 prefix (186 chars)."""
+    # 186 chars of clearly-synthetic mixed alphanumeric
+    body = ("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" * 6)[:186]
+    assert len(body) == 186
+    text = f"ATLASSIAN_API_TOKEN=ATATT3{body}"
+    findings = scan(text)
+    at = [f for f in findings if f.type == "atlassian_api_token"]
+    assert len(at) == 1
+
+
+def test_1password_secret_key():
+    """1Password Secret Keys with A3- prefix (hyphenated alphanumeric blocks)."""
+    text = "ONEPASSWORD_SECRET_KEY=A3-ASWWYB-798JRY-LJVD4-23DC2-86TVM-H43EB"
+    findings = scan(text)
+    op = [f for f in findings if f.type == "1password_secret_key"]
+    assert len(op) == 1
+    assert op[0].severity == "critical"
+
+
+def test_1password_service_account_token():
+    """1Password service account tokens with ops_eyJ prefix (250+ base64)."""
+    body = ("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" * 8)[:250]  # 250 chars
+    assert len(body) == 250
+    text = f"OP_SERVICE_ACCOUNT_TOKEN=ops_eyJ{body}"
+    findings = scan(text)
+    op = [f for f in findings if f.type == "1password_service_account_token"]
+    assert len(op) == 1
+
+
+def test_hubspot_api_key():
+    """HubSpot API keys (UUID format, context-gated)."""
+    text = "HUBSPOT_API_KEY=12345678-abcd-abcd-abcd-1234567890ab"
+    findings = scan(text)
+    hs = [f for f in findings if f.type == "hubspot_api_key"]
+    assert len(hs) == 1
+
+
+def test_mapbox_api_token():
+    """Mapbox tokens with pk. prefix (60 alphanumeric + . + 22 alphanumeric)."""
+    first = ("AbCdEfGhIj" * 6)[:60]  # 60 chars
+    second = "AbCdEfGhIjKlMnOpQrStUv"  # 22 chars
+    assert len(first) == 60 and len(second) == 22
+    text = f"MAPBOX_TOKEN=pk.{first}.{second}"
+    findings = scan(text)
+    mb = [f for f in findings if f.type == "mapbox_api_token"]
+    assert len(mb) == 1
+
+
+def test_maxmind_license_key():
+    """MaxMind license keys: 6 + _ + 29 + _mmk."""
+    prefix = "AbCdEf"  # 6 chars
+    middle = "AbCdEfGhIjKlMnOpQrStUvWxYzAbC"  # 29 chars
+    assert len(prefix) == 6 and len(middle) == 29
+    text = f"MAXMIND_LICENSE_KEY={prefix}_{middle}_mmk"
+    findings = scan(text)
+    mm = [f for f in findings if f.type == "maxmind_license_key"]
+    assert len(mm) == 1
+
+
+def test_zendesk_secret_key():
+    """Zendesk secret keys (40 alphanumeric, context-gated)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMn"  # 40 chars
+    assert len(body) == 40
+    text = f"ZENDESK_SECRET_KEY={body}"
+    findings = scan(text)
+    zd = [f for f in findings if f.type == "zendesk_secret_key"]
+    assert len(zd) == 1
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 2.3 — Data / Analytics / Dev Tools (2026-05-21)
 # ═══════════════════════════════════════════════
 

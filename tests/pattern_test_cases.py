@@ -451,6 +451,70 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.80,
     },
 
+    # Batch 4 Part 2.4 — Enterprise Identity / Collab (2026-05-21)
+
+    "atlassian_api_token": {
+        "positives": [
+            # 186 chars of clearly-synthetic body after ATATT3
+            "ATLASSIAN_API_TOKEN=ATATT3AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "negatives": ["ATATT3short"],
+        "min_confidence": 0.90,
+    },
+
+    "1password_secret_key": {
+        "positives": [
+            "ONEPASSWORD_SECRET_KEY=A3-ASWWYB-798JRY-LJVD4-23DC2-86TVM-H43EB",
+        ],
+        "negatives": ["A3-short"],
+        "min_confidence": 0.90,
+    },
+
+    "1password_service_account_token": {
+        "positives": [
+            # 250+ chars after ops_eyJ (regex requires {250,}). Body is 7×36 = 252 chars.
+            "OP_SERVICE_ACCOUNT_TOKEN=ops_eyJAbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        ],
+        "negatives": ["ops_eyJshort"],
+        "min_confidence": 0.90,
+    },
+
+    "hubspot_api_key": {
+        "positives": [
+            "HUBSPOT_API_KEY=12345678-abcd-abcd-abcd-1234567890ab",
+        ],
+        "negatives": ["random_uuid=12345678-abcd-abcd-abcd-1234567890ab"],
+        "min_confidence": 0.80,
+    },
+
+    "mapbox_api_token": {
+        "positives": [
+            "MAPBOX_TOKEN=pk.AbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIj.AbCdEfGhIjKlMnOpQrStUv",
+        ],
+        "negatives": ["pk.short"],
+        "min_confidence": 0.90,
+    },
+
+    "maxmind_license_key": {
+        "positives": [
+            "MAXMIND_LICENSE_KEY=AbCdEf_AbCdEfGhIjKlMnOpQrStUvWxYzAbC_mmk",
+        ],
+        "negatives": [
+            # Wrong suffix — must end with _mmk
+            "AbCdEf_AbCdEfGhIjKlMnOpQrStUvWxYzAbC_xyz",
+            "AbCdEf_short",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    "zendesk_secret_key": {
+        "positives": [
+            "ZENDESK_SECRET_KEY=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMn",
+        ],
+        "negatives": ["random=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMn"],
+        "min_confidence": 0.75,
+    },
+
     # Batch 4 Part 2.3 — Data / Analytics / Dev tools (2026-05-21)
 
     "clickhouse_cloud_api_secret_key": {
