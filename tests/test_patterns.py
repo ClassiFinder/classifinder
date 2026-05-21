@@ -158,6 +158,66 @@ def test_gitlab_pat():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 PART 1.6 — Cloudflare expansion (2026-05-21)
+# ═══════════════════════════════════════════════
+
+def test_cloudflare_global_api_key():
+    """Cloudflare Global API Key (37 lowercase hex chars, context-gated, root access)."""
+    text = "CLOUDFLARE_GLOBAL_API_KEY: d3d1443e0adc9c24564c6c5676d679d47e2ca"
+    findings = scan(text)
+    cf = [f for f in findings if f.type == "cloudflare_global_api_key"]
+    assert len(cf) == 1
+    assert cf[0].severity == "critical"
+
+
+def test_cloudflare_global_api_key_requires_context():
+    """A 37-char hex string WITHOUT cloudflare context should not surface."""
+    text = "some_hash=d3d1443e0adc9c24564c6c5676d679d47e2ca"  # no cloudflare keyword
+    findings = scan(text)
+    cf = [f for f in findings if f.type == "cloudflare_global_api_key"]
+    # Pattern is context-gated; without "cloudflare" nearby, must not match
+    assert len(cf) == 0
+
+
+def test_cloudflare_origin_ca_key():
+    """Cloudflare Origin CA keys with v1.0- prefix + 24-hex + - + 146-hex structure."""
+    first_hex = "aaa334dc886f30631ba0a610"  # 24 hex chars
+    assert len(first_hex) == 24
+    second_hex = ("0d98ef66290d7e50aac7c27b" * 7)[:146]  # 146 hex chars
+    assert len(second_hex) == 146
+    token = f"v1.0-{first_hex}-{second_hex}"
+    text = f"CLOUDFLARE_ORIGIN_CA_KEY={token}"
+    findings = scan(text)
+    cf = [f for f in findings if f.type == "cloudflare_origin_ca_key"]
+    assert len(cf) == 1
+
+
+# ═══════════════════════════════════════════════
+# BATCH 4 PART 1.5 — JFrog / Artifactory (2026-05-21)
+# ═══════════════════════════════════════════════
+
+def test_jfrog_api_key():
+    """JFrog/Artifactory API keys with AKCp prefix (69-char body)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvWxYz1234567"  # 69 chars
+    assert len(body) == 69
+    text = f"JFROG_API_KEY=AKCp{body}"
+    findings = scan(text)
+    jf = [f for f in findings if f.type == "jfrog_api_key"]
+    assert len(jf) == 1
+    assert jf[0].severity == "critical"
+
+
+def test_artifactory_reference_token():
+    """Artifactory reference tokens with cmVmd prefix (59-char body, 64 total)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvW"  # 59 chars
+    assert len(body) == 59
+    text = f"ARTIFACTORY_REF_TOKEN=cmVmd{body}"
+    findings = scan(text)
+    af = [f for f in findings if f.type == "artifactory_reference_token"]
+    assert len(af) == 1
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 1.4 — Dropbox (2026-05-21)
 # ═══════════════════════════════════════════════
 # Vendor docs (developers.dropbox.com) confirm token TYPES (short-lived,

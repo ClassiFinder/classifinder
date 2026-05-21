@@ -416,6 +416,51 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.85,
     },
 
+    # Batch 4 Part 1.5 — JFrog/Artifactory (2026-05-21)
+
+    "jfrog_api_key": {
+        "positives": [
+            "JFROG_API_KEY=AKCpAbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvWxYz1234567",
+        ],
+        "negatives": [
+            "AKCpshort",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "artifactory_reference_token": {
+        "positives": [
+            "ARTIFACTORY_REF_TOKEN=cmVmdAbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvW",
+        ],
+        "negatives": [
+            "cmVmdshort",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Batch 4 Part 1.6 — Cloudflare additions (2026-05-21)
+
+    "cloudflare_global_api_key": {
+        "positives": [
+            "CLOUDFLARE_GLOBAL_API_KEY: d3d1443e0adc9c24564c6c5676d679d47e2ca",
+        ],
+        "negatives": [
+            # No cloudflare context — must not match
+            "some_hash=d3d1443e0adc9c24564c6c5676d679d47e2ca",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "cloudflare_origin_ca_key": {
+        "positives": [
+            "CLOUDFLARE_ORIGIN_CA_KEY=v1.0-aaa334dc886f30631ba0a610-0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d",
+        ],
+        "negatives": [
+            "v1.0-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
     "okta_api_token": {
         "positives": [
             "OKTA_API_TOKEN=00AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd",
