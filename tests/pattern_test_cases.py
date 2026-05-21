@@ -475,7 +475,8 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "huggingface_organization_api_token": {
         "positives": [
-            "HUGGINGFACE_ORG_TOKEN=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",
+            # Clearly-synthetic body to avoid triggering GitHub push protection
+            "HUGGINGFACE_ORG_TOKEN=api_org_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGh",
         ],
         "negatives": [
             "api_org_short",

@@ -181,7 +181,12 @@ def test_mailgun_signing_key():
 
 def test_huggingface_organization_api_token():
     """HuggingFace organization tokens with api_org_ prefix (34 letters)."""
-    text = "HUGGINGFACE_ORG_TOKEN=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"
+    # Clearly-synthetic body: alphabetical pattern, 34 letters. Don't use
+    # Betterleaks' realistic-looking test tokens — GitHub push protection
+    # flags them as real org tokens.
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGh"
+    assert len(body) == 34
+    text = f"HUGGINGFACE_ORG_TOKEN=api_org_{body}"
     findings = scan(text)
     hf = [f for f in findings if f.type == "huggingface_organization_api_token"]
     assert len(hf) == 1
