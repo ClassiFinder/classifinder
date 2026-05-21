@@ -352,6 +352,46 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    "vercel_app_access_token": {
+        "positives": [
+            "VERCEL_APP_TOKEN=vcau_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
+        ],
+        "negatives": [
+            "vcau_short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "vercel_app_refresh_token": {
+        "positives": [
+            "VERCEL_APP_REFRESH=vcar_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
+        ],
+        "negatives": [
+            "vcar_short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "vercel_integration_token": {
+        "positives": [
+            "VERCEL_INTEGRATION=vci_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
+        ],
+        "negatives": [
+            "vci_short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "vercel_personal_access_token": {
+        "positives": [
+            "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
+        ],
+        "negatives": [
+            "vcp_short",
+        ],
+        "min_confidence": 0.90,
+    },
+
     "netlify_token": {
         "positives": [
             "NETLIFY_AUTH_TOKEN=nfp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",

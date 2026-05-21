@@ -639,6 +639,62 @@ def test_vercel_refresh_token():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4: VERCEL VARIANT EXPANSIONS
+# ═══════════════════════════════════════════════
+
+def test_vercel_app_access_token():
+    """Vercel OAuth app access tokens with vcau_ prefix should be detected."""
+    text = "VERCEL_APP_TOKEN=vcau_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    vc_findings = [f for f in findings if f.type == "vercel_app_access_token"]
+    assert len(vc_findings) == 1
+    assert vc_findings[0].confidence >= 0.93
+
+
+def test_vercel_app_refresh_token():
+    """Vercel OAuth app refresh tokens with vcar_ prefix should be detected."""
+    text = "VERCEL_APP_REFRESH=vcar_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    vc_findings = [f for f in findings if f.type == "vercel_app_refresh_token"]
+    assert len(vc_findings) == 1
+
+
+def test_vercel_integration_token():
+    """Vercel integration tokens with vci_ prefix should be detected."""
+    text = "VERCEL_INTEGRATION=vci_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    vc_findings = [f for f in findings if f.type == "vercel_integration_token"]
+    assert len(vc_findings) == 1
+
+
+def test_vercel_personal_access_token():
+    """Vercel personal access tokens with vcp_ prefix should be detected as critical."""
+    text = "VERCEL_PAT=vcp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    vc_findings = [f for f in findings if f.type == "vercel_personal_access_token"]
+    assert len(vc_findings) == 1
+    assert vc_findings[0].severity == "critical"
+
+
+def test_vercel_app_access_does_not_collide_with_oauth_access():
+    """vcau_-prefixed tokens must NOT also match vercel_access_token (vca_)."""
+    text = "VERCEL_APP_TOKEN=vcau_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    types = [f.type for f in findings]
+    assert "vercel_app_access_token" in types
+    assert "vercel_access_token" not in types
+
+
+def test_vercel_app_refresh_does_not_collide_with_oauth_refresh():
+    """vcar_-prefixed tokens must NOT also match vercel_refresh_token (vcr_)."""
+    text = "VERCEL_APP_REFRESH=vcar_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    findings = scan(text)
+    types = [f.type for f in findings]
+    assert "vercel_app_refresh_token" in types
+    assert "vercel_refresh_token" not in types
+
+
+# ═══════════════════════════════════════════════
 # BATCH 2: NETLIFY
 # ═══════════════════════════════════════════════
 
