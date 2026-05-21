@@ -95,6 +95,42 @@ def test_stripe_webhook_secret():
 
 
 # ═══════════════════════════════════════════════
+# SQUARE
+# ═══════════════════════════════════════════════
+
+def test_square_access_token_high_conf_with_context():
+    """Real Square tokens in code (with SQUARE_ACCESS_TOKEN variable name or
+    'square'/'access_token' nearby) should be high-confidence (>=0.80)."""
+    text = 'SQUARE_ACCESS_TOKEN = "EAAAEABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-abcdefghi"'
+    findings = scan(text, min_confidence=0.1)
+    square_findings = [f for f in findings if f.type == "square_access_token"]
+    assert len(square_findings) == 1, f"Expected 1 Square finding, got {len(square_findings)}"
+    assert square_findings[0].confidence >= 0.80, (
+        f"Real Square token with context should be high-confidence, "
+        f"got {square_findings[0].confidence}"
+    )
+
+
+def test_square_access_token_demoted_without_context():
+    """Bare EAA-prefixed base64 strings (common in notebook image/data payloads)
+    must NOT score as high-confidence — they need context to be promoted.
+
+    Per benchmark_2026-05-19, 4560 high-confidence Square findings were notebook
+    base64 payloads with zero supporting context. This test locks in the fix
+    documented in benchmark-results-2026-05-19.md."""
+    # Simulates a Jupyter notebook cell containing base64 image/data output that
+    # happens to start with EAA. No 'square', 'access_token', etc. nearby.
+    text = '"output_data": "EAAxA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6a7b8c9d0e1f2g3h4"'
+    findings = scan(text, min_confidence=0.1)
+    square_findings = [f for f in findings if f.type == "square_access_token"]
+    assert len(square_findings) == 1, "Pattern should still detect the structural shape"
+    assert square_findings[0].confidence < 0.80, (
+        f"EAA-prefixed base64 without 'square'/'access_token' context must "
+        f"NOT be high-confidence, got {square_findings[0].confidence}"
+    )
+
+
+# ═══════════════════════════════════════════════
 # GITHUB
 # ═══════════════════════════════════════════════
 
