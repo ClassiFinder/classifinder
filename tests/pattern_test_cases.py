@@ -342,9 +342,13 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    # Vercel — 5-prefix taxonomy per 2026-02-09 changelog. Body is 56 chars
+    # from [A-Za-z0-9_-]; bodies below all use a vendor-conformant mix.
+
     "vercel_access_token": {
         "positives": [
-            "VERCEL_TOKEN=vca_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
+            # 56-char body per Vercel docs example (vca_BQuu9...340sjz)
+            "VERCEL_TOKEN=vca_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrSt",
         ],
         "negatives": [
             "vca_short",
@@ -352,29 +356,10 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
-    "vercel_app_access_token": {
-        "positives": [
-            "VERCEL_APP_TOKEN=vcau_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
-        ],
-        "negatives": [
-            "vcau_short",
-        ],
-        "min_confidence": 0.90,
-    },
-
-    "vercel_app_refresh_token": {
-        "positives": [
-            "VERCEL_APP_REFRESH=vcar_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
-        ],
-        "negatives": [
-            "vcar_short",
-        ],
-        "min_confidence": 0.90,
-    },
-
     "vercel_integration_token": {
         "positives": [
-            "VERCEL_INTEGRATION=vci_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp",
+            # 56-char body, includes _ and - per URL-safe base64 charset
+            "VERCEL_INTEGRATION=vci_Ab_Cd-EfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQr",
         ],
         "negatives": [
             "vci_short",
@@ -384,16 +369,20 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "vercel_personal_access_token": {
         "positives": [
-            # 24-char body per Vercel 2024 format (regextokens.com + GitGuardian cross-ref)
-            "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWx",
+            # 56-char body per Betterleaks empirical observation (verified via
+            # multi-source triangulation 2026-05-21). Mix of alphanumeric + _ + -.
+            "VERCEL_PAT=vcp_Ab_Cd-EfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQr",
         ],
         "negatives": [
             "vcp_short",
-            # 60-char body must NOT match — real PATs are exactly 24 chars
-            "vcp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvWx",
+            # 24-char legacy length must NOT match the new prefixed pattern
+            "vcp_AbCdEfGhIjKlMnOpQrStUv",
         ],
         "min_confidence": 0.90,
     },
+
+    # vercel_ai_gateway_key (vck_) — harness case already exists earlier in this file
+    # (the pattern is registered from patterns/ai.py, not patterns/cloud.py).
 
     "netlify_token": {
         "positives": [

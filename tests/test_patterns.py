@@ -622,8 +622,11 @@ def test_deepseek_api_key():
 # ═══════════════════════════════════════════════
 
 def test_vercel_access_token():
-    """Vercel access tokens with vca_ prefix should be detected."""
-    text = "VERCEL_TOKEN=vca_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    """Vercel OAuth app access tokens with vca_ prefix should be detected (56-char body)."""
+    # Body = 56 alphanumeric chars per Vercel's verbatim docs example
+    body = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123"
+    assert len(body) == 56
+    text = f"VERCEL_TOKEN=vca_{body}"
     findings = scan(text)
     vc_findings = [f for f in findings if f.type == "vercel_access_token"]
     assert len(vc_findings) == 1
@@ -631,37 +634,33 @@ def test_vercel_access_token():
 
 
 def test_vercel_refresh_token():
-    """Vercel refresh tokens with vcr_ prefix should be detected."""
-    text = "VERCEL_REFRESH=vcr_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    """Vercel OAuth app refresh tokens with vcr_ prefix should be detected (56-char body)."""
+    body = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123"
+    assert len(body) == 56
+    text = f"VERCEL_REFRESH=vcr_{body}"
     findings = scan(text)
     vc_findings = [f for f in findings if f.type == "vercel_refresh_token"]
     assert len(vc_findings) == 1
 
 
 # ═══════════════════════════════════════════════
-# BATCH 4: VERCEL VARIANT EXPANSIONS
+# BATCH 4: VERCEL — vendor-aligned 5-prefix taxonomy (2026-05-21)
 # ═══════════════════════════════════════════════
+# Per Vercel's 2026-02-09 changelog (https://vercel.com/changelog/new-token-formats-and-secret-scanning),
+# the prefixed token types are: vcp_, vci_, vca_, vcr_, vck_. Body length 56 +
+# charset [A-Za-z0-9_-] per Betterleaks empirical observation (verified via
+# multi-source triangulation: Grok, Gemini, Claude/Betterleaks source read).
+#
+# Test bodies below are exactly 56 chars of mixed alphanumeric + URL-safe chars.
 
-def test_vercel_app_access_token():
-    """Vercel OAuth app access tokens with vcau_ prefix should be detected."""
-    text = "VERCEL_APP_TOKEN=vcau_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
-    findings = scan(text)
-    vc_findings = [f for f in findings if f.type == "vercel_app_access_token"]
-    assert len(vc_findings) == 1
-    assert vc_findings[0].confidence >= 0.93
-
-
-def test_vercel_app_refresh_token():
-    """Vercel OAuth app refresh tokens with vcar_ prefix should be detected."""
-    text = "VERCEL_APP_REFRESH=vcar_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
-    findings = scan(text)
-    vc_findings = [f for f in findings if f.type == "vercel_app_refresh_token"]
-    assert len(vc_findings) == 1
+# Helper: a 56-char alphanumeric-with-underscore body used across the Vercel tests.
+_VERCEL_BODY_56 = "AbCdEf-GhIj_KlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQr"
+assert len(_VERCEL_BODY_56) == 56, "Vercel test body must be exactly 56 chars"
 
 
 def test_vercel_integration_token():
     """Vercel integration tokens with vci_ prefix should be detected."""
-    text = "VERCEL_INTEGRATION=vci_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+    text = f"VERCEL_INTEGRATION=vci_{_VERCEL_BODY_56}"
     findings = scan(text)
     vc_findings = [f for f in findings if f.type == "vercel_integration_token"]
     assert len(vc_findings) == 1
@@ -670,44 +669,50 @@ def test_vercel_integration_token():
 def test_vercel_personal_access_token():
     """Vercel personal access tokens with vcp_ prefix should be detected as critical.
 
-    Body is 24 alphanumeric chars per Vercel's 2024 token format announcement
-    (cross-referenced at github.com/odomojuli/regextokens, citing Vercel +
-    GitGuardian).
+    Body is 56 chars [A-Za-z0-9_-] per Vercel's 2026-02-09 changelog +
+    Betterleaks empirical observation. Earlier {24} reading was the legacy
+    unprefixed format.
     """
-    text = "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWx"  # 24-char body after vcp_
+    text = f"VERCEL_PAT=vcp_{_VERCEL_BODY_56}"
     findings = scan(text)
     vc_findings = [f for f in findings if f.type == "vercel_personal_access_token"]
     assert len(vc_findings) == 1
     assert vc_findings[0].severity == "critical"
 
 
-def test_vercel_personal_access_token_rejects_oversized_body():
-    """A 60-char body must NOT match vcp_ — real PATs are exactly 24 chars."""
-    text = "VERCEL_PAT=vcp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+def test_vercel_personal_access_token_rejects_off_length_body():
+    """A 24-char or 60-char body must NOT match vcp_ — current format is exactly 56."""
+    # 24-char body (legacy length) — should NOT match the new prefixed pattern
+    text_short = "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWx"
+    # 60-char body — should NOT match either (trailing word-boundary check fails)
+    text_long = "VERCEL_PAT=vcp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUv"
+    for text in (text_short, text_long):
+        findings = scan(text)
+        vc = [f for f in findings if f.type == "vercel_personal_access_token"]
+        assert len(vc) == 0, f"Off-length body wrongly matched vcp_: {text!r}"
+
+
+def test_vercel_ai_gateway_key():
+    """Vercel AI Gateway API keys with vck_ prefix should be detected."""
+    text = f"AI_GATEWAY_KEY=vck_{_VERCEL_BODY_56}"
     findings = scan(text)
-    # The trailing word-boundary (?![A-Za-z0-9]) means a 60-char body can't
-    # be truncated to 24 — it either matches at exactly 24 with no trailing
-    # alphanum, or it doesn't match at all.
-    vc_findings = [f for f in findings if f.type == "vercel_personal_access_token"]
-    assert len(vc_findings) == 0
+    vc_findings = [f for f in findings if f.type == "vercel_ai_gateway_key"]
+    assert len(vc_findings) == 1
 
 
-def test_vercel_app_access_does_not_collide_with_oauth_access():
-    """vcau_-prefixed tokens must NOT also match vercel_access_token (vca_)."""
-    text = "VERCEL_APP_TOKEN=vcau_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
+def test_vercel_charset_accepts_underscore_and_hyphen_in_body():
+    """Real Vercel tokens use [A-Za-z0-9_-] (URL-safe base64), not just alphanumeric.
+
+    Confirms the 2026-05-21 charset widening — earlier patterns used
+    [A-Za-z0-9] only and would have missed real tokens containing _ or -.
+    """
+    # Body with both _ and -, exactly 56 chars
+    body = "Ab_Cd-EfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQr"
+    assert len(body) == 56
+    text = f"VERCEL_TOKEN=vca_{body}"
     findings = scan(text)
-    types = [f.type for f in findings]
-    assert "vercel_app_access_token" in types
-    assert "vercel_access_token" not in types
-
-
-def test_vercel_app_refresh_does_not_collide_with_oauth_refresh():
-    """vcar_-prefixed tokens must NOT also match vercel_refresh_token (vcr_)."""
-    text = "VERCEL_APP_REFRESH=vcar_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01"
-    findings = scan(text)
-    types = [f.type for f in findings]
-    assert "vercel_app_refresh_token" in types
-    assert "vercel_refresh_token" not in types
+    vc = [f for f in findings if f.type == "vercel_access_token"]
+    assert len(vc) == 1, "vca_ pattern must accept _ and - in body chars"
 
 
 # ═══════════════════════════════════════════════
