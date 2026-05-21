@@ -158,6 +158,173 @@ def test_gitlab_pat():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 PART 2.1 — DevOps / CI-CD / Observability (2026-05-21)
+# All fixtures use clearly-synthetic patterns per the push-protection lesson.
+# ═══════════════════════════════════════════════
+
+def test_databricks_api_token():
+    """Databricks PATs with dapi prefix (32 hex + optional -N)."""
+    body = "abcdef0123456789abcdef0123456789"  # 32 hex chars
+    assert len(body) == 32
+    text = f"DATABRICKS_TOKEN=dapi{body}-2"
+    findings = scan(text)
+    db = [f for f in findings if f.type == "databricks_api_token"]
+    assert len(db) == 1
+    assert db[0].severity == "critical"
+
+
+def test_dynatrace_api_token():
+    """Dynatrace tokens with dt0c01. prefix (24.64 structure)."""
+    body_24 = "abcdef0123456789abcdef01"  # 24 chars
+    body_64 = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"  # 64 chars
+    assert len(body_24) == 24 and len(body_64) == 64
+    text = f"DT_API_TOKEN=dt0c01.{body_24}.{body_64}"
+    findings = scan(text)
+    dt = [f for f in findings if f.type == "dynatrace_api_token"]
+    assert len(dt) == 1
+
+
+def test_launchdarkly_access_token():
+    """LaunchDarkly tokens (40 chars, context-gated)."""
+    body = "abcdEFGH01234567890.AbCdEf-_ghIjKlMnOpQr"  # 40 chars w/ allowed extended
+    assert len(body) == 40
+    text = f"LAUNCHDARKLY_TOKEN={body}"
+    findings = scan(text)
+    ld = [f for f in findings if f.type == "launchdarkly_access_token"]
+    assert len(ld) == 1
+
+
+def test_harness_api_key():
+    """Harness PAT/SAT: pat.<22>.<24hex>.<20>."""
+    text = "HARNESS_API_KEY=pat.AbCdEfGhIjKlMnOpQrStUv.0123abcd4567ef890123abcd.ZyXwVuTsRqPoNmLkJiHg"
+    findings = scan(text)
+    hr = [f for f in findings if f.type == "harness_api_key"]
+    assert len(hr) == 1
+    assert hr[0].severity == "critical"
+
+
+def test_octopus_deploy_api_key():
+    """Octopus Deploy API keys with API- prefix (26 upper alphanumeric)."""
+    text = "OCTOPUS_API_KEY=API-ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # 26 chars
+    findings = scan(text)
+    oc = [f for f in findings if f.type == "octopus_deploy_api_key"]
+    assert len(oc) == 1
+
+
+def test_fastly_api_token():
+    """Fastly tokens (32 chars, context-gated)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWx-_.0123a"  # 32 chars
+    assert len(body) == 32
+    text = f"FASTLY_TOKEN={body}"
+    findings = scan(text)
+    fa = [f for f in findings if f.type == "fastly_api_token"]
+    assert len(fa) == 1
+
+
+def test_gitea_access_token():
+    """Gitea tokens (40 hex, context-gated near gitea keyword)."""
+    text = "GITEA_TOKEN=abcdef0123456789abcdef0123456789abcdef01"  # 40 hex
+    findings = scan(text)
+    gt = [f for f in findings if f.type == "gitea_access_token"]
+    assert len(gt) == 1
+
+
+def test_travisci_access_token():
+    """Travis CI tokens (22 alphanumeric, context-gated)."""
+    text = "TRAVIS_TOKEN=AbCdEfGhIjKlMnOpQrStUv"  # 22 chars
+    findings = scan(text)
+    tr = [f for f in findings if f.type == "travisci_access_token"]
+    assert len(tr) == 1
+
+
+def test_prefect_api_token():
+    """Prefect tokens with pnu_ prefix (36 alphanumeric)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj"  # 36 chars
+    assert len(body) == 36
+    text = f"PREFECT_API_TOKEN=pnu_{body}"
+    findings = scan(text)
+    pr = [f for f in findings if f.type == "prefect_api_token"]
+    assert len(pr) == 1
+
+
+def test_infracost_api_token():
+    """Infracost tokens with ico- prefix (32 alphanumeric)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEf"  # 32 chars
+    assert len(body) == 32
+    text = f"INFRACOST_API_KEY=ico-{body}"
+    findings = scan(text)
+    ic = [f for f in findings if f.type == "infracost_api_token"]
+    assert len(ic) == 1
+
+
+def test_sumologic_access_id():
+    """Sumo Logic access ID (su prefix + 12 chars, context-gated)."""
+    text = "SUMO_ACCESS_ID=suAbCdEfGhIjKl"  # su + 12 chars
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "sumologic_access_id"]
+    assert len(sl) == 1
+
+
+def test_sumologic_access_token():
+    """Sumo Logic access token (64 alphanumeric, context-gated)."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKl"  # 64
+    assert len(body) == 64
+    text = f"SUMO_ACCESS_KEY={body}"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "sumologic_access_token"]
+    assert len(sl) == 1
+
+
+# ═══════════════════════════════════════════════
+# BATCH 4 PART 2.2 — Security tooling (2026-05-21)
+# ═══════════════════════════════════════════════
+
+def test_snyk_api_token():
+    """Snyk API tokens (UUID format, context-gated)."""
+    text = "SNYK_TOKEN=12345678-abcd-abcd-abcd-1234567890ab"
+    findings = scan(text)
+    sn = [f for f in findings if f.type == "snyk_api_token"]
+    assert len(sn) == 1
+
+
+def test_sonar_api_token_squ():
+    """Sonar user tokens with squ_ prefix."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"  # 40 chars
+    assert len(body) == 40
+    text = f"SONAR_TOKEN=squ_{body}"
+    findings = scan(text)
+    so = [f for f in findings if f.type == "sonar_api_token"]
+    assert len(so) == 1
+
+
+def test_sonar_api_token_sqp():
+    """Sonar project tokens with sqp_ prefix."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+    text = f"SONAR_TOKEN=sqp_{body}"
+    findings = scan(text)
+    so = [f for f in findings if f.type == "sonar_api_token"]
+    assert len(so) == 1
+
+
+def test_sourcegraph_access_token_long():
+    """Sourcegraph tokens: sgp_ + 16-hex + 40-hex variant."""
+    text = "SOURCEGRAPH_TOKEN=sgp_abcdef0123456789abcdef0123456789abcdef0123456789abcdef01"
+    findings = scan(text)
+    sg = [f for f in findings if f.type == "sourcegraph_access_token"]
+    assert len(sg) == 1
+
+
+def test_sourcegraph_access_token_local():
+    """Sourcegraph tokens: sgp_ + 'local' + 40-hex variant."""
+    body = "abcdef0123456789abcdef0123456789abcdef01"  # 40 hex
+    assert len(body) == 40
+    text = f"SOURCEGRAPH_TOKEN=sgp_local{body}"
+    findings = scan(text)
+    sg = [f for f in findings if f.type == "sourcegraph_access_token"]
+    assert len(sg) == 1
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 Parts 1.7 + 1.8 + 1.10 — small SaaS additions (2026-05-21)
 # Part 1.9 Sentry was a no-op: spec's sentry_access_token already covered
 # by existing sentry_org_token (same sntrys_ prefix, different name).

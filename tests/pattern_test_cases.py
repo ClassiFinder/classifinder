@@ -451,6 +451,130 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.80,
     },
 
+    # Batch 4 Parts 2.1 + 2.2 — DevOps, observability, security tooling (2026-05-21)
+    # All fixtures use clearly-synthetic patterns to avoid triggering external scanners.
+
+    "databricks_api_token": {
+        "positives": [
+            "DATABRICKS_TOKEN=dapiabcdef0123456789abcdef0123456789-2",
+        ],
+        "negatives": ["dapi-short"],
+        "min_confidence": 0.90,
+    },
+
+    "dynatrace_api_token": {
+        "positives": [
+            # dt0c01.<24>.<64> per BL shape; both bodies are clearly-synthetic
+            "DT_API_TOKEN=dt0c01.abcdef0123456789abcdef01.abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        ],
+        "negatives": ["dt0c01.short"],
+        "min_confidence": 0.90,
+    },
+
+    "launchdarkly_access_token": {
+        "positives": [
+            "LAUNCHDARKLY_TOKEN=abcdEFGH01234567890.AbCdEf-_ghIjKlMnOpQr",
+        ],
+        "negatives": ["random=AbCdEf-_ghIjKlMnOpQrStUvWxYz0123456789aBcD"],
+        "min_confidence": 0.75,
+    },
+
+    "harness_api_key": {
+        "positives": [
+            "HARNESS_API_KEY=pat.AbCdEfGhIjKlMnOpQrStUv.0123abcd4567ef890123abcd.ZyXwVuTsRqPoNmLkJiHg",
+        ],
+        "negatives": ["pat.short"],
+        "min_confidence": 0.90,
+    },
+
+    "octopus_deploy_api_key": {
+        "positives": [
+            "OCTOPUS_API_KEY=API-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        ],
+        "negatives": ["API-short"],
+        "min_confidence": 0.85,
+    },
+
+    "fastly_api_token": {
+        "positives": [
+            "FASTLY_TOKEN=AbCdEfGhIjKlMnOpQrStUvWx-_.0123a",
+        ],
+        "negatives": ["random=AbCdEfGhIjKlMnOpQrStUvWx-_.0123a"],
+        "min_confidence": 0.75,
+    },
+
+    "gitea_access_token": {
+        "positives": [
+            "GITEA_TOKEN=abcdef0123456789abcdef0123456789abcdef01",
+        ],
+        "negatives": ["random=abcdef0123456789abcdef0123456789abcdef01"],
+        "min_confidence": 0.75,
+    },
+
+    "travisci_access_token": {
+        "positives": [
+            "TRAVIS_TOKEN=AbCdEfGhIjKlMnOpQrStUv",
+        ],
+        "negatives": ["random=AbCdEfGhIjKlMnOpQrStUv"],
+        "min_confidence": 0.70,
+    },
+
+    "prefect_api_token": {
+        "positives": [
+            "PREFECT_API_TOKEN=pnu_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIj",
+        ],
+        "negatives": ["pnu_short"],
+        "min_confidence": 0.90,
+    },
+
+    "infracost_api_token": {
+        "positives": [
+            "INFRACOST_API_KEY=ico-AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEf",
+        ],
+        "negatives": ["ico-short"],
+        "min_confidence": 0.85,
+    },
+
+    "sumologic_access_id": {
+        "positives": [
+            "SUMO_ACCESS_ID=suAbCdEfGhIjKl",
+        ],
+        "negatives": ["su-short"],
+        "min_confidence": 0.70,
+    },
+
+    "sumologic_access_token": {
+        "positives": [
+            "SUMO_ACCESS_KEY=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKl",
+        ],
+        "negatives": ["random=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKl"],
+        "min_confidence": 0.80,
+    },
+
+    "snyk_api_token": {
+        "positives": [
+            "SNYK_TOKEN=12345678-abcd-abcd-abcd-1234567890ab",
+        ],
+        "negatives": ["random_uuid=12345678-abcd-abcd-abcd-1234567890ab"],
+        "min_confidence": 0.80,
+    },
+
+    "sonar_api_token": {
+        "positives": [
+            "SONAR_TOKEN=squ_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd",
+        ],
+        "negatives": ["squ_short"],
+        "min_confidence": 0.90,
+    },
+
+    "sourcegraph_access_token": {
+        "positives": [
+            "SOURCEGRAPH_TOKEN=sgp_abcdef0123456789abcdef0123456789abcdef0123456789abcdef01",
+        ],
+        "negatives": ["sgp_short"],
+        "min_confidence": 0.90,
+    },
+
     # Batch 4 Parts 1.7 + 1.8 + 1.10 — Mailgun/HuggingFace/Shopify (2026-05-21)
 
     "mailgun_pub_key": {
