@@ -451,6 +451,48 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.80,
     },
 
+    # Batch 4 Parts 1.7 + 1.8 + 1.10 — Mailgun/HuggingFace/Shopify (2026-05-21)
+
+    "mailgun_pub_key": {
+        "positives": [
+            "MAILGUN_PUB_KEY=mailgun=pubkey-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        ],
+        "negatives": [
+            "pubkey-short",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    "mailgun_signing_key": {
+        "positives": [
+            "mailgun signing_key=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6-a1b2c3d4-a1b2c3d4",
+        ],
+        "negatives": [
+            "random=a1b2c3d4-a1b2c3d4",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "huggingface_organization_api_token": {
+        "positives": [
+            "HUGGINGFACE_ORG_TOKEN=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",
+        ],
+        "negatives": [
+            "api_org_short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "shopify_shared_secret": {
+        "positives": [
+            "SHOPIFY_SHARED_SECRET=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",
+        ],
+        "negatives": [
+            "shpss_short",
+        ],
+        "min_confidence": 0.90,
+    },
+
     "cloudflare_origin_ca_key": {
         "positives": [
             "CLOUDFLARE_ORIGIN_CA_KEY=v1.0-aaa334dc886f30631ba0a610-0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d98ef66290d7e50aac7c27b0d",

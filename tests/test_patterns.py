@@ -158,6 +158,44 @@ def test_gitlab_pat():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 Parts 1.7 + 1.8 + 1.10 — small SaaS additions (2026-05-21)
+# Part 1.9 Sentry was a no-op: spec's sentry_access_token already covered
+# by existing sentry_org_token (same sntrys_ prefix, different name).
+# ═══════════════════════════════════════════════
+
+def test_mailgun_pub_key():
+    """Mailgun public keys with pubkey- prefix (32 hex)."""
+    text = "MAILGUN_PUB_KEY=mailgun=pubkey-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    findings = scan(text)
+    mg = [f for f in findings if f.type == "mailgun_pub_key"]
+    assert len(mg) == 1
+
+
+def test_mailgun_signing_key():
+    """Mailgun signing keys (32-8-8 hyphenated hex with mailgun context)."""
+    text = "mailgun signing_key=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6-a1b2c3d4-a1b2c3d4"
+    findings = scan(text)
+    mg = [f for f in findings if f.type == "mailgun_signing_key"]
+    assert len(mg) == 1
+
+
+def test_huggingface_organization_api_token():
+    """HuggingFace organization tokens with api_org_ prefix (34 letters)."""
+    text = "HUGGINGFACE_ORG_TOKEN=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"
+    findings = scan(text)
+    hf = [f for f in findings if f.type == "huggingface_organization_api_token"]
+    assert len(hf) == 1
+
+
+def test_shopify_shared_secret():
+    """Shopify shared secrets with shpss_ prefix (32 hex)."""
+    text = "SHOPIFY_SHARED_SECRET=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"
+    findings = scan(text)
+    sh = [f for f in findings if f.type == "shopify_shared_secret"]
+    assert len(sh) == 1
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 1.6 — Cloudflare expansion (2026-05-21)
 # ═══════════════════════════════════════════════
 
