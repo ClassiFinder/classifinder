@@ -176,6 +176,109 @@ def test_slack_webhook():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 PART 1.2 — Slack variant expansions (2026-05-21)
+# ═══════════════════════════════════════════════
+# Vendor docs (https://docs.slack.dev/authentication/tokens) confirm all
+# prefixes. Body shapes derived from Betterleaks MIT slack.go (verbatim test
+# tokens included). Cross-corroborated via Gitleaks, Google osv-scalibr,
+# Mastra, Novu, fluffypony/nsh (5 independent sources for the exotic
+# xoxe.xoxp- compound prefix).
+
+def test_slack_app_token():
+    """Slack app-level tokens with xapp- prefix should be detected."""
+    text = (
+        "SLACK_APP_TOKEN="
+        "xapp-1-A052FGTS2DL-5171572773297-"
+        "610b6a11f4b7eb819e87b767d80e6575a3634791acb9a9ead051da879eb5b55e"
+    )
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_app_token"]
+    assert len(sl) == 1
+
+
+def test_slack_config_access_token_xoxp_variant():
+    """xoxe.xoxp- compound prefix Slack configuration access tokens."""
+    body = "Mi0yLTM0MTQwNDE0MDE3Ni0zNjU5NDY0Njg4MTctNTE4MjA3NTQ5NjA4MC01NDEyOTYyODY5NzUxLThhMTBjZmI1ZWIzMGIwNTg0ZDdmMDI5Y2UxNzVlZWVhYzU2ZWQyZTZiODNjNDZiMGUxMzRlNmNjNDEwYmQxMjQ"
+    assert 163 <= len(body) <= 166, f"Test fixture body must be 163-166 chars, got {len(body)}"
+    text = f"SLACK_CONFIG_TOKEN=xoxe.xoxp-1-{body}"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_config_access_token"]
+    assert len(sl) == 1
+
+
+def test_slack_config_access_token_xoxb_variant():
+    """xoxe.xoxb- variant of the compound config-access token prefix."""
+    body = "Mi0yLTM0MTQwNDE0MDE3Ni0zNjU5NDY0Njg4MTctNTE4MjA3NTQ5NjA4MC01NDEyOTYyODY5NzUxLThhMTBjZmI1ZWIzMGIwNTg0ZDdmMDI5Y2UxNzVlZWVhYzU2ZWQyZTZiODNjNDZiMGUxMzRlNmNjNDEwYmQxMjQ"
+    text = f"SLACK_CONFIG_TOKEN=xoxe.xoxb-1-{body}"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_config_access_token"]
+    assert len(sl) == 1
+
+
+def test_slack_config_refresh_token():
+    """Slack configuration refresh tokens with xoxe- prefix (146-char body)."""
+    body = "My0xLTMxNzcwMjQ0MTcxMy01MTU4MTUyNjkxNzE0LTUxODE4NDI0MDY3MzYtMjA5MGFkOTFlZThkZWE2OGFlZDYwYWJjODNhYzAxYjA5ZjVmODBhYjgzN2QyNDdjOTNlOGY5NTg2YWM1OGM4Mg"
+    assert len(body) == 146, f"Test fixture body must be 146 chars, got {len(body)}"
+    text = f"SLACK_REFRESH_TOKEN=xoxe-1-{body}"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_config_refresh_token"]
+    assert len(sl) == 1
+
+
+def test_slack_legacy_bot_token():
+    """Legacy Slack bot tokens (shorter xoxb- shape with single number group)."""
+    text = "SLACK_BOT=xoxb-263594206564-FGqddMF8t08v8N7Oq4i57vs1"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_legacy_bot_token"]
+    assert len(sl) == 1
+
+
+def test_slack_legacy_bot_does_not_collide_with_current_bot():
+    """Legacy xoxb- (1 number group) must NOT also match current slack_bot_token (2 groups)."""
+    text = "SLACK_BOT=xoxb-263594206564-FGqddMF8t08v8N7Oq4i57vs1"
+    findings = scan(text)
+    types = [f.type for f in findings]
+    assert "slack_legacy_bot_token" in types
+    # Current slack_bot_token requires TWO number groups; legacy has only one
+    assert "slack_bot_token" not in types
+
+
+def test_slack_legacy_workspace_token_xoxa():
+    """Legacy Slack workspace tokens with xoxa- prefix."""
+    text = "SLACK_WORKSPACE=xoxa-2-511111111-31111111111-3111111111113-e039d02840a0b9379c"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_legacy_workspace_token"]
+    assert len(sl) == 1
+
+
+def test_slack_legacy_workspace_token_xoxr():
+    """Legacy Slack workspace tokens with xoxr- prefix (sibling variant)."""
+    text = "SLACK_WORKSPACE_R=xoxr-2-511111111-31111111111-3111111111113-e039d02840a0b9379c"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_legacy_workspace_token"]
+    assert len(sl) == 1
+
+
+def test_slack_session_cookie():
+    """Slack desktop/browser session cookies with xoxd- prefix."""
+    # xoxd- + base64-like body, 100+ chars per Betterleaks observation
+    body = "abc123ABCDEF456ghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/+abc123ABCDEF456ghijklmnopqrst=="
+    assert len(body) >= 100
+    text = f"SLACK_SESSION_COOKIE=xoxd-{body}"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_session_cookie"]
+    assert len(sl) == 1
+
+
+def test_slack_session_token():
+    """Slack session tokens with xoxc- prefix (paired with session cookie)."""
+    text = "SLACK_SESSION_TOKEN=xoxc-123456789012-123456789012-123456789012-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_session_token"]
+    assert len(sl) == 1
+
+
+# ═══════════════════════════════════════════════
 # SENDGRID
 # ═══════════════════════════════════════════════
 

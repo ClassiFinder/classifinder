@@ -548,6 +548,85 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    # Batch 4 Part 1.2 — Slack variant expansions (2026-05-21)
+    # All test tokens copied from Betterleaks slack.go test data (synthetic,
+    # not real). Body shapes self-validated against Betterleaks' own regexes.
+
+    "slack_app_token": {
+        "positives": [
+            "SLACK_APP_TOKEN=xapp-1-A052FGTS2DL-5171572773297-610b6a11f4b7eb819e87b767d80e6575a3634791acb9a9ead051da879eb5b55e",
+        ],
+        "negatives": [
+            "xapp-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "slack_config_access_token": {
+        "positives": [
+            "SLACK_CONFIG_TOKEN=xoxe.xoxp-1-Mi0yLTM0MTQwNDE0MDE3Ni0zNjU5NDY0Njg4MTctNTE4MjA3NTQ5NjA4MC01NDEyOTYyODY5NzUxLThhMTBjZmI1ZWIzMGIwNTg0ZDdmMDI5Y2UxNzVlZWVhYzU2ZWQyZTZiODNjNDZiMGUxMzRlNmNjNDEwYmQxMjQ",
+        ],
+        "negatives": [
+            "xoxe.xoxp-short",
+            # xoxe-only (no compound) must not match config-access pattern
+            "xoxe-1-Mi0yLTM0MTQwNDE0MDE3Ni0zNjU5NDY0Njg4MTc",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "slack_config_refresh_token": {
+        "positives": [
+            "SLACK_REFRESH=xoxe-1-My0xLTMxNzcwMjQ0MTcxMy01MTU4MTUyNjkxNzE0LTUxODE4NDI0MDY3MzYtMjA5MGFkOTFlZThkZWE2OGFlZDYwYWJjODNhYzAxYjA5ZjVmODBhYjgzN2QyNDdjOTNlOGY5NTg2YWM1OGM4Mg",
+        ],
+        "negatives": [
+            "xoxe-1-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "slack_legacy_bot_token": {
+        "positives": [
+            "SLACK_BOT=xoxb-263594206564-FGqddMF8t08v8N7Oq4i57vs1",
+        ],
+        "negatives": [
+            "xoxb-short",
+            # Current xoxb- (two number groups) must not match legacy pattern
+            "xoxb-1234567890-1234567890123-ABCDEFGHIJKLMNOPQRSTUVWx",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    "slack_legacy_workspace_token": {
+        "positives": [
+            "SLACK_WORKSPACE=xoxa-2-511111111-31111111111-3111111111113-e039d02840a0b9379c",
+            "SLACK_WORKSPACE_R=xoxr-2-511111111-31111111111-3111111111113-e039d02840a0b9379c",
+        ],
+        "negatives": [
+            "xoxa-short",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    "slack_session_cookie": {
+        "positives": [
+            "SLACK_COOKIE=xoxd-abc123ABCDEF456ghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/+abc123ABCDEF456ghijklmnopqrst==",
+        ],
+        "negatives": [
+            "xoxd-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "slack_session_token": {
+        "positives": [
+            "SLACK_SESSION=xoxc-123456789012-123456789012-123456789012-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        ],
+        "negatives": [
+            "xoxc-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
     "sendgrid_api_key": {
         "positives": [
             "SG.ABCDEFGHIJKLMNOPQRSTuv.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
