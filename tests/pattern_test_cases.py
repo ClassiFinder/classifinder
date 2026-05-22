@@ -187,7 +187,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "aws_bedrock_short_lived_key": {
         "positives": [
-            "bedrock_key=bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29tABCDEFGHIJKLMNOPxYz1234567890",
+            "bedrock_key=bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29tAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         ],
         "negatives": [
             "bedrock-api-key-short",
@@ -198,22 +198,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "vercel_ai_gateway_key": {
         "positives": [
-            "AI_GATEWAY_API_KEY=vck_xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW4yZ7cA0fB",
+            "AI_GATEWAY_API_KEY=vck_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrSt",
         ],
         "negatives": [
             "vck_short",
-            "vca_xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW4yZ7cA0fB",
+            "vca_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrSt",
         ],
         "min_confidence": 0.50,
     },
 
     "weights_and_biases_v1_key": {
         "positives": [
-            "WANDB_API_KEY=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",
+            "WANDB_API_KEY=wandb_v1_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrSt3dE6gH9jKLmN5pQ8sT1vW",
         ],
         "negatives": [
             "wandb_v1_short",
-            "wandb_xY9kL2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW4yZ7cA0fB3dE6gH9jKLmN5pQ8sT1vW",
+            "wandb_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrSt3dE6gH9jKLmN5pQ8sT1vW",
         ],
         "min_confidence": 0.50,
     },
@@ -222,7 +222,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "aws_access_key": {
         "positives": [
-            "AWS_ACCESS_KEY_ID=AKIAJGKJHSKLDJFH3284",
+            "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP",
             "ASIAJEXAMPLEXEG2JICEA",
         ],
         "negatives": [
@@ -234,17 +234,17 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "aws_secret_key": {
         "positives": [
-            "AWS_SECRET_ACCESS_KEY=aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9j",
+            "AWS_SECRET_ACCESS_KEY=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMn",
         ],
         "negatives": [
-            "random_value=aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cA0fB3dE6gH9j",
+            "random_value=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMn",
         ],
         "min_confidence": 0.50,
     },
 
     "gcp_api_key": {
         "positives": [
-            "GOOGLE_API_KEY=AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz1234567",
+            "GOOGLE_API_KEY=AIzaSyAAAABBBBCCCCDDDDEEEEFFFFGGGGHHHII",
         ],
         "negatives": [
             "AIza_too_short",
@@ -1010,7 +1010,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "slack_app_token": {
         "positives": [
-            "SLACK_APP_TOKEN=xapp-1-A052FGTS2DL-5171572773297-610b6a11f4b7eb819e87b767d80e6575a3634791acb9a9ead051da879eb5b55e",
+            "SLACK_APP_TOKEN=xapp-1-AAAAAAAAAAA-1234567890123-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         ],
         "negatives": [
             "xapp-short",
@@ -1020,7 +1020,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "slack_config_access_token": {
         "positives": [
-            "SLACK_CONFIG_TOKEN=xoxe.xoxp-1-Mi0yLTM0MTQwNDE0MDE3Ni0zNjU5NDY0Njg4MTctNTE4MjA3NTQ5NjA4MC01NDEyOTYyODY5NzUxLThhMTBjZmI1ZWIzMGIwNTg0ZDdmMDI5Y2UxNzVlZWVhYzU2ZWQyZTZiODNjNDZiMGUxMzRlNmNjNDEwYmQxMjQ",
+            "SLACK_CONFIG_TOKEN=xoxe.xoxp-1-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStU",
         ],
         "negatives": [
             "xoxe.xoxp-short",
@@ -1032,7 +1032,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "slack_config_refresh_token": {
         "positives": [
-            "SLACK_REFRESH=xoxe-1-My0xLTMxNzcwMjQ0MTcxMy01MTU4MTUyNjkxNzE0LTUxODE4NDI0MDY3MzYtMjA5MGFkOTFlZThkZWE2OGFlZDYwYWJjODNhYzAxYjA5ZjVmODBhYjgzN2QyNDdjOTNlOGY5NTg2YWM1OGM4Mg",
+            "SLACK_REFRESH=xoxe-1-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789Ab",
         ],
         "negatives": [
             "xoxe-1-short",
@@ -1042,7 +1042,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "slack_legacy_bot_token": {
         "positives": [
-            "SLACK_BOT=xoxb-263594206564-FGqddMF8t08v8N7Oq4i57vs1",
+            "SLACK_BOT=xoxb-1234567890-AbCdEfGhIjKlMnOpQrStUvWx",
         ],
         "negatives": [
             "xoxb-short",
@@ -1054,8 +1054,8 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "slack_legacy_workspace_token": {
         "positives": [
-            "SLACK_WORKSPACE=xoxa-2-511111111-31111111111-3111111111113-e039d02840a0b9379c",
-            "SLACK_WORKSPACE_R=xoxr-2-511111111-31111111111-3111111111113-e039d02840a0b9379c",
+            "SLACK_WORKSPACE=xoxa-2-511111111-31111111111-3111111111113-0123456789abcdef01",
+            "SLACK_WORKSPACE_R=xoxr-2-511111111-31111111111-3111111111113-0123456789abcdef01",
         ],
         "negatives": [
             "xoxa-short",
@@ -1227,7 +1227,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "stripe_live_secret_key": {
         "positives": [
-            "STRIPE_SECRET_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
+            "STRIPE_SECRET_KEY=sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb",
         ],
         "negatives": [
             "sk_live_short",
@@ -1237,7 +1237,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
 
     "stripe_test_secret_key": {
         "positives": [
-            "sk_test_51H3aKLkdsjfhDKJSH38djfhksd",
+            "sk_test_AbCdEfGhIjKlMnOpQrStUvWxYzAb",
         ],
         "negatives": [
             "sk_test_short",

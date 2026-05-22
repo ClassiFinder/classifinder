@@ -31,7 +31,7 @@ def test_aws_access_key_true_positives():
     cases = [
         "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
         "key: AKIAI44QH8DHBEXAMPLE",
-        'export AWS_ACCESS_KEY_ID="AKIAJGKJHSKLDJFH3284"',
+        'export AWS_ACCESS_KEY_ID="AKIAABCDEFGHIJKLMNOP"',
         "ASIAJEXAMPLEXEG2JICEA",  # STS temporary key
     ]
     for text in cases:
@@ -70,7 +70,7 @@ def test_aws_access_key_test_value_flagged():
 
 def test_stripe_live_key_detected():
     """Stripe live secret keys should be detected with high confidence."""
-    text = 'STRIPE_SECRET_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd'
+    text = 'STRIPE_SECRET_KEY=sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb'
     findings = scan(text)
     stripe_findings = [f for f in findings if f.type == "stripe_live_secret_key"]
     assert len(stripe_findings) == 1
@@ -756,7 +756,7 @@ def test_slack_webhook():
 
 def test_slack_user_token_xoxp_hex_body():
     """Regression: existing xoxp- + hex-only body must continue to detect."""
-    text = "SLACK_USER_TOKEN=xoxp-41684372915-1320496754-45609968301-e708ba56e1517a99f6b5fb07349476ef"
+    text = "SLACK_USER_TOKEN=xoxp-1234567890-1234567890-1234567890-abcdef0123456789abcdef0123456789"
     findings = scan(text)
     sl = [f for f in findings if f.type == "slack_user_token"]
     assert len(sl) == 1
@@ -769,7 +769,7 @@ def test_slack_user_token_xoxe_variant():
     Slack issues user tokens with BOTH xoxp- and xoxe- prefixes. The original
     pattern only matched xoxp-.
     """
-    text = "SLACK_USER_TOKEN=xoxe-41684372915-1320496754-45609968301-e708ba56e1517a99f6b5fb07349476ef"
+    text = "SLACK_USER_TOKEN=xoxe-1234567890-1234567890-1234567890-abcdef0123456789abcdef0123456789"
     findings = scan(text)
     sl = [f for f in findings if f.type == "slack_user_token"]
     assert len(sl) == 1
@@ -791,7 +791,7 @@ def test_slack_user_token_uppercase_body():
 def test_slack_user_token_does_not_collide_with_config_refresh():
     """xoxe- user tokens (4 hyphen-separated groups) must NOT also match
     slack_config_refresh_token (xoxe-N-<146 chars>, no further hyphens)."""
-    text = "SLACK_USER_TOKEN=xoxe-41684372915-1320496754-45609968301-e708ba56e1517a99f6b5fb07349476ef"
+    text = "SLACK_USER_TOKEN=xoxe-1234567890-1234567890-1234567890-abcdef0123456789abcdef0123456789"
     findings = scan(text)
     types = [f.type for f in findings]
     assert "slack_user_token" in types
@@ -811,8 +811,8 @@ def test_slack_app_token():
     """Slack app-level tokens with xapp- prefix should be detected."""
     text = (
         "SLACK_APP_TOKEN="
-        "xapp-1-A052FGTS2DL-5171572773297-"
-        "610b6a11f4b7eb819e87b767d80e6575a3634791acb9a9ead051da879eb5b55e"
+        "xapp-1-AAAAAAAAAAA-1234567890123-"
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     )
     findings = scan(text)
     sl = [f for f in findings if f.type == "slack_app_token"]
@@ -821,7 +821,9 @@ def test_slack_app_token():
 
 def test_slack_config_access_token_xoxp_variant():
     """xoxe.xoxp- compound prefix Slack configuration access tokens."""
-    body = "Mi0yLTM0MTQwNDE0MDE3Ni0zNjU5NDY0Njg4MTctNTE4MjA3NTQ5NjA4MC01NDEyOTYyODY5NzUxLThhMTBjZmI1ZWIzMGIwNTg0ZDdmMDI5Y2UxNzVlZWVhYzU2ZWQyZTZiODNjNDZiMGUxMzRlNmNjNDEwYmQxMjQ"
+    # Clearly-synthetic 165-char body (alphabet sequence). Runtime concat keeps
+    # the source literal short — secret scanners only see the 36-char repeat unit.
+    body = ("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" * 5)[:165]
     assert 163 <= len(body) <= 166, f"Test fixture body must be 163-166 chars, got {len(body)}"
     text = f"SLACK_CONFIG_TOKEN=xoxe.xoxp-1-{body}"
     findings = scan(text)
@@ -831,7 +833,7 @@ def test_slack_config_access_token_xoxp_variant():
 
 def test_slack_config_access_token_xoxb_variant():
     """xoxe.xoxb- variant of the compound config-access token prefix."""
-    body = "Mi0yLTM0MTQwNDE0MDE3Ni0zNjU5NDY0Njg4MTctNTE4MjA3NTQ5NjA4MC01NDEyOTYyODY5NzUxLThhMTBjZmI1ZWIzMGIwNTg0ZDdmMDI5Y2UxNzVlZWVhYzU2ZWQyZTZiODNjNDZiMGUxMzRlNmNjNDEwYmQxMjQ"
+    body = ("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" * 5)[:165]
     text = f"SLACK_CONFIG_TOKEN=xoxe.xoxb-1-{body}"
     findings = scan(text)
     sl = [f for f in findings if f.type == "slack_config_access_token"]
@@ -840,7 +842,7 @@ def test_slack_config_access_token_xoxb_variant():
 
 def test_slack_config_refresh_token():
     """Slack configuration refresh tokens with xoxe- prefix (146-char body)."""
-    body = "My0xLTMxNzcwMjQ0MTcxMy01MTU4MTUyNjkxNzE0LTUxODE4NDI0MDY3MzYtMjA5MGFkOTFlZThkZWE2OGFlZDYwYWJjODNhYzAxYjA5ZjVmODBhYjgzN2QyNDdjOTNlOGY5NTg2YWM1OGM4Mg"
+    body = ("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" * 5)[:146]
     assert len(body) == 146, f"Test fixture body must be 146 chars, got {len(body)}"
     text = f"SLACK_REFRESH_TOKEN=xoxe-1-{body}"
     findings = scan(text)
@@ -850,7 +852,7 @@ def test_slack_config_refresh_token():
 
 def test_slack_legacy_bot_token():
     """Legacy Slack bot tokens (shorter xoxb- shape with single number group)."""
-    text = "SLACK_BOT=xoxb-263594206564-FGqddMF8t08v8N7Oq4i57vs1"
+    text = "SLACK_BOT=xoxb-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
     findings = scan(text)
     sl = [f for f in findings if f.type == "slack_legacy_bot_token"]
     assert len(sl) == 1
@@ -858,7 +860,7 @@ def test_slack_legacy_bot_token():
 
 def test_slack_legacy_bot_does_not_collide_with_current_bot():
     """Legacy xoxb- (1 number group) must NOT also match current slack_bot_token (2 groups)."""
-    text = "SLACK_BOT=xoxb-263594206564-FGqddMF8t08v8N7Oq4i57vs1"
+    text = "SLACK_BOT=xoxb-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
     findings = scan(text)
     types = [f.type for f in findings]
     assert "slack_legacy_bot_token" in types
@@ -868,7 +870,7 @@ def test_slack_legacy_bot_does_not_collide_with_current_bot():
 
 def test_slack_legacy_workspace_token_xoxa():
     """Legacy Slack workspace tokens with xoxa- prefix."""
-    text = "SLACK_WORKSPACE=xoxa-2-511111111-31111111111-3111111111113-e039d02840a0b9379c"
+    text = "SLACK_WORKSPACE=xoxa-2-511111111-31111111111-3111111111113-0123456789abcdef01"
     findings = scan(text)
     sl = [f for f in findings if f.type == "slack_legacy_workspace_token"]
     assert len(sl) == 1
@@ -876,7 +878,7 @@ def test_slack_legacy_workspace_token_xoxa():
 
 def test_slack_legacy_workspace_token_xoxr():
     """Legacy Slack workspace tokens with xoxr- prefix (sibling variant)."""
-    text = "SLACK_WORKSPACE_R=xoxr-2-511111111-31111111111-3111111111113-e039d02840a0b9379c"
+    text = "SLACK_WORKSPACE_R=xoxr-2-511111111-31111111111-3111111111113-0123456789abcdef01"
     findings = scan(text)
     sl = [f for f in findings if f.type == "slack_legacy_workspace_token"]
     assert len(sl) == 1
@@ -1306,7 +1308,7 @@ def test_npm_token():
 
 def test_pypi_token():
     """PyPI tokens with pypi-AgEIcHlwaS5vcmc prefix should be detected."""
-    text = "PYPI_TOKEN=pypi-AgEIcHlwaS5vcmcCJGI4ZjE3YjFkLTk1NDMtNGRiMS1hYjFhLThlOTIxMTk3N2YzNgACKlszLCJhMTRiNjcx"
+    text = "PYPI_TOKEN=pypi-AgEIcHlwaS5vcmcAbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOpQrStUvWxYz"
     findings = scan(text)
     pypi_findings = [f for f in findings if f.type == "pypi_token"]
     assert len(pypi_findings) == 1
@@ -1459,7 +1461,7 @@ def test_netlify_token():
 
 def test_sentry_org_token():
     """Sentry org tokens with sntrys_eyJ prefix should be detected."""
-    text = "SENTRY_AUTH_TOKEN=sntrys_eyJpYXQiOiIxNjk5MDAwMDAwIiwiaXNzIjoic2VudHJ5Iiwib3JnIjoic2x1ZyIsInNjb3BlcyI6WyJvcmc6cmVhZCJdfQ_ABCDEFGHIJklmnopqrstu"
+    text = "SENTRY_AUTH_TOKEN=sntrys_eyJhbGciOiJIUzI1NiJ9_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
     findings = scan(text)
     sn_findings = [f for f in findings if f.type == "sentry_org_token"]
     assert len(sn_findings) == 1
@@ -1788,11 +1790,11 @@ def test_bitcoin_wif_without_context_not_matched():
 def test_redaction_label_style():
     from app.engine.redactor import redact
     
-    text = "AWS_ACCESS_KEY_ID=AKIAJGKJHSKLDJFH3284\nSTRIPE_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd"
+    text = "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\nSTRIPE_KEY=sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb"
     findings = scan(text)
     redacted_text, redaction_map = redact(text, findings, style="label")
     
-    assert "AKIAJGKJHSKLDJFH3284" not in redacted_text
+    assert "AKIAABCDEFGHIJKLMNOP" not in redacted_text
     assert "sk_live_" not in redacted_text
     assert "[AWS_ACCESS_KEY_REDACTED]" in redacted_text
     assert "[STRIPE_LIVE_SECRET_KEY_REDACTED]" in redacted_text
@@ -1801,12 +1803,12 @@ def test_redaction_label_style():
 def test_redaction_mask_style():
     from app.engine.redactor import redact
 
-    text = "key=sk_live_51H3aKLkdsjfhDKJSH38djfhksd"
+    text = "key=sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb"
     findings = scan(text)
     redacted_text, _ = redact(text, findings, style="mask")
 
     assert "sk_l" in redacted_text  # first 4 chars preserved
-    assert "djfhksd" not in redacted_text  # rest should be masked
+    assert "GhIjKl" not in redacted_text  # body middle should be masked
 
 
 # ─── Redactor algorithm edge cases (cursor / ordering / boundaries) ────────────
@@ -1987,10 +1989,10 @@ def test_scan_decodes_base64_only_once():
     real_decoder = scanner_module.decode_base64_segments
     mock_decoder = MagicMock(wraps=real_decoder)
 
-    # A real secret encoded once. The decoded text is "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    # A real secret encoded once. The decoded text is "AWS_KEY=AKIAABCDEFGHIJKLMNOP"
     # which by itself contains no further base64 segments, but the recursive call
     # in the buggy version still re-invokes the decoder on this decoded text.
-    secret = "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    secret = "AWS_KEY=AKIAABCDEFGHIJKLMNOP"
     encoded = base64.b64encode(secret.encode()).decode()
     text = f"data={encoded}"
 
@@ -2008,7 +2010,7 @@ def test_scan_still_detects_secrets_inside_single_layer_base64():
     import base64
     from app.engine.scanner import scan
 
-    secret = "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    secret = "AWS_KEY=AKIAABCDEFGHIJKLMNOP"
     encoded = base64.b64encode(secret.encode()).decode()
     text = f"config_data={encoded}"
     findings = scan(text)
@@ -2026,7 +2028,7 @@ def test_scan_does_not_detect_secret_inside_doubly_nested_base64():
     import base64
     from app.engine.scanner import scan
 
-    secret = "AWS_KEY=AKIAJGKJHSKLDJFH3284"
+    secret = "AWS_KEY=AKIAABCDEFGHIJKLMNOP"
     once = base64.b64encode(secret.encode()).decode()
     twice = base64.b64encode(once.encode()).decode()
     text = f"config_data={twice}"
@@ -2042,10 +2044,10 @@ def test_scan_does_not_detect_secret_inside_doubly_nested_base64():
 def test_multiple_secrets_in_one_text():
     """A realistic .env file with multiple secrets."""
     text = """
-AWS_ACCESS_KEY_ID=AKIAJGKJHSKLDJFH3284
+AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP
 AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 DATABASE_URL=postgres://admin:p4ssw0rd@db.internal:5432/prod
-STRIPE_SECRET_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd
+STRIPE_SECRET_KEY=sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb
 GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
 SENDGRID_API_KEY=SG.abcdefghijklmnopqrstuv.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrs
 SLACK_TOKEN=xoxb-1234567890-1234567890123-ABCDEFGHIJKLMNOPQRSTUVWx
@@ -2386,26 +2388,26 @@ CONTEXT_TESTS = [
     # (pattern_id, secret_value, context_templates)
     (
         "aws_access_key",
-        "AKIAJGKJHSKLDJFH3284",
+        "AKIAABCDEFGHIJKLMNOP",
         [
-            '{"aws_access_key_id": "AKIAJGKJHSKLDJFH3284"}',
-            "aws_access_key_id: AKIAJGKJHSKLDJFH3284",
-            "export AWS_ACCESS_KEY_ID=AKIAJGKJHSKLDJFH3284",
-            "AWS_ACCESS_KEY_ID=AKIAJGKJHSKLDJFH3284",
-            '[INFO] Using key AKIAJGKJHSKLDJFH3284 for auth',
-            'aws_key = "AKIAJGKJHSKLDJFH3284"',
+            '{"aws_access_key_id": "AKIAABCDEFGHIJKLMNOP"}',
+            "aws_access_key_id: AKIAABCDEFGHIJKLMNOP",
+            "export AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP",
+            "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP",
+            '[INFO] Using key AKIAABCDEFGHIJKLMNOP for auth',
+            'aws_key = "AKIAABCDEFGHIJKLMNOP"',
         ],
     ),
     (
         "stripe_live_secret_key",
-        "sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
+        "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb",
         [
-            '{"stripe_key": "sk_live_51H3aKLkdsjfhDKJSH38djfhksd"}',
-            "stripe_key: sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
-            "export STRIPE_SECRET_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
-            "STRIPE_SECRET_KEY=sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
-            'curl -H "Authorization: Bearer sk_live_51H3aKLkdsjfhDKJSH38djfhksd"',
-            'key = "sk_live_51H3aKLkdsjfhDKJSH38djfhksd"',
+            '{"stripe_key": "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb"}',
+            "stripe_key: sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb",
+            "export STRIPE_SECRET_KEY=sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb",
+            "STRIPE_SECRET_KEY=sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb",
+            'curl -H "Authorization: Bearer sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb"',
+            'key = "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb"',
         ],
     ),
     (

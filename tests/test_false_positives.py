@@ -79,10 +79,10 @@ def test_real_secrets_pass_through():
     """High-entropy random strings should NOT be caught as false positives."""
     cases = [
         "zB3kE6gH9jK2mN5pQ8sT1vW4yZ7cR0fB3wE6gH9j",
-        "sk_live_51H3aKLkdsjfhDKJSH38djfhksd",
+        "sk_live_AbCdEfGhIjKlMnOpQrStUvWxYzAb",
         "ghp_ZYXWVUTSRQPONMLKJIHGFzyxwvutsrqpo",
         "SG.zywxvutsrqponmlkjihgfe.ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210zyw",
-        "AKIAJGKJHSKLDJFH3284",
+        "AKIAABCDEFGHIJKLMNOP",
         "xoxb-1234567890-1234567890-ZbKdRfGhIjKlMnOpQrStUvWx",
     ]
     for value in cases:
