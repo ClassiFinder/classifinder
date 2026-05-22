@@ -492,6 +492,102 @@ def test_sourcegraph_access_token_local():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 4 Part 2.1 follow-up — Kubernetes Secret YAML (2026-05-22)
+# Multi-line context detector (kind: Secret + data: + base64 value).
+# Deferred from initial Part 2.1 commit because the pattern shape differs
+# from prefix-anchored regex paradigm.
+# ═══════════════════════════════════════════════
+
+
+def test_kubernetes_secret_yaml_minimal():
+    """Basic Kubernetes Secret manifest with one base64 data value."""
+    text = """apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret
+data:
+  password: cGFzc3dvcmRfdmFsdWVfd2l0aF9oaWdoX2VudHJvcHk=
+"""
+    findings = scan(text)
+    ks = [f for f in findings if f.type == "kubernetes_secret_yaml"]
+    assert len(ks) >= 1
+
+
+def test_kubernetes_secret_yaml_quoted_kind():
+    """kind: 'Secret' or kind: \"Secret\" with quoted value still matches."""
+    text = """apiVersion: v1
+kind: "Secret"
+metadata:
+  name: x
+data:
+  apikey: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=
+"""
+    findings = scan(text)
+    ks = [f for f in findings if f.type == "kubernetes_secret_yaml"]
+    assert len(ks) >= 1
+
+
+def test_kubernetes_secret_yaml_does_not_match_configmap():
+    """kind: ConfigMap (not a Secret) must NOT trigger."""
+    text = """apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-config
+data:
+  setting: someBase64LookingButNotSecretValue==
+"""
+    findings = scan(text)
+    ks = [f for f in findings if f.type == "kubernetes_secret_yaml"]
+    assert len(ks) == 0
+
+
+def test_kubernetes_secret_yaml_does_not_match_helm_template():
+    """Helm template placeholders ({{ .Values.X }}) must NOT match — the {} chars
+    fail the base64 charset filter, and the entropy gate filters low-entropy strs."""
+    text = """apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret
+data:
+  password: {{ .Values.Password | b64enc }}
+"""
+    findings = scan(text)
+    ks = [f for f in findings if f.type == "kubernetes_secret_yaml"]
+    assert len(ks) == 0
+
+
+def test_kubernetes_secret_yaml_does_not_match_empty_data():
+    """data: block with no values must NOT trigger (no base64 content to match)."""
+    text = """apiVersion: v1
+kind: Secret
+metadata:
+  name: empty-secret
+data: {}
+"""
+    findings = scan(text)
+    ks = [f for f in findings if f.type == "kubernetes_secret_yaml"]
+    assert len(ks) == 0
+
+
+def test_kubernetes_secret_yaml_low_entropy_demoted():
+    """A 'Secret' manifest with a low-entropy data value (e.g. all same char)
+    must fall below the default 0.5 threshold even if it structurally matches.
+    Guards against FP on doc/example manifests with placeholder values."""
+    text = """apiVersion: v1
+kind: Secret
+metadata:
+  name: low-entropy
+data:
+  username: aaaaaaaaaaaaaaaa
+"""
+    findings = scan(text, min_confidence=0.01)
+    ks = [f for f in findings if f.type == "kubernetes_secret_yaml"]
+    # Pattern fires structurally, but entropy penalty drops below default threshold
+    if ks:
+        assert ks[0].confidence < 0.50
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 Parts 1.7 + 1.8 + 1.10 — small SaaS additions (2026-05-21)
 # Part 1.9 Sentry was a no-op: spec's sentry_access_token already covered
 # by existing sentry_org_token (same sntrys_ prefix, different name).

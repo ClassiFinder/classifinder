@@ -713,6 +713,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    # Batch 4 Part 2.1 follow-up — Kubernetes Secret YAML (2026-05-22)
+
+    "kubernetes_secret_yaml": {
+        "positives": [
+            # Minimal Secret manifest with one base64 value (high entropy required to clear 4.0 threshold)
+            "apiVersion: v1\nkind: Secret\nmetadata:\n  name: x\ndata:\n  apikey: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=",
+        ],
+        "negatives": [
+            # ConfigMap (not a Secret) must not match
+            "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: y\ndata:\n  setting: someBase64Value==",
+            # Helm template — {{ }} chars not in base64 charset
+            "kind: Secret\ndata:\n  password: {{ .Values.Password | b64enc }}",
+        ],
+        "min_confidence": 0.50,
+    },
+
     # Batch 4 Parts 1.7 + 1.8 + 1.10 — Mailgun/HuggingFace/Shopify (2026-05-21)
 
     "mailgun_pub_key": {
