@@ -754,6 +754,50 @@ def test_slack_webhook():
     assert len(wh_findings) == 1
 
 
+def test_slack_user_token_xoxp_hex_body():
+    """Regression: existing xoxp- + hex-only body must continue to detect."""
+    text = "SLACK_USER_TOKEN=xoxp-41684372915-1320496754-45609968301-e708ba56e1517a99f6b5fb07349476ef"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_user_token"]
+    assert len(sl) == 1
+
+
+def test_slack_user_token_xoxe_variant():
+    """xoxe- is the modern rotating user-token variant — must be detected.
+
+    Per docs.slack.dev/authentication/tokens and Betterleaks observation,
+    Slack issues user tokens with BOTH xoxp- and xoxe- prefixes. The original
+    pattern only matched xoxp-.
+    """
+    text = "SLACK_USER_TOKEN=xoxe-41684372915-1320496754-45609968301-e708ba56e1517a99f6b5fb07349476ef"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_user_token"]
+    assert len(sl) == 1
+
+
+def test_slack_user_token_uppercase_body():
+    """Body charset must accept uppercase letters (Betterleaks observation).
+
+    Original regex used [a-f0-9]{32} (hex-only, exactly 32 chars). Real
+    Slack user tokens have variable-length [a-zA-Z0-9-]{28,34} bodies per
+    Betterleaks empirical observation — uppercase letters are valid.
+    """
+    text = "SLACK_USER_TOKEN=xoxp-41684372915-1320496754-45609968301-AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEf"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_user_token"]
+    assert len(sl) == 1
+
+
+def test_slack_user_token_does_not_collide_with_config_refresh():
+    """xoxe- user tokens (4 hyphen-separated groups) must NOT also match
+    slack_config_refresh_token (xoxe-N-<146 chars>, no further hyphens)."""
+    text = "SLACK_USER_TOKEN=xoxe-41684372915-1320496754-45609968301-e708ba56e1517a99f6b5fb07349476ef"
+    findings = scan(text)
+    types = [f.type for f in findings]
+    assert "slack_user_token" in types
+    assert "slack_config_refresh_token" not in types
+
+
 # ═══════════════════════════════════════════════
 # BATCH 4 PART 1.2 — Slack variant expansions (2026-05-21)
 # ═══════════════════════════════════════════════
