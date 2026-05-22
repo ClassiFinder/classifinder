@@ -754,6 +754,82 @@ def test_slack_webhook():
     assert len(wh_findings) == 1
 
 
+# ── Batch 4 follow-up — slack_bot_token + slack_webhook_url widening (2026-05-22)
+# Both patterns drifted from current vendor reality. Body charset, length range,
+# and separator handling updated to match Betterleaks observations + docs.slack.dev.
+
+def test_slack_bot_token_hyphen_in_body():
+    """Real Slack bot tokens can contain hyphens in the body — body charset
+    must accept `-` (BL slack.go observation, not in old [a-zA-Z0-9] regex)."""
+    text = "SLACK_TOKEN=xoxb-1234567890-1234567890123-AbCdEf-GhIj-KlMnOpQrStUvWx"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_bot_token"]
+    assert len(sl) == 1
+
+
+def test_slack_bot_token_long_body():
+    """Bot tokens with bodies longer than 36 chars must still match — BL's
+    observation is that body length is variable. Widened upper bound to 80.
+    Asserts the FULL body is captured (not partially clipped by the old {24,36})."""
+    body = "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKlMnOp"  # 52 chars
+    assert len(body) == 52
+    text = f"SLACK_TOKEN=xoxb-1234567890-1234567890123-{body}"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_bot_token"]
+    assert len(sl) == 1
+    # Match span must capture the full secret (prefix + 2 number groups + 52-char body).
+    # Old regex {24,36} would clip at 36, giving span length ~65; widened reaches ~81.
+    matched_length = sl[0].span_end - sl[0].span_start
+    assert matched_length >= 80, (
+        f"Widened regex should capture full 52-char body, got match length {matched_length}"
+    )
+
+
+def test_slack_bot_token_no_separator_before_body():
+    """Some bot tokens omit the third hyphen, joining the number group and body
+    directly — BL's regex `[0-9]{10,13}[a-zA-Z0-9-]*` shows no required hyphen."""
+    # Body of 26 chars, immediately concatenated after the second number group
+    text = "SLACK_TOKEN=xoxb-1234567890-1234567890AbCdEfGhIjKlMnOpQrStUvWx"
+    findings = scan(text)
+    sl = [f for f in findings if f.type == "slack_bot_token"]
+    assert len(sl) == 1
+
+
+def test_slack_bot_token_does_not_collide_with_legacy():
+    """Current bot token (two number groups) must NOT also match legacy
+    (one number group). Collision guard for the widened body charset."""
+    text = "SLACK_TOKEN=xoxb-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
+    findings = scan(text)
+    types = [f.type for f in findings]
+    assert "slack_bot_token" in types
+    assert "slack_legacy_bot_token" not in types
+
+
+def test_slack_workflows_webhook():
+    """Workflow webhook URLs (hooks.slack.com/workflows/...) — 4-segment path
+    per docs.slack.dev example `T123ABC456/AXYZ987TUV/1234567890987/A314159B271828`."""
+    text = (
+        "WEBHOOK_URL="
+        "https://hooks.slack.com/workflows/T123ABC456/AXYZ987TUV/1234567890987/A314159B271828"
+    )
+    findings = scan(text)
+    wh = [f for f in findings if f.type == "slack_webhook_url"]
+    assert len(wh) == 1
+
+
+def test_slack_triggers_webhook():
+    """Workflow builder trigger webhook URLs (hooks.slack.com/triggers/...) —
+    structure beyond team-ID is undocumented; loose tail match per docs.slack.dev
+    example `T123ABC456/.../...`."""
+    text = (
+        "WEBHOOK_URL="
+        "https://hooks.slack.com/triggers/T123ABC456/AbCdEfGhIjKlMnOpQrStUvWxYz1234567890"
+    )
+    findings = scan(text)
+    wh = [f for f in findings if f.type == "slack_webhook_url"]
+    assert len(wh) == 1
+
+
 def test_slack_user_token_xoxp_hex_body():
     """Regression: existing xoxp- + hex-only body must continue to detect."""
     text = "SLACK_USER_TOKEN=xoxp-1234567890-1234567890-1234567890-abcdef0123456789abcdef0123456789"

@@ -987,6 +987,9 @@ PATTERN_TEST_CASES: dict[str, dict] = {
     "slack_bot_token": {
         "positives": [
             "SLACK_TOKEN=xoxb-1234567890-1234567890123-ABCDEFGHIJKLMNOPQRSTUVWx",
+            # 2026-05-22 widening: hyphens in body, long body, no separator before body
+            "SLACK_TOKEN=xoxb-1234567890-1234567890123-AbCdEf-GhIj-KlMnOpQrStUvWx",
+            "SLACK_TOKEN=xoxb-1234567890-1234567890AbCdEfGhIjKlMnOpQrStUvWx",
         ],
         "negatives": [
             "xoxb-short",
@@ -997,6 +1000,9 @@ PATTERN_TEST_CASES: dict[str, dict] = {
     "slack_webhook_url": {
         "positives": [
             "https://hooks.slack.com/services/T01234567/B01234567AB/abcdefghijklmnopqrstuvwx",
+            # 2026-05-22 widening: workflows/ and triggers/ paths (per docs.slack.dev)
+            "https://hooks.slack.com/workflows/T123ABC456/AXYZ987TUV/1234567890987/A314159B271828",
+            "https://hooks.slack.com/triggers/T123ABC456/AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
         ],
         "negatives": [
             "https://hooks.slack.com/services/T0123/short",
