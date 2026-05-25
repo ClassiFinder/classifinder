@@ -2549,6 +2549,67 @@ def test_generic_api_key_env_high_entropy_stays_visible():
     )
 
 
+def test_generic_api_key_env_long_high_entropy_promoted_to_high_band():
+    """Long (≥32 chars) AND high-entropy (≥4.5) values must reach high-band
+    confidence (≥0.80) so they surface to strict-threshold users (min_conf=0.8).
+    Closes the recall gap from
+    classifinder-knowledge/tasks/Finished Tasks/
+    2026-05-20-add-length-entropy-bonus-for-generic-patterns.md
+    where 208 baseline findings sat at 0.65-0.79 despite looking real."""
+    # 46 chars, entropy ~5.48 — squarely in the "real-looking key" zone
+    text = "API_KEY=aB3xKp9LqVnT5mFw8zRy7sCdEhJ2gNiMbOvUyXr1Q4tHcW"
+    findings = scan(text, min_confidence=0.01)
+    gk = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(gk) == 1
+    assert gk[0].confidence >= 0.80, (
+        f"Long+high-entropy generic finding should reach high-band, "
+        f"got {gk[0].confidence}"
+    )
+
+
+def test_generic_api_key_env_short_high_entropy_stays_midband():
+    """Short (<32 chars) high-entropy values must stay mid-band — the bonus
+    is a two-axis gate (length AND entropy), neither alone is sufficient."""
+    # 22 chars, entropy ~4.46 — high entropy but short
+    text = "API_KEY=aB3xKp9LqVnT5mFw8zRy7s"
+    findings = scan(text, min_confidence=0.01)
+    gk = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(gk) == 1
+    assert gk[0].confidence < 0.80, (
+        f"Short high-entropy generic finding must NOT receive the length "
+        f"bonus, got {gk[0].confidence}"
+    )
+    assert gk[0].confidence >= 0.50, (
+        f"Short high-entropy generic finding should still be mid-band-visible, "
+        f"got {gk[0].confidence}"
+    )
+
+
+def test_specific_pattern_beats_generic_at_overlapping_span():
+    """When a specific provider pattern (e.g., cohere_api_key) and the
+    catch-all generic_api_key_env both match the same span, the specific
+    reading must win regardless of confidence. The length+entropy bonus can
+    push generic above some specific patterns' post-context confidence; the
+    dedup tweak enforces 'specific over generic' to preserve attribution
+    accuracy. See
+    classifinder-knowledge/tasks/Finished Tasks/
+    2026-05-20-add-length-entropy-bonus-for-generic-patterns.md."""
+    # Cohere ends at confidence 0.79 (base 0.75 + context); generic gets
+    # the +0.15 bonus and would otherwise reach 0.84 and win dedup.
+    text = "COHERE_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+    findings = scan(text)
+    cohere = [f for f in findings if f.type == "cohere_api_key"]
+    generic = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(cohere) == 1, (
+        f"cohere_api_key must win the overlapping span; got types: "
+        f"{[f.type for f in findings]}"
+    )
+    assert len(generic) == 0, (
+        "generic_api_key_env must be suppressed when a specific provider "
+        "pattern matches the same span"
+    )
+
+
 # ═══════════════════════════════════════════════
 # CONTEXT VARIETY TESTS
 # ═══════════════════════════════════════════════
