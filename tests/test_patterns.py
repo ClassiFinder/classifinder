@@ -2735,3 +2735,38 @@ def test_safe_mcp_ids_empty_for_secret_findings():
             assert f.safe_mcp_ids == [], (
                 f"Secret finding '{f.type}' unexpectedly has safe_mcp_ids={f.safe_mcp_ids!r}"
             )
+
+
+# ═══════════════════════════════════════════════
+# CLICKUP TIER C COLLISION TESTS (Batch 5)
+# Verify ClickUp pk_<digits>_ does NOT collide
+# with Stripe pk_live_ / pk_test_ prefixes.
+# ═══════════════════════════════════════════════
+
+def test_clickup_pat_no_collision_with_stripe():
+    """A valid Stripe live publishable key must NOT match clickup_pat."""
+    stripe_key = "pk_live_AbCdEfGhIjKlMnOpQrStUvWxYz12345678"
+    findings = scan(stripe_key, min_confidence=0.0)
+    clickup_findings = [f for f in findings if f.type == "clickup_pat"]
+    assert len(clickup_findings) == 0, (
+        f"Stripe pk_live_ key should NOT match clickup_pat, but got: {clickup_findings}"
+    )
+
+
+def test_stripe_pk_no_collision_with_clickup():
+    """A valid ClickUp PAT must NOT match stripe_live_publishable_key."""
+    clickup_key = "pk_12345678_AbCdEfGhIjKlMnOpQrStUvWxYz123456"
+    findings = scan(clickup_key, min_confidence=0.0)
+    stripe_findings = [f for f in findings if f.type == "stripe_live_publishable_key"]
+    assert len(stripe_findings) == 0, (
+        f"ClickUp pk_<digits>_ key should NOT match stripe_live_publishable_key, but got: {stripe_findings}"
+    )
+
+
+def test_clickup_pat_detected():
+    """A valid ClickUp PAT is detected with high confidence."""
+    # hash must be exactly 32 [A-Za-z0-9] chars (negative lookahead requires non-alnum after)
+    clickup_key = "CLICKUP_API_KEY=pk_98765432_ZyXwVuTsRqPoNmLkJiHgFeDcBa012345"
+    findings = scan(clickup_key, min_confidence=0.5)
+    clickup_findings = [f for f in findings if f.type == "clickup_pat"]
+    assert len(clickup_findings) >= 1, f"ClickUp PAT not detected in: {clickup_key}"

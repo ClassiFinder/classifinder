@@ -218,6 +218,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.50,
     },
 
+    # Batch 5 — AI additions (2026-05-28)
+
+    "langsmith_api_key": {
+        "positives": [
+            "LANGSMITH_API_KEY=lsv2_pt_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+            "lsv2_sk_9z8y7x6w5v4u3t2s1r0q9p8o7n6m5l4k",
+        ],
+        "negatives": [
+            "lsv2_pt_short",
+            "lsv2_xx_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",  # wrong type segment
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "clarifai_pat": {
+        "positives": [
+            "CLARIFAI_PAT=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        ],
+        "negatives": [
+            "random_value=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",  # no context keyword
+        ],
+        "min_confidence": 0.50,
+    },
+
     # ── Cloud / Infra ────────────────────────────────────────────────────
 
     "aws_access_key": {
@@ -513,6 +537,52 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "negatives": ["random=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMn"],
         "min_confidence": 0.75,
+    },
+
+    # Batch 5 — Identity additions (2026-05-28)
+
+    "asana_pat": {
+        "positives": [
+            "ASANA_PAT=0/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        ],
+        "negatives": [
+            "random_value=0/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",  # no context keyword
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "hasura_admin_secret": {
+        "positives": [
+            "HASURA_GRAPHQL_ADMIN_SECRET=mySuperSecretAdminPassword123",
+            "x-hasura-admin-secret: mySuperSecretAdminPassword123",
+        ],
+        "negatives": [
+            "RANDOM_SECRET=mySuperSecretAdminPassword123",  # no context keyword
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "jumpcloud_api_key": {
+        "positives": [
+            "JUMPCLOUD_API_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0",
+        ],
+        "negatives": [
+            "random_value=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0",  # no context keyword
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "clickup_pat": {
+        "positives": [
+            "pk_12345678_AbCdEfGhIjKlMnOpQrStUvWxYz123456",
+            "CLICKUP_API_KEY=pk_98765432_ZyXwVuTsRqPoNmLkJiHgFeDcBa012345",
+        ],
+        "negatives": [
+            "pk_live_AbCdEfGhIjKlMnOpQrStUvWxYz123456",   # Stripe format (not clickup)
+            "pk_test_AbCdEfGhIjKlMnOpQrStUvWxYz123456",   # Stripe format (not clickup)
+            "pk_12345678_short",
+        ],
+        "min_confidence": 0.85,
     },
 
     # Batch 4 Part 2.3 — Data / Analytics / Dev tools (2026-05-21)
@@ -1175,6 +1245,49 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.30,
     },
 
+    # Batch 5 — Comms additions (2026-05-28)
+
+    "intercom_access_token": {
+        "positives": [
+            # exactly 60 chars: [a-zA-Z0-9=_-]{60}
+            "INTERCOM_ACCESS_TOKEN=dG9rZW5fX2Fic2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6ABCDEFGHIJKLMNOP",
+        ],
+        "negatives": [
+            "random_value=dG9rZW5fX2Fic2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6ABCDEFGHIJKLMNOP",
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "messagebird_api_key": {
+        "positives": [
+            "MESSAGEBIRD_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m",
+        ],
+        "negatives": [
+            "random_value=a1b2c3d4e5f6g7h8i9j0k1l2m",  # no context keyword
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "sendbird_token": {
+        "positives": [
+            "SENDBIRD_ACCESS_TOKEN=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0",
+        ],
+        "negatives": [
+            "random_value=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0",  # no context keyword
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "freshdesk_api_key": {
+        "positives": [
+            "FRESHDESK_API_KEY=AbCdEfGh1234567890Ab",
+        ],
+        "negatives": [
+            "random_value=AbCdEfGh1234567890Ab",  # no context keyword
+        ],
+        "min_confidence": 0.50,
+    },
+
     "linear_api_key": {
         "positives": [
             "LINEAR_API_KEY=lin_api_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd",
@@ -1298,6 +1411,54 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.50,
     },
 
+    # Batch 5 — Payment additions (2026-05-28)
+
+    "flutterwave_secret_key": {
+        "positives": [
+            # 32 chars of [a-hA-H0-9] between prefix and -X suffix
+            "FLWSECK_TEST-abcdef01234567890abcdef012345678-X",
+            "FLWSECK_LIVE-ABCDEF01234567890ABCDEF012345678-X",
+        ],
+        "negatives": [
+            "FLWSECK_TEST-short-X",
+            "FLWSECK_TEST-abcdef01234567890abcdef012345678",  # missing -X suffix
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "etherscan_api_key": {
+        "positives": [
+            "ETHERSCAN_API_KEY=ABCDEFGHIJ1234567890ABCDEFGHIJ1234",
+        ],
+        "negatives": [
+            "random_value=ABCDEFGHIJ1234567890ABCDEFGHIJ1234",  # no context keyword
+            "ETHERSCAN_API_KEY=abcdefghij1234567890abcdefghij1234",  # lowercase (pattern is uppercase only)
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "gocardless_access_token": {
+        "positives": [
+            # 40 chars of [a-zA-Z0-9-_=] after live_
+            "GOCARDLESS_ACCESS_TOKEN=live_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd",
+        ],
+        "negatives": [
+            "random_value=live_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd",  # no context
+            "GOCARDLESS_ACCESS_TOKEN=sandbox_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd",  # sandbox prefix
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "wise_api_token": {
+        "positives": [
+            "WISE_API_TOKEN=12345678-abcd-abcd-abcd-1234567890ab",
+        ],
+        "negatives": [
+            "random_uuid=12345678-abcd-abcd-abcd-1234567890ab",  # no context keyword
+        ],
+        "min_confidence": 0.80,
+    },
+
     # ── Database / Infra ─────────────────────────────────────────────────
 
     "postgres_connection_string": {
@@ -1338,6 +1499,42 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "random_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
         ],
         "min_confidence": 0.50,
+    },
+
+    # Batch 5 — Database additions (2026-05-28)
+
+    "rabbitmq_connection_string": {
+        "positives": [
+            "RABBITMQ_URL=amqp://myuser:s3cretP4ss@rabbitmq.example.com:5672/vhost",
+            "amqps://admin:P4ssw0rd@secure.broker.example.com/",
+        ],
+        "negatives": [
+            "amqp://localhost/vhost",  # no password
+        ],
+        "min_confidence": 0.10,  # test values get lower confidence
+    },
+
+    "jdbc_connection_string": {
+        "positives": [
+            # Use h2 and db2 schemes to avoid dedup collision with mysql/postgres patterns
+            "JDBC_URL=jdbc:h2:tcp://root:s3cretP4ss@localhost:9092/mydb",
+            "jdbc:db2://db.example.com:50000/prod:user=dbuser;password=P4ssw0rd;",
+        ],
+        "negatives": [
+            "jdbc:h2:tcp://localhost:9092/mydb",  # no credentials
+        ],
+        "min_confidence": 0.10,  # test values get lower confidence
+    },
+
+    "couchbase_connection_string": {
+        "positives": [
+            "COUCHBASE_URL=couchbase://admin:s3cretP4ss@couchbase.example.com",
+            "couchbases://cbuser:P4ssw0rd@secure.couchbase.example.com",
+        ],
+        "negatives": [
+            "couchbase://localhost",  # no credentials
+        ],
+        "min_confidence": 0.10,  # test values get lower confidence
     },
 
     # ── Generic ──────────────────────────────────────────────────────────
