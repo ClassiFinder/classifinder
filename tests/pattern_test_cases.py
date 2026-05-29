@@ -242,6 +242,54 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.50,
     },
 
+    # Batch 6 — AI-infrastructure additions (2026-05-28)
+
+    "openrouter_api_key": {
+        "positives": [
+            "OPENROUTER_API_KEY=sk-or-v1-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        ],
+        "negatives": [
+            "sk-or-v1-short",
+            "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",  # OpenAI key — must not match openrouter
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "perplexity_api_key": {
+        "positives": [
+            "PERPLEXITY_API_KEY=pplx-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF",
+        ],
+        "negatives": ["pplx-short"],
+        "min_confidence": 0.90,
+    },
+
+    "anyscale_api_key": {
+        "positives": [
+            "ANYSCALE_API_KEY=esecret_abcdefghijklmnopqrstuvwxyz0123",
+        ],
+        "negatives": [
+            "esecret_short",
+            "secret_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",  # Notion key (secret_+43) — must not match anyscale
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "braintrust_api_key": {
+        "positives": [
+            "BRAINTRUST_API_KEY=bt-st-abcdefghijklmnopqrstuvwxyz0123",
+        ],
+        "negatives": ["bt-st-short"],
+        "min_confidence": 0.90,
+    },
+
+    "runpod_api_key": {
+        "positives": [
+            "RUNPOD_API_KEY=rpa_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        ],
+        "negatives": ["rpa_short"],
+        "min_confidence": 0.90,
+    },
+
     # ── Cloud / Infra ────────────────────────────────────────────────────
 
     "aws_access_key": {
@@ -656,6 +704,35 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "CONTENTFUL_DELIVERY_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ",
         ],
         "negatives": ["random=AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ"],
+        "min_confidence": 0.80,
+    },
+
+    # Batch 6 — vector-database additions (2026-05-28)
+
+    "pinecone_api_key": {
+        "positives": [
+            "PINECONE_API_KEY=pcsk_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ",
+        ],
+        "negatives": ["pcsk_short"],
+        "min_confidence": 0.90,
+    },
+
+    "turbopuffer_api_key": {
+        "positives": [
+            "TURBOPUFFER_API_KEY=tpuf_abcdefghijklmnopqrstuvwxyz0123456789",
+        ],
+        "negatives": ["tpuf_short"],
+        "min_confidence": 0.90,
+    },
+
+    "chroma_api_key": {
+        "positives": [
+            "CHROMA_API_KEY=ck-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF",
+        ],
+        "negatives": [
+            "ck-short",
+            "lock-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF",  # word boundary — "lock-" must not match
+        ],
         "min_confidence": 0.80,
     },
 

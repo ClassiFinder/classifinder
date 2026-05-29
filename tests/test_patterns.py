@@ -2770,3 +2770,52 @@ def test_clickup_pat_detected():
     findings = scan(clickup_key, min_confidence=0.5)
     clickup_findings = [f for f in findings if f.type == "clickup_pat"]
     assert len(clickup_findings) >= 1, f"ClickUp PAT not detected in: {clickup_key}"
+
+
+# ═══════════════════════════════════════════════
+# Batch 6 (2026-05-28) — AI-infra prefix collisions.
+# OpenRouter (sk-or-v1-) and Braintrust user keys share the sk- family with
+# OpenAI; Anyscale (esecret_) abuts Notion's secret_ pattern. Verify clean
+# separation in both directions.
+# ═══════════════════════════════════════════════
+
+def test_openai_key_no_collision_with_openrouter():
+    """A valid OpenAI sk- key must NOT match openrouter_api_key."""
+    openai_key = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh"
+    findings = scan(openai_key, min_confidence=0.0)
+    openrouter_findings = [f for f in findings if f.type == "openrouter_api_key"]
+    assert len(openrouter_findings) == 0, (
+        f"OpenAI sk- key should NOT match openrouter_api_key, but got: {openrouter_findings}"
+    )
+
+
+def test_openrouter_key_no_collision_with_openai():
+    """A valid OpenRouter sk-or-v1- key must NOT match openai_api_key."""
+    openrouter_key = "sk-or-v1-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    findings = scan(openrouter_key, min_confidence=0.0)
+    openai_findings = [f for f in findings if f.type == "openai_api_key"]
+    assert len(openai_findings) == 0, (
+        f"OpenRouter sk-or-v1- key should NOT match openai_api_key, but got: {openai_findings}"
+    )
+
+
+def test_notion_key_no_collision_with_anyscale():
+    """A valid Notion secret_ token must NOT match anyscale_api_key (esecret_)."""
+    notion_key = "secret_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfG"  # secret_ + 43
+    findings = scan(notion_key, min_confidence=0.0)
+    anyscale_findings = [f for f in findings if f.type == "anyscale_api_key"]
+    assert len(anyscale_findings) == 0, (
+        f"Notion secret_ token should NOT match anyscale_api_key, but got: {anyscale_findings}"
+    )
+
+
+def test_anyscale_key_no_collision_with_notion():
+    """A valid Anyscale esecret_ key must NOT substring-match notion_api_key."""
+    # esecret_ + exactly 43 alphanumerics: without the Notion left-boundary fix,
+    # the secret_<43> substring inside esecret_<...> would false-match Notion.
+    anyscale_key = "esecret_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfG"
+    findings = scan(anyscale_key, min_confidence=0.0)
+    notion_findings = [f for f in findings if f.type == "notion_api_key"]
+    assert len(notion_findings) == 0, (
+        f"Anyscale esecret_ key should NOT match notion_api_key, but got: {notion_findings}"
+    )
