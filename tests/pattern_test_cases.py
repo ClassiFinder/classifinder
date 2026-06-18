@@ -2003,6 +2003,106 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.75,
     },
+
+    # ── Batch 7 — email / shipping / travel / networking (2026-06-18) ──────
+
+    "tailscale_api_key": {
+        "positives": [
+            "TS_API_KEY=tskey-api-abcDEF1CNTRL-091234567890ABCDEF",
+            "tailscale auth: tskey-auth-kAbCdEfG1CNTRL-zYxWvUtSrQpOnMlKj",
+        ],
+        "negatives": [
+            "tskey-foo",
+            "key: tskey-api-onlyonesegment",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "mailchimp_api_key": {
+        "positives": [
+            "MAILCHIMP_API_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6-us21",
+            "mailchimp key: 0fedcba987654321fedcba9876543210-us5",
+        ],
+        "negatives": [
+            # 32-hex hash WITHOUT the -usNN datacenter suffix
+            "digest: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "resend_api_key": {
+        "positives": [
+            "RESEND_API_KEY=re_AbCdEfGhIjKlMnOpQrStUvWx",
+        ],
+        "negatives": [
+            "re_short",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "readme_api_key": {
+        "positives": [
+            "README_API_KEY=rdme_abcdef0123abcdef0123abcdef0123abcdef0123abcdef0123abcdef0123abcdef0123",
+        ],
+        "negatives": [
+            "rdme_short",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "easypost_api_key": {
+        "positives": [
+            "EASYPOST_API_KEY=EZAKAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAb",
+        ],
+        "negatives": [
+            "EZAKshort",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "duffel_access_token": {
+        "positives": [
+            "DUFFEL_ACCESS_TOKEN=duffel_test_AbCdEfGhIjAbCdEfGhIjAb",
+            "duffel live token: duffel_live_ZyXwVuTsRqPoNmLkJiHg",
+        ],
+        "negatives": [
+            "duffel_test_x",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "brevo_api_key": {
+        "positives": [
+            "BREVO_API_KEY=xkeysib-AbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjA",
+        ],
+        "negatives": [
+            "xkeysib-short",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "shippo_api_token": {
+        "positives": [
+            "SHIPPO_API_TOKEN=shippo_live_abcdef0123abcdef0123abcdef0123abcdef0123",
+            "shippo test token: shippo_test_0123456789abcdef0123456789abcdef01234567",
+        ],
+        "negatives": [
+            "shippo_live_abcdef",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "telnyx_api_key": {
+        "positives": [
+            "TELNYX_API_KEY=KEYAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCde",
+        ],
+        "negatives": [
+            # Bare KEY... with no telnyx context — context-gated, must not fire
+            "KEYAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCde",
+            "API_KEY=KEYAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCdEfGhIjAbCde",
+        ],
+        "min_confidence": 0.80,
+    },
 }
 
 # fmt: on
