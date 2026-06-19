@@ -2846,3 +2846,167 @@ def test_anyscale_key_no_collision_with_notion():
     assert len(notion_findings) == 0, (
         f"Anyscale esecret_ key should NOT match notion_api_key, but got: {notion_findings}"
     )
+
+
+# ═══════════════════════════════════════════════
+# BATCH 7 — Email / shipping / travel / networking (2026-06-18)
+# 9 new prefix-anchored providers + 1 context-gated (telnyx).
+# Fixtures use synthetic alphabet/hex bodies to avoid tripping external scanners.
+# ═══════════════════════════════════════════════
+
+def test_tailscale_api_key():
+    """Tailscale tskey- prefixed keys with typed segment."""
+    text = "TS_API_KEY=tskey-api-abcDEF1CNTRL-091234567890ABCDEF"
+    findings = scan(text)
+    ts = [f for f in findings if f.type == "tailscale_api_key"]
+    assert len(ts) == 1
+    assert ts[0].confidence >= 0.8
+
+
+def test_tailscale_api_key_true_negative():
+    """A bare 'tskey-' with no typed/id/secret segments must NOT fire."""
+    findings = scan("tskey-foo", min_confidence=0.1)
+    ts = [f for f in findings if f.type == "tailscale_api_key"]
+    assert len(ts) == 0
+
+
+def test_mailchimp_api_key():
+    """Mailchimp keys: 32 hex + '-usNN' datacenter suffix."""
+    text = "MAILCHIMP_API_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6-us21"
+    findings = scan(text)
+    mc = [f for f in findings if f.type == "mailchimp_api_key"]
+    assert len(mc) == 1
+    assert mc[0].confidence >= 0.8
+
+
+def test_mailchimp_api_key_true_negative():
+    """32 hex chars WITHOUT the '-usNN' suffix must NOT fire (it's just a hash)."""
+    findings = scan("digest: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6", min_confidence=0.1)
+    mc = [f for f in findings if f.type == "mailchimp_api_key"]
+    assert len(mc) == 0
+
+
+def test_resend_api_key():
+    """Resend keys with re_ prefix."""
+    text = "RESEND_API_KEY=re_AbCdEfGhIjKlMnOpQrStUvWx"
+    findings = scan(text)
+    rs = [f for f in findings if f.type == "resend_api_key"]
+    assert len(rs) == 1
+    assert rs[0].confidence >= 0.8
+
+
+def test_resend_api_key_true_negative():
+    """A short re_ value below the 20-char body floor must NOT fire."""
+    findings = scan("re_short", min_confidence=0.1)
+    rs = [f for f in findings if f.type == "resend_api_key"]
+    assert len(rs) == 0
+
+
+def test_readme_api_key():
+    """ReadMe keys: rdme_ prefix + 70 lowercase-hex body."""
+    body = "abcdef0123" * 7  # 70 chars
+    assert len(body) == 70
+    text = f"README_API_KEY=rdme_{body}"
+    findings = scan(text)
+    rm = [f for f in findings if f.type == "readme_api_key"]
+    assert len(rm) == 1
+    assert rm[0].confidence >= 0.8
+
+
+def test_readme_api_key_true_negative():
+    """A truncated rdme_ value must NOT fire."""
+    findings = scan("rdme_short", min_confidence=0.1)
+    rm = [f for f in findings if f.type == "readme_api_key"]
+    assert len(rm) == 0
+
+
+def test_easypost_api_key():
+    """EasyPost keys: EZAK/EZTK/EZPK prefix + long alphanumeric body."""
+    body = "AbCdEfGhIj" * 5 + "Ab"  # 52 chars
+    assert len(body) >= 50
+    text = f"EASYPOST_API_KEY=EZAK{body}"
+    findings = scan(text)
+    ep = [f for f in findings if f.type == "easypost_api_key"]
+    assert len(ep) == 1
+    assert ep[0].confidence >= 0.8
+
+
+def test_easypost_api_key_true_negative():
+    """A short EZAK value below the 50-char body floor must NOT fire."""
+    findings = scan("EZAKshort", min_confidence=0.1)
+    ep = [f for f in findings if f.type == "easypost_api_key"]
+    assert len(ep) == 0
+
+
+def test_duffel_access_token():
+    """Duffel tokens: duffel_test_ / duffel_live_ prefix."""
+    body = "AbCdEfGhIj" * 2 + "Ab"  # 22 chars
+    text = f"DUFFEL_ACCESS_TOKEN=duffel_test_{body}"
+    findings = scan(text)
+    du = [f for f in findings if f.type == "duffel_access_token"]
+    assert len(du) == 1
+    assert du[0].confidence >= 0.8
+
+
+def test_duffel_access_token_true_negative():
+    """A truncated duffel token below the 20-char body floor must NOT fire."""
+    findings = scan("duffel_test_x", min_confidence=0.1)
+    du = [f for f in findings if f.type == "duffel_access_token"]
+    assert len(du) == 0
+
+
+def test_brevo_api_key():
+    """Brevo (Sendinblue) keys: xkeysib- prefix + 81-char body."""
+    body = "AbCdEfGhIj" * 8 + "A"  # 81 chars
+    assert len(body) == 81
+    text = f"BREVO_API_KEY=xkeysib-{body}"
+    findings = scan(text)
+    bv = [f for f in findings if f.type == "brevo_api_key"]
+    assert len(bv) == 1
+    assert bv[0].confidence >= 0.8
+
+
+def test_brevo_api_key_true_negative():
+    """A short xkeysib- value must NOT fire."""
+    findings = scan("xkeysib-short", min_confidence=0.1)
+    bv = [f for f in findings if f.type == "brevo_api_key"]
+    assert len(bv) == 0
+
+
+def test_shippo_api_token():
+    """Shippo tokens: shippo_live_ / shippo_test_ prefix + 40 hex."""
+    body = "abcdef0123" * 4  # 40 hex
+    assert len(body) == 40
+    text = f"SHIPPO_API_TOKEN=shippo_live_{body}"
+    findings = scan(text)
+    sp = [f for f in findings if f.type == "shippo_api_token"]
+    assert len(sp) == 1
+    assert sp[0].confidence >= 0.8
+
+
+def test_shippo_api_token_true_negative():
+    """A shippo_ token with a too-short hex body must NOT fire."""
+    findings = scan("shippo_live_abcdef", min_confidence=0.1)
+    sp = [f for f in findings if f.type == "shippo_api_token"]
+    assert len(sp) == 0
+
+
+def test_telnyx_api_key_with_context():
+    """Telnyx KEY... value fires at high confidence WITH a telnyx keyword."""
+    body = "KEY" + "AbCdEfGhIj" * 5 + "AbCde"  # KEY + 55 chars
+    assert len(body) == 58
+    text = f"TELNYX_API_KEY={body}"
+    findings = scan(text)
+    tx = [f for f in findings if f.type == "telnyx_api_key"]
+    assert len(tx) == 1
+    assert tx[0].confidence >= 0.8
+
+
+def test_telnyx_api_key_no_context_does_not_fire():
+    """A bare 'KEY...' string with NO telnyx context must NOT fire — the bare
+    'KEY' prefix is weak, so the pattern is context-gated to avoid FPs."""
+    body = "KEY" + "AbCdEfGhIj" * 5 + "AbCde"
+    for text in (body, f"API_KEY={body}", f"export SOMEKEY={body}", f"note {body} end"):
+        findings = scan(text, min_confidence=0.1)
+        tx = [f for f in findings if f.type == "telnyx_api_key"]
+        assert len(tx) == 0, f"telnyx_api_key should not fire on: {text!r}"
