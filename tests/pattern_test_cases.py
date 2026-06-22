@@ -2103,6 +2103,118 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+
+    # ── Batch 8 — vendor-sourced patterns (2026-06-22) ──────────────────
+
+    "google_oauth_access_token": {
+        "positives": [
+            "google_token: ya29.AbCdEfGhIjKlMnOpQrStUvWxYz9876543210ZyXwVuTsRqPoNmLk",
+        ],
+        "negatives": [
+            "ya29.short",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "pgp_private_key": {
+        "positives": [
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----\n"
+            "ZyXwVuTsRqPoNmLk\nZyXwVuTsRqPoNmLk\nZyXwVuTsRqPoNmLk\n"
+            "ZyXwVuTsRqPoNmLk\n-----END PGP PRIVATE KEY BLOCK-----",
+        ],
+        "negatives": [
+            "-----BEGIN PGP PUBLIC KEY BLOCK-----\nAbCd\n-----END PGP PUBLIC KEY BLOCK-----",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "sentry_dsn": {
+        "positives": [
+            "SENTRY_DSN=https://9876543210fedcba9876543210fedcba@o654321.ingest.de.sentry.io/2233445",
+        ],
+        "negatives": [
+            "https://example.com/path/123",
+            "https://9876543210fedcba9876543210fedcba@example.ingest.sentry.io/abc",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "twilio_api_key": {
+        "positives": [
+            "TWILIO_API_KEY=SKfedcba9876543210fedcba9876543210",
+        ],
+        "negatives": [
+            "SKshort",
+            # Must NOT match Stripe sk_live_ / sk_test_ keys
+            "sk_live_AbCdEfGhIjKlMnOpQrStUvWx",
+            "sk_test_AbCdEfGhIjKlMnOpQrStUvWx",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "paddle_api_key": {
+        "positives": [
+            "PADDLE_API_KEY=pdl_sdbx_apikey_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXwVu",
+        ],
+        "negatives": [
+            "pdl_live_apikey_short",
+            "pdl_other_apikey_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXwVu",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "asaas_api_token": {
+        "positives": [
+            "ASAAS_API_KEY=$aact_hmlg_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXwVu",
+        ],
+        "negatives": [
+            "$aact_prod_short",
+            "aact_prod_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXwVu",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "typeform_personal_access_token": {
+        "positives": [
+            "TYPEFORM_TOKEN=tfp_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXwVu",
+        ],
+        "negatives": [
+            "tfp_short",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "onfido_api_token": {
+        "positives": [
+            "ONFIDO_API_TOKEN=api_sandbox.ZyXwVuTsRqPoNmLkJiHg",
+        ],
+        "negatives": [
+            "api_live.short",
+            "api_other.ZyXwVuTsRqPoNmLkJiHg",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "tencent_cloud_secret_id": {
+        "positives": [
+            "TENCENT_SECRET_ID=AKIDZyXwVuTsRqPoNmLkJiHgFeDcBa987654",
+        ],
+        "negatives": [
+            "AKIDshort",
+            "AKIAIOSFODNN7EXAMPLE",
+        ],
+        "min_confidence": 0.50,
+    },
+
+    "defined_networking_api_token": {
+        "positives": [
+            "DN_API_TOKEN=dnkey-ZyXwVuTsRqPoNmLkJiHg",
+        ],
+        "negatives": [
+            "dnkey-short",
+        ],
+        "min_confidence": 0.80,
+    },
 }
 
 # fmt: on
