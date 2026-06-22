@@ -2248,6 +2248,58 @@ Contact me at thomas@example.com or call 555-0123.
 
 
 # ═══════════════════════════════════════════════
+# BATCH 8 — known-test-value downscoring (2026-06-22)
+# ═══════════════════════════════════════════════
+
+_BATCH8_TEST_VALUES = {
+    "google_oauth_access_token":
+        "ya29.AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOp",
+    "pgp_private_key":
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\n"
+        "AbCdEfGhIjKlMnOp\nAbCdEfGhIjKlMnOp\nAbCdEfGhIjKlMnOp\n"
+        "AbCdEfGhIjKlMnOp\nAbCdEfGhIjKlMnOp\n"
+        "-----END PGP PRIVATE KEY BLOCK-----",
+    "sentry_dsn":
+        "https://abcdef0123456789abcdef0123456789@o123456.ingest.us.sentry.io/7891011",
+    "twilio_api_key": "SK" + "0" * 32,
+    "paddle_api_key":
+        "pdl_live_apikey_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+    "asaas_api_token":
+        "$aact_prod_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+    "typeform_personal_access_token":
+        "tfp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+    "onfido_api_token": "api_live.AbCdEfGhIjKlMnOpQrStUvWx",
+    "tencent_cloud_secret_id": "AKID" + "0" * 32,
+    "defined_networking_api_token": "dnkey-AbCdEfGhIjKlMnOpQrStUvWx",
+}
+
+
+@pytest.mark.parametrize("pattern_id,text", sorted(_BATCH8_TEST_VALUES.items()))
+def test_batch8_known_test_value_downscored(pattern_id, text):
+    """Each Batch 8 pattern's documented test value must be detected but
+    flagged as a test value and down-scored to ~0.15."""
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == pattern_id]
+    assert len(matched) == 1, f"{pattern_id} not detected in its test value"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_twilio_api_key_no_collision_with_stripe():
+    """Twilio API Key SID (SK + 32 hex) must NOT match Stripe sk_live_/sk_test_
+    secret keys (which are lowercase sk_ with an underscore)."""
+    for stripe_key in (
+        "sk_live_AbCdEfGhIjKlMnOpQrStUvWx",
+        "sk_test_AbCdEfGhIjKlMnOpQrStUvWx",
+    ):
+        findings = scan(stripe_key, min_confidence=0.01)
+        twilio = [f for f in findings if f.type == "twilio_api_key"]
+        assert len(twilio) == 0, (
+            f"twilio_api_key incorrectly matched Stripe key: {stripe_key}"
+        )
+
+
+# ═══════════════════════════════════════════════
 # RUNNER
 # ═══════════════════════════════════════════════
 
