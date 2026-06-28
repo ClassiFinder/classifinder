@@ -2300,6 +2300,68 @@ def test_twilio_api_key_no_collision_with_stripe():
 
 
 # ═══════════════════════════════════════════════
+# ONESIGNAL REST API KEY
+# ═══════════════════════════════════════════════
+
+# Modern OneSignal REST API key (App API Key). Vendor docs (Keys & IDs) confirm
+# the value starts with the prefix "os_v2_app_" and is shown only once. Body is
+# [a-z0-9], 80-140 chars. This sample uses a 103-char body, matching the
+# documented quick-start example length.
+_ONESIGNAL_KEY = (
+    "os_v2_app_hbrpoig8f1cbfno6b9m80o2rak1vrjnvgfygwwqc38hyf9sx"
+    "mecosfogyr3xkxwnrek8pk3yr9oudocuzrenun5z3jqip98q1zxoi65"
+)
+
+
+def test_onesignal_rest_api_key_true_positive():
+    """Modern os_v2_app_ REST API key is detected as onesignal_rest_api_key."""
+    text = f"ONESIGNAL_REST_API_KEY={_ONESIGNAL_KEY}"
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "onesignal_rest_api_key"]
+    assert len(matched) == 1, "OneSignal REST API key not detected"
+    assert matched[0].confidence >= 0.90, "prefix-anchored key should be high-conf"
+    assert matched[0].severity == "high"
+
+
+def test_onesignal_rest_api_key_true_negative():
+    """Strings without the os_v2_app_ prefix or with too-short bodies must not match."""
+    negatives = [
+        "os_v2_app_short",  # body too short
+        "os_v1_app_" + "a" * 100,  # legacy/wrong prefix
+        "os_v2_org_" + "a" * 100,  # different OneSignal entity prefix
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "onesignal_rest_api_key"]
+        assert len(matched) == 0, f"onesignal_rest_api_key wrongly matched: {neg}"
+
+
+def test_onesignal_rest_api_key_known_test_value_downscored():
+    """The documented example key must be detected but flagged as a test value
+    and down-scored to ~0.15."""
+    known = (
+        "os_v2_app_ujzde8gxd6ncf10epf91dhodzdoc9is0j8ht9lgmxg9edn"
+        "581u33xtplpft75v2seh60kvj50ce9uvw53efr4edt2sywb3wk"
+    )
+    findings = scan(known, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "onesignal_rest_api_key"]
+    assert len(matched) == 1, "OneSignal known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_onesignal_rest_api_key_no_collision():
+    """The os_v2_app_ key must not be claimed by a different pattern at higher
+    confidence (e.g. a generic high-entropy match)."""
+    findings = scan(_ONESIGNAL_KEY, min_confidence=0.01)
+    by_conf = sorted(findings, key=lambda f: f.confidence, reverse=True)
+    assert by_conf, "no findings at all for OneSignal key"
+    assert by_conf[0].type == "onesignal_rest_api_key", (
+        f"OneSignal key claimed by {by_conf[0].type} instead"
+    )
+
+
+# ═══════════════════════════════════════════════
 # RUNNER
 # ═══════════════════════════════════════════════
 
