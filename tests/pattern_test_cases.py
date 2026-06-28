@@ -1262,6 +1262,18 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    "onesignal_rest_api_key": {
+        "positives": [
+            "ONESIGNAL_REST_API_KEY="
+            "os_v2_app_hbrpoig8f1cbfno6b9m80o2rak1vrjnvgfygwwqc38hyf9sxmecosfogyr3xkxwnrek8pk3yr9oudocuzrenun5z3jqip98q1zxoi65",
+        ],
+        "negatives": [
+            "os_v2_app_short",
+            "os_v1_app_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ],
+        "min_confidence": 0.90,
+    },
+
     "mailgun_api_key": {
         "positives": [
             "MAILGUN_API_KEY=key-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
