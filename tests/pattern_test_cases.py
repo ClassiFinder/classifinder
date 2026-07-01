@@ -2227,6 +2227,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "adafruit_io_key": {
+        # Context-gated 32-char lowercase hex (UUIDv4, dashes stripped) — there
+        # is NO 'aio_' prefix; the regex requires an X-AIO-Key / AIO_KEY /
+        # ADAFRUIT key label adjacent to the value. confidence_base is 0.60.
+        "positives": [
+            "X-AIO-Key: a1b2c3d4e5f60718293a4b5c6d7e8f90",
+            "AIO_KEY=0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        ],
+        "negatives": [
+            # Bare 32-hex with no Adafruit context (MD5-shaped) — must not match.
+            "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+            # Has context label but too short (12 hex chars).
+            "X-AIO-Key: a1b2c3d4e5f6",
+            # The old invented 'aio_' prefix form must NOT match anymore.
+            "aio_VxEqGaqgMgZej3DceezbBy03eWyW",
+        ],
+        "min_confidence": 0.60,
+    },
 }
 
 # fmt: on
