@@ -2362,6 +2362,262 @@ def test_onesignal_rest_api_key_no_collision():
 
 
 # ═══════════════════════════════════════════════
+# BATCH 10 (2026-07-06) — Cloudinary, ngrok, Opsgenie,
+# Yandex, Clojars, Neon, Midtrans
+# ═══════════════════════════════════════════════
+
+# --- Cloudinary URL (structural, self-anchoring) ---
+
+# Synthetic Cloudinary URL: cloudinary://<15 digits>:<27-char secret>@<cloud>.
+# Secret body built via concat so no scannable literal exists in source.
+_CLOUDINARY_SECRET = "AbCdEfGhIjKlMnOpQrStUvWxYz1"  # 27 chars
+_CLOUDINARY_URL = "cloudinary://" + "1" * 15 + ":" + _CLOUDINARY_SECRET + "@my-cloud-name"
+
+
+def test_cloudinary_url_true_positive():
+    """A well-formed cloudinary:// URL is detected and only the api_secret is captured."""
+    findings = scan(f"CLOUDINARY_URL={_CLOUDINARY_URL}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cloudinary_url"]
+    assert len(matched) == 1, "Cloudinary URL not detected"
+    assert matched[0].confidence >= 0.85
+    assert matched[0].severity == "high"
+
+
+def test_cloudinary_url_true_negative():
+    """Near-misses (wrong api_key length, missing scheme) must not match."""
+    negatives = [
+        "cloudinary://" + "1" * 10 + ":" + _CLOUDINARY_SECRET + "@cloud",  # api_key too short
+        "https://" + "1" * 15 + ":" + _CLOUDINARY_SECRET + "@cloud",  # wrong scheme
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "cloudinary_url"]
+        assert len(matched) == 0, f"cloudinary_url wrongly matched: {neg}"
+
+
+def test_cloudinary_url_known_test_value_downscored():
+    """The synthetic api_secret registered as a known test value is down-scored to ~0.15."""
+    url = "cloudinary://" + "1" * 15 + ":" + "A" * 27 + "@demo-cloud"
+    findings = scan(f"CLOUDINARY_URL={url}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cloudinary_url"]
+    assert len(matched) == 1, "Cloudinary known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- ngrok Authtoken (context-gated) ---
+
+_NGROK_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz" + "_" + "0123456789AbCdEfGhIj"
+
+
+def test_ngrok_authtoken_true_positive():
+    """The authtoken is detected when an ngrok/authtoken label precedes it."""
+    for text in (
+        f"NGROK_AUTHTOKEN={_NGROK_TOKEN}",
+        f"ngrok config add-authtoken {_NGROK_TOKEN}",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "ngrok_authtoken"]
+        assert len(matched) == 1, f"ngrok authtoken not detected in: {text}"
+        assert matched[0].severity == "high"
+
+
+def test_ngrok_authtoken_true_negative():
+    """Wrong-shaped values (no underscore join) must not match even with a label."""
+    findings = scan(f"NGROK_AUTHTOKEN={'a' * 48}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ngrok_authtoken"]
+    assert len(matched) == 0, "ngrok_authtoken matched a non-conforming value"
+
+
+def test_ngrok_authtoken_no_collision_bare_value():
+    """The bare token with NO ngrok/authtoken label must NOT match (context gate)."""
+    findings = scan(f"random value {_NGROK_TOKEN} here", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ngrok_authtoken"]
+    assert len(matched) == 0, "ngrok_authtoken fired without a context label"
+
+
+def test_ngrok_authtoken_known_test_value_downscored():
+    """The synthetic token registered as a known test value is down-scored to ~0.15."""
+    findings = scan(f"NGROK_AUTHTOKEN={_NGROK_TOKEN}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ngrok_authtoken"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Opsgenie API Key (context-gated UUID) ---
+
+_OPSGENIE_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+
+
+def test_opsgenie_api_key_true_positive():
+    """A UUID behind the GenieKey auth scheme is detected."""
+    findings = scan(f"Authorization: GenieKey {_OPSGENIE_UUID}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "opsgenie_api_key"]
+    assert len(matched) == 1, "Opsgenie API key not detected"
+    assert matched[0].severity == "high"
+
+
+def test_opsgenie_api_key_no_collision_bare_uuid():
+    """A bare UUID with no GenieKey/opsgenie context must NOT match."""
+    findings = scan(f"request_id = {_OPSGENIE_UUID}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "opsgenie_api_key"]
+    assert len(matched) == 0, "opsgenie_api_key fired on a bare UUID"
+
+
+def test_opsgenie_api_key_known_test_value_downscored():
+    """The synthetic UUID registered as a known test value is down-scored to ~0.15."""
+    known = "00112233-4455-6677-8899-aabbccddeeff"
+    findings = scan(f"GenieKey {known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "opsgenie_api_key"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Yandex Cloud IAM Token (structural, ephemeral) ---
+
+_YANDEX_TOKEN = "t1." + "AbCdEfGhIjKlMnOpQrStUvWx0123456789" + "." + "C" * 86
+
+
+def test_yandex_cloud_iam_token_true_positive():
+    """A t1.<payload>.<86-char tail> IAM token is detected at medium severity."""
+    findings = scan(f"IAM-Token: {_YANDEX_TOKEN}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "yandex_cloud_iam_token"]
+    assert len(matched) == 1, "Yandex IAM token not detected"
+    assert matched[0].severity == "medium"
+
+
+def test_yandex_cloud_iam_token_true_negative():
+    """A too-short tail (not 86 chars) must not match."""
+    bad = "t1." + "A" * 20 + "." + "C" * 40
+    findings = scan(bad, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "yandex_cloud_iam_token"]
+    assert len(matched) == 0, "yandex_cloud_iam_token matched a short tail"
+
+
+def test_yandex_cloud_iam_token_known_test_value_downscored():
+    """The synthetic signature tail registered as a known test value scores ~0.15."""
+    known = "t1." + "Z" * 30 + "." + "B" * 86
+    findings = scan(known, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "yandex_cloud_iam_token"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Clojars Deploy Token (prefix-anchored) ---
+
+_CLOJARS_BODY = "abcdef0123456789" * 3 + "abcdef0123456789"[:12]  # 60 hex chars
+
+
+def test_clojars_deploy_token_true_positive():
+    """CLOJARS_ + 60 hex is detected as a high-confidence deploy token."""
+    findings = scan(f"CLOJARS_{_CLOJARS_BODY}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "clojars_deploy_token"]
+    assert len(matched) == 1, "Clojars deploy token not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+
+
+def test_clojars_deploy_token_true_negative():
+    """A short (59-hex) body or wrong charset must not match."""
+    for neg in (
+        "CLOJARS_" + "a" * 59,  # one char short
+        "CLOJARS_" + "A" * 60,  # uppercase — not lowercase hex
+    ):
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "clojars_deploy_token"]
+        assert len(matched) == 0, f"clojars_deploy_token wrongly matched: {neg[:20]}..."
+
+
+def test_clojars_deploy_token_known_test_value_downscored():
+    """The synthetic 60-hex body registered as a known test value scores ~0.15."""
+    known = "0123456789abcdef" * 3 + "0123456789ab"
+    findings = scan(f"CLOJARS_{known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "clojars_deploy_token"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Neon API Key (prefix-anchored) ---
+
+_NEON_KEY = "neon_api_key_" + "AbCdEfGhIjKlMnOpQrStUvWx" + "9876543210"
+
+
+def test_neon_api_key_true_positive():
+    """neon_<scope>_key_<body> is detected across the documented scopes."""
+    for text in (
+        f"NEON_API_KEY={_NEON_KEY}",
+        "neon_org_key_" + "AbCdEfGhIjKlMnOpQrStUvWx" + "0123456789",
+        "neon_project_key_" + "AbCdEfGhIjKlMnOpQrStUvWx" + "0123456789",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "neon_api_key"]
+        assert len(matched) == 1, f"Neon key not detected in: {text[:24]}..."
+        assert matched[0].severity == "high"
+
+
+def test_neon_api_key_true_negative():
+    """The older napi_ prefix and unknown scopes must not match."""
+    for neg in (
+        "napi_" + "AbCdEfGhIjKlMnOpQrStUvWx0123456789",  # legacy prefix
+        "neon_unknown_key_" + "AbCdEfGhIjKlMnOpQrStUvWx0123456789",  # unknown scope
+    ):
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "neon_api_key"]
+        assert len(matched) == 0, f"neon_api_key wrongly matched: {neg[:20]}..."
+
+
+def test_neon_api_key_known_test_value_downscored():
+    """The synthetic body registered as a known test value scores ~0.15."""
+    known = "neon_api_key_" + "AbCdEfGhIjKlMnOpQrStUvWx" + "0123456789"
+    findings = scan(known, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "neon_api_key"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Midtrans Server Key (prefix + gate) ---
+
+_MIDTRANS_KEY = "Mid-server-" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+
+
+def test_midtrans_server_key_true_positive():
+    """Production and sandbox server keys are both detected."""
+    for text in (
+        f"MIDTRANS_SERVER_KEY={_MIDTRANS_KEY}",
+        "midtrans server_key=SB-Mid-server-" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "midtrans_server_key"]
+        assert len(matched) == 1, f"Midtrans server key not detected in: {text[:24]}..."
+        assert matched[0].severity == "high"
+
+
+def test_midtrans_server_key_true_negative():
+    """The non-secret client key must NOT match."""
+    for neg in (
+        "Mid-client-" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+        "SB-Mid-client-" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+    ):
+        findings = scan(f"midtrans {neg}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "midtrans_server_key"]
+        assert len(matched) == 0, f"midtrans_server_key matched a client key: {neg[:20]}..."
+
+
+def test_midtrans_server_key_known_test_value_downscored():
+    """The synthetic body registered as a known test value scores ~0.15."""
+    findings = scan(f"midtrans server_key={_MIDTRANS_KEY}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "midtrans_server_key"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# ═══════════════════════════════════════════════
 # RUNNER
 # ═══════════════════════════════════════════════
 

@@ -2245,6 +2245,94 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.60,
     },
+
+    # ── Batch 10 (2026-07-06) ──────────────────────────────────
+    "cloudinary_url": {
+        # Self-anchoring cloudinary:// URL; only the api_secret is captured.
+        "positives": [
+            "CLOUDINARY_URL=cloudinary://123456789012345:ZyXwVuTsRqPoNmLkJiHgFeDcBa9@my-cloud-name",
+        ],
+        "negatives": [
+            "cloudinary://12345:ZyXwVuTsRqPoNmLkJiHgFeDcBa9@cloud",  # api_key too short
+            "https://123456789012345:ZyXwVuTsRqPoNmLkJiHgFeDcBa9@cloud",  # wrong scheme
+        ],
+        "min_confidence": 0.80,
+    },
+    "ngrok_authtoken": {
+        # Context-gated: two base62 segments joined by '_'. Requires an
+        # ngrok / authtoken label adjacent to the value. Positive body differs
+        # from the registered known_test_value so it is not down-scored.
+        "positives": [
+            "ngrok config add-authtoken ZyXwVuTsRqPoNmLkJiHgFeD_QpOnMlKjIhGfEdCbA9",
+            "NGROK_AUTHTOKEN=QpOnMlKjIhGfEdCbA98765_ZyXwVuTsRqPoNmLkJiHg",
+        ],
+        "negatives": [
+            # Bare token with no ngrok/authtoken label — must not match.
+            "ZyXwVuTsRqPoNmLkJiHgFeD_QpOnMlKjIhGfEdCbA9",
+            # Label present but no underscore-joined shape.
+            "NGROK_AUTHTOKEN=" + "a" * 48,
+        ],
+        "min_confidence": 0.60,
+    },
+    "opsgenie_api_key": {
+        # Context-gated UUID; requires the GenieKey auth-scheme label (or an
+        # opsgenie API host) adjacent to the value.
+        "positives": [
+            "Authorization: GenieKey a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        ],
+        "negatives": [
+            # Bare UUID with no GenieKey/opsgenie context — must not match.
+            "request_id = a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        ],
+        "min_confidence": 0.60,
+    },
+    "yandex_cloud_iam_token": {
+        # Structural: t1. prefix + base64url middle + fixed 86-char tail.
+        "positives": [
+            "IAM-Token: t1.ZyXwVuTsRqPoNmLkJiHgFeDcBa0123456789."
+            + "C" * 86,
+        ],
+        "negatives": [
+            "t1.ZyXwVuTs." + "C" * 40,  # tail not 86 chars
+        ],
+        "min_confidence": 0.80,
+    },
+    "clojars_deploy_token": {
+        # Prefix-anchored: CLOJARS_ + exactly 60 lowercase hex.
+        "positives": [
+            "CLOJARS_a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e",
+        ],
+        "negatives": [
+            "CLOJARS_" + "a" * 59,  # one char short
+            "CLOJARS_" + "A" * 60,  # uppercase, not lowercase hex
+        ],
+        "min_confidence": 0.80,
+    },
+    "neon_api_key": {
+        # Prefix-anchored: neon_<scope>_key_<alphanumeric body>.
+        "positives": [
+            "NEON_API_KEY=neon_api_key_ZyXwVuTsRqPoNmLkJiHgFeDc9876543210",
+            "neon_project_key_ZyXwVuTsRqPoNmLkJiHgFeDc9876543210",
+        ],
+        "negatives": [
+            "napi_ZyXwVuTsRqPoNmLkJiHgFeDc9876543210",  # legacy prefix
+            "neon_unknown_key_ZyXwVuTsRqPoNmLkJiHgFeDc9876543210",  # unknown scope
+        ],
+        "min_confidence": 0.80,
+    },
+    "midtrans_server_key": {
+        # Prefix + context: Mid-server- / SB-Mid-server-. Client keys must not
+        # match. Positive body differs from the registered known_test_value.
+        "positives": [
+            "MIDTRANS_SERVER_KEY=Mid-server-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876",
+            "midtrans server_key=SB-Mid-server-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876",
+        ],
+        "negatives": [
+            "midtrans Mid-client-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876",  # client key
+            "midtrans SB-Mid-client-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876",  # sandbox client key
+        ],
+        "min_confidence": 0.70,
+    },
 }
 
 # fmt: on
