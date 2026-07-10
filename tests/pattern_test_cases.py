@@ -2258,6 +2258,18 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "frameio_developer_token": {
+        # Prefix-anchored on the public 'fio-u-' spec + URL-safe body.
+        # Body differs from the registered known_test_value so it is not down-scored.
+        "positives": [
+            "FRAME_IO_TOKEN=fio-u-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210AbCdEf",
+        ],
+        "negatives": [
+            "fio-u-abc",  # body below the 20-char minimum
+            "fio-a-ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210",  # wrong prefix segment
+        ],
+        "min_confidence": 0.80,
+    },
     "ngrok_authtoken": {
         # Context-gated: two base62 segments joined by '_'. Requires an
         # ngrok / authtoken label adjacent to the value. Positive body differs

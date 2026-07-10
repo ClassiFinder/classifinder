@@ -2405,6 +2405,45 @@ def test_cloudinary_url_known_test_value_downscored():
     assert matched[0].confidence < 0.30
 
 
+# --- Frame.io Developer Token (prefix-anchored on fio-u-) ---
+
+# Synthetic body — alphabet sequence to satisfy [0-9A-Za-z_-]{20,100}
+# without tripping secret scanners; prefix is the citable anchor.
+_FRAMEIO_TOKEN = "fio-u-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCDEFGH"
+
+
+def test_frameio_developer_token_true_positive():
+    """A well-formed fio-u- prefixed token is detected at high confidence."""
+    findings = scan(f"FRAME_IO_TOKEN={_FRAMEIO_TOKEN}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "frameio_developer_token"]
+    assert len(matched) == 1, "Frame.io developer token not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+
+
+def test_frameio_developer_token_true_negative():
+    """Near-misses (wrong prefix, body too short) must not match."""
+    negatives = [
+        "fio-u-abc",  # body far below the 20-char minimum
+        "fio-a-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",  # wrong prefix segment
+        "https://frame.io/docs/getting-started-guide",  # prose mention, no token
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "frameio_developer_token"]
+        assert len(matched) == 0, f"frameio_developer_token wrongly matched: {neg}"
+
+
+def test_frameio_developer_token_known_test_value_downscored():
+    """The registered synthetic token down-scores to a likely-test value (~0.15)."""
+    token = "fio-u-" + "A" * 64
+    findings = scan(f"FRAME_IO_TOKEN={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "frameio_developer_token"]
+    assert len(matched) == 1, "Frame.io known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
 # --- ngrok Authtoken (context-gated) ---
 
 _NGROK_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz" + "_" + "0123456789AbCdEfGhIj"
