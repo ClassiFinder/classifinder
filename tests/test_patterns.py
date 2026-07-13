@@ -3419,3 +3419,99 @@ def test_telnyx_api_key_no_context_does_not_fire():
         findings = scan(text, min_confidence=0.1)
         tx = [f for f in findings if f.type == "telnyx_api_key"]
         assert len(tx) == 0, f"telnyx_api_key should not fire on: {text!r}"
+
+
+# ═══════════════════════════════════════════════
+# Batch 12 — vendor-sourced patterns (2026-07-13)
+# Known-test-value down-scoring + Salesforce/Okta non-collision
+# ═══════════════════════════════════════════════
+
+
+def test_docker_access_token_known_test_value_downscored():
+    """The registered synthetic dckr_pat_ token down-scores to ~0.15."""
+    token = "dckr_pat_" + "A" * 27
+    findings = scan(f"DOCKER_TOKEN={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "docker_access_token"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_rootly_api_key_known_test_value_downscored():
+    token = "rootly_" + "0123456789abcdef" * 4
+    findings = scan(f"ROOTLY_API_KEY={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "rootly_api_key"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_apify_api_token_known_test_value_downscored():
+    token = "apify_api_" + "A" * 36
+    findings = scan(f"APIFY_TOKEN={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "apify_api_token"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_salesforce_access_token_known_test_value_downscored():
+    token = "00" + "D" * 13 + "!" + "A" * 96
+    findings = scan(f"access_token={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "salesforce_access_token"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_adobe_oauth_client_secret_known_test_value_downscored():
+    token = "p8e-" + "A" * 32
+    findings = scan(f"client_secret={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "adobe_oauth_client_secret"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_astra_db_application_token_known_test_value_downscored():
+    token = "AstraCS:" + "A" * 24 + ":" + "0123456789abcdef" * 4
+    findings = scan(f"ASTRA_DB_APPLICATION_TOKEN={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "astra_db_application_token"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_elastic_cloud_api_key_known_test_value_downscored():
+    token = "essu_" + "A" * 90
+    findings = scan(f"ELASTIC_API_KEY={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "elastic_cloud_api_key"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_plivo_auth_id_known_test_value_downscored():
+    token = "MA" + "ABCDEFGHIJKLMNOPQR"
+    findings = scan(f"PLIVO_AUTH_ID={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "plivo_auth_id"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_salesforce_and_okta_do_not_collide():
+    """A Salesforce '!'-delimited token must NOT match the Okta '00' token, and
+    an Okta-shaped '00' token (40-char body, no '!') must NOT match Salesforce."""
+    salesforce = "00Dx0000000abcd!" + "AbCdEf0123456789." * 6
+    okta = "00" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCD"  # 00 + 40 chars
+
+    sf_findings = scan(f"access_token={salesforce}", min_confidence=0.01)
+    sf_types = {f.type for f in sf_findings}
+    assert "salesforce_access_token" in sf_types
+    assert "okta_api_token" not in sf_types
+
+    # Okta requires okta context to fire; even with it, Salesforce must not match.
+    okta_findings = scan(f"OKTA_API_TOKEN={okta}", min_confidence=0.01)
+    okta_types = {f.type for f in okta_findings}
+    assert "salesforce_access_token" not in okta_types

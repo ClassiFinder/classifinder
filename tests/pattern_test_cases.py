@@ -2359,6 +2359,104 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # ── Batch 12 — vendor-sourced patterns (2026-07-13) ──────────────────
+
+    "docker_access_token": {
+        # Prefix-anchored: dckr_pat_ (personal) or dckr_oat_ (org) + URL-safe body.
+        "positives": [
+            "DOCKER_TOKEN=dckr_pat_AbCdEfGhIjKlMnOpQrStUvWxYz1",
+            "dckr_oat_AbCdEfGhIjKlMnOpQrStUvWxYz1",
+        ],
+        "negatives": [
+            "dckr_pat_short",  # body far below the 20-char minimum
+            "dckr_xyz_AbCdEfGhIjKlMnOpQrStUvWxYz1",  # wrong middle segment
+        ],
+        "min_confidence": 0.80,
+    },
+    "rootly_api_key": {
+        # Prefix-anchored: rootly_ + exactly 64 lowercase hex.
+        "positives": [
+            "ROOTLY_API_KEY=rootly_" + "a1b2c3d4e5f60718" * 4,
+        ],
+        "negatives": [
+            "rootly_" + "a" * 63,  # one char short
+            "rootly_" + "A" * 64,  # uppercase, not lowercase hex
+        ],
+        "min_confidence": 0.80,
+    },
+    "apify_api_token": {
+        # Prefix-anchored: apify_api_ + 36 alphanumeric chars.
+        "positives": [
+            "APIFY_TOKEN=apify_api_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        ],
+        "negatives": [
+            "apify_api_" + "A" * 35,  # one char short
+            "apify_key_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",  # wrong prefix
+        ],
+        "min_confidence": 0.80,
+    },
+    "salesforce_access_token": {
+        # Structural: 00 + 13 alnum + '!' at index 15 + 96+ char signed tail.
+        "positives": [
+            "access_token=00Dx0000000abcd!" + "AbCdEf0123456789." * 6,
+        ],
+        "negatives": [
+            # Tail one char short of the 96-char floor.
+            "00" + "D" * 13 + "!" + "A" * 95,
+            # Okta-shaped '00' token (40-char body, NO '!') must not match here.
+            "00AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCD",
+        ],
+        "min_confidence": 0.80,
+    },
+    "adobe_oauth_client_secret": {
+        # Prefix-anchored: p8e- + 32-char body.
+        "positives": [
+            "client_secret=p8e-AbCdEfGhIjKlMnOpQrStUvWx01234567",
+        ],
+        "negatives": [
+            "p8e-" + "A" * 31,  # one char short
+            "p8f-" + "A" * 32,  # wrong prefix
+        ],
+        "min_confidence": 0.80,
+    },
+    "astra_db_application_token": {
+        # Prefix-anchored: AstraCS: + 24-char id + ':' + 64 hex.
+        "positives": [
+            "ASTRA_DB_APPLICATION_TOKEN=AstraCS:AbCdEfGhIjKlMnOpQrStUvWx:"
+            + "a1b2c3d4e5f60718" * 4,
+        ],
+        "negatives": [
+            "AstraCS:" + "A" * 24 + ":" + "a" * 63,  # hex tail one short
+            "AstraCS:" + "A" * 23 + ":" + "a1b2c3d4e5f60718" * 4,  # id one short
+        ],
+        "min_confidence": 0.85,
+    },
+    "elastic_cloud_api_key": {
+        # Prefix-anchored: essu_ + base64 body (>= 50-char floor).
+        "positives": [
+            "ELASTIC_API_KEY=essu_" + "AbCdEf0123456789GhIjKlMnOpQrStUvWxYz" * 3,
+        ],
+        "negatives": [
+            "essu_" + "A" * 49,  # below the 50-char floor
+            "esxu_" + "A" * 90,  # wrong prefix
+        ],
+        "min_confidence": 0.85,
+    },
+    "plivo_auth_id": {
+        # Context-gated: MA/SA + 18 uppercase-alnum, requires a plivo/auth_id label.
+        "positives": [
+            "PLIVO_AUTH_ID=MAXABCDE1234FGHIJ567",
+            "plivo auth_id: SAXABCDE1234FGHIJ567",
+        ],
+        "negatives": [
+            # No plivo/auth_id context nearby — must stay suppressed.
+            "accountSid = MAXABCDE1234FGHIJ567",
+            # Body too short (16 chars, needs 18).
+            "PLIVO_AUTH_ID=MAXABCDE1234FGHIJ5",
+        ],
+        "min_confidence": 0.60,
+    },
 }
 
 # fmt: on
