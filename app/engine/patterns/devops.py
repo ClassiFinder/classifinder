@@ -884,6 +884,50 @@ CLOJARS_DEPLOY_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# WAKATIME (Batch 11 — 2026-07-13; prefix-anchored UUIDv4)
+# ===================================================
+
+WAKATIME_API_KEY = SecretPattern(
+    id="wakatime_api_key",
+    name="WakaTime API Key",
+    description=(
+        "WakaTime API key — the literal 'waka_' prefix followed by a strict"
+        " UUID v4. Found in ~/.wakatime.cfg ([settings] api_key) and sent via"
+        " HTTP Basic Auth. Detection is deliberately anchored on the 'waka_'"
+        " prefix: a bare UUID v4 is indistinguishable from any generic UUID and"
+        " would be extremely high-FP, so the prefix is required. Grants"
+        " read/write access to a user's coding-activity account."
+    ),
+    provider="wakatime",
+    severity="high",
+    # Format per WakaTime's own CLI, which validates API keys with the regex
+    # ^(waka_)?[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$
+    # (a strict UUIDv4 optionally prefixed with 'waka_'). The prefix is optional
+    # in the wild, but anchoring on 'waka_' is the correct anti-FP choice —
+    # a bare UUIDv4 is indistinguishable from a generic UUID. Independently
+    # authored from the vendor source; confidence_base 0.95 (prefix-anchored).
+    # Source: https://github.com/wakatime/wakatime-cli/blob/develop/pkg/params/params.go
+    regex=re.compile(
+        r"(?P<secret>waka_[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["wakatime", "waka_", "WAKATIME_API_KEY", "wakatime.cfg"],
+    known_test_values={
+        # The documented candidate example — synthetic, not a live key.
+        "waka_a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    },
+    recommendation=(
+        "Revoke this key in WakaTime under Settings > Account > Secret API Key"
+        " (reset) and update ~/.wakatime.cfg and any CI environment that used it."
+    ),
+    tags=["devops", "wakatime", "productivity"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -916,4 +960,6 @@ register(
     NGROK_AUTHTOKEN,
     OPSGENIE_API_KEY,
     CLOJARS_DEPLOY_TOKEN,
+    # Batch 11 — vendor-sourced patterns (2026-07-13)
+    WAKATIME_API_KEY,
 )

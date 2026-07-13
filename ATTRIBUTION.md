@@ -85,6 +85,7 @@ The following patterns were independently derived from official vendor documenta
 | `discord_bot_token` | https://docs.discord.com/developers/reference |
 | `onesignal_rest_api_key` | https://documentation.onesignal.com/docs/en/keys-and-ids, https://documentation.onesignal.com/reference/quick-start-api-guide |
 | `frameio_developer_token` | https://github.com/Frameio/python-frameio-client (official Frame.io Python SDK — documents the `fio-u-` developer-token prefix) |
+| `wakatime_api_key` | https://github.com/wakatime/wakatime-cli/blob/develop/pkg/params/params.go (official WakaTime CLI — validates keys with `^(waka_)?[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$`) |
 
 Vendor-published token formats (e.g. `AKIA...`, `sk_live_...`, `AIza...`, PEM markers, JWT structure, Bitcoin WIF, credit-card IINs) are facts and not subject to copyright.
 

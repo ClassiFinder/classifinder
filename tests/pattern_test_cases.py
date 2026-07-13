@@ -2345,6 +2345,20 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    "wakatime_api_key": {
+        # Prefix-anchored: literal 'waka_' + strict UUIDv4. Positive body differs
+        # from the registered known_test_value so it is not down-scored.
+        "positives": [
+            "WAKATIME_API_KEY=waka_18b53d6a-1c4a-4d0f-8f7a-3d9c2e1b7a6c",
+        ],
+        "negatives": [
+            # Bare UUIDv4 with no 'waka_' prefix — the anchor must reject it.
+            "request_id = 18b53d6a-1c4a-4d0f-8f7a-3d9c2e1b7a6c",
+            # 'waka_' prefix but not a v4 UUID (version nibble is 1, not 4).
+            "waka_18b53d6a-1c4a-1d0f-8f7a-3d9c2e1b7a6c",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
