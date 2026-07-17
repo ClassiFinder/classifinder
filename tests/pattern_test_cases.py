@@ -2348,6 +2348,19 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "wakatime_api_key": {
+        # Prefix-anchored: literal waka_ + strict UUID v4. Bare UUID (no prefix)
+        # and non-v4 UUIDs must not match — the waka_ anchor is the anti-FP guard.
+        # The UUID below is a synthetic v4 UUID, not a real WakaTime key.
+        "positives": [
+            "WAKATIME_API_KEY=waka_18b53d6a-1c4a-4d0f-8f7a-3d9c2e1b7a6c",
+        ],
+        "negatives": [
+            "id=18b53d6a-1c4a-4d0f-8f7a-3d9c2e1b7a6c",  # bare UUID, no waka_ anchor
+            "waka_18b53d6a-1c4a-1d0f-8f7a-3d9c2e1b7a6c",  # UUID v1 (version nibble != 4)
+        ],
+        "min_confidence": 0.90,
+    },
     "neon_api_key": {
         # Prefix-anchored: neon_<scope>_key_<alphanumeric body>.
         "positives": [
