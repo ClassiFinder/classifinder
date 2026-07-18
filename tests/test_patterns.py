@@ -2522,6 +2522,43 @@ def test_inngest_signing_key_known_test_values_downscored():
         assert matched[0].confidence < 0.30
 
 
+# --- Render API Key (prefix-anchored) ---
+
+_RENDER_KEY = "rnd_" + "AbCdEfGhIjKlMnOpQrStUvWx0123456789"
+
+
+def test_render_api_key_true_positive():
+    """A well-formed rnd_ prefixed key is detected at high confidence."""
+    findings = scan(f"RENDER_API_KEY={_RENDER_KEY}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "render_api_key"]
+    assert len(matched) == 1, "Render API key not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+
+
+def test_render_api_key_true_negative():
+    """Near-misses (wrong prefix, body too short) must not match."""
+    negatives = [
+        "rnd_abc",  # body far below the 20-char minimum
+        "rND_AbCdEfGhIjKlMnOpQrStUvWx0123456789",  # wrong-case prefix
+        "the wind blew round and round the empty field",  # prose, no token
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "render_api_key"]
+        assert len(matched) == 0, f"render_api_key wrongly matched: {neg}"
+
+
+def test_render_api_key_known_test_value_downscored():
+    """The registered synthetic key down-scores to a likely-test value (~0.15)."""
+    token = "rnd_" + "A" * 32
+    findings = scan(f"RENDER_API_KEY={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "render_api_key"]
+    assert len(matched) == 1, "Render known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
 # --- ngrok Authtoken (context-gated) ---
 
 _NGROK_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz" + "_" + "0123456789AbCdEfGhIj"

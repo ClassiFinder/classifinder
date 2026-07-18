@@ -2286,6 +2286,18 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "render_api_key": {
+        # Prefix-anchored on the public 'rnd_' spec + alphanumeric body.
+        # Body differs from the registered known_test_value so it is not down-scored.
+        "positives": [
+            "RENDER_API_KEY=rnd_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210",
+        ],
+        "negatives": [
+            "rnd_abc",  # body below the 20-char minimum
+            "rND_ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210",  # wrong-case prefix
+        ],
+        "min_confidence": 0.80,
+    },
     "ngrok_authtoken": {
         # Context-gated: two base62 segments joined by '_'. Requires an
         # ngrok / authtoken label adjacent to the value. Positive body differs
