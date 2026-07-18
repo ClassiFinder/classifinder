@@ -2270,6 +2270,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "inngest_signing_key": {
+        # Prefix-anchored on the vendor 'signkey-' spec + \w+ env segment + 64 hex.
+        # Body differs from every registered known_test_value so it is not down-scored.
+        "positives": [
+            "INNGEST_SIGNING_KEY=signkey-prod-" + "0123456789abcdef" * 4,
+            "INNGEST_SIGNING_KEY=signkey-branch-" + "fedcba9876543210" * 4,
+        ],
+        "negatives": [
+            # Inngest's own SDK toy keys — excluded by the 64-hex length bound.
+            "INNGEST_SIGNING_KEY=signkey-prod-12345678",
+            "INNGEST_SIGNING_KEY=signkey-test-abc123def456",
+            # Non-hex body of the right length.
+            "INNGEST_SIGNING_KEY=signkey-prod-" + "z" * 64,
+        ],
+        "min_confidence": 0.80,
+    },
     "ngrok_authtoken": {
         # Context-gated: two base62 segments joined by '_'. Requires an
         # ngrok / authtoken label adjacent to the value. Positive body differs

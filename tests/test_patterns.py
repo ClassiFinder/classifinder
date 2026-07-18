@@ -2444,6 +2444,84 @@ def test_frameio_developer_token_known_test_value_downscored():
     assert matched[0].confidence < 0.30
 
 
+# --- Inngest Signing Key (prefix-anchored on signkey-<env>- + 64 hex) ---
+
+# Synthetic 64-hex body — a repeating hex alphabet, so no real key shape lands in
+# git. Assembled by concatenation to keep the literal out of push-protection scans.
+_INNGEST_KEY = "signkey-" + "prod-" + "0123456789abcdef" * 4
+
+
+def test_inngest_signing_key_true_positive():
+    """A well-formed signkey-<env>-<64 hex> key is detected at high confidence."""
+    findings = scan(f"INNGEST_SIGNING_KEY={_INNGEST_KEY}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "inngest_signing_key"]
+    assert len(matched) == 1, "Inngest signing key not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+
+
+def test_inngest_signing_key_env_segment_is_open_ended():
+    """The env segment follows the vendor's own `\\w+` regex, not a fixed alternation."""
+    for env in ["prod", "test", "branch", "staging"]:
+        key = "signkey-" + env + "-" + "abcdef0123456789" * 4
+        findings = scan(f"INNGEST_SIGNING_KEY={key}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "inngest_signing_key"]
+        assert len(matched) == 1, f"env segment {env!r} not matched"
+
+
+def test_inngest_signing_key_true_negative():
+    """Vendor toy keys and near-misses must not match; the 64-hex bound is the FP control."""
+    negatives = [
+        # Inngest's own SDK/test toy keys — all far short of 64 hex.
+        "INNGEST_SIGNING_KEY=signkey-prod-12345678",
+        "INNGEST_SIGNING_KEY=signkey-test-12345678",
+        "INNGEST_SIGNING_KEY=signkey-test-abc123",
+        "INNGEST_SIGNING_KEY=signkey-test-mykey",
+        "INNGEST_SIGNING_KEY=signkey-prod-abc",
+        "INNGEST_SIGNING_KEY=signkey-test-abc123def456",
+        "INNGEST_SIGNING_KEY=signkey-test",  # bare prefix, no env segment or body
+        # Right length, wrong charset (hex only).
+        "INNGEST_SIGNING_KEY=signkey-prod-" + "z" * 64,
+        # Missing the env segment entirely.
+        "INNGEST_SIGNING_KEY=signkey-" + "0123456789abcdef" * 4,
+        # Prose mention, no key.
+        "Set INNGEST_SIGNING_KEY to the signing key from the Inngest dashboard.",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "inngest_signing_key"]
+        assert len(matched) == 0, f"inngest_signing_key wrongly matched: {neg}"
+
+
+def test_inngest_signing_key_rejects_overlong_hex_body():
+    """A body longer than 64 hex chars is not an Inngest SHA256 key and must not match."""
+    findings = scan("INNGEST_SIGNING_KEY=signkey-prod-" + "a" * 65, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "inngest_signing_key"]
+    assert len(matched) == 0, "overlong hex body wrongly matched"
+
+
+def test_inngest_signing_key_known_test_values_downscored():
+    """Every vendor-published sample key down-scores to a likely-test value (~0.15)."""
+    vendor_samples = [
+        # inngest-py/.env.example
+        "signkey-" + "prod-" + "0" * 64,
+        # inngest-rs handler.rs
+        "signkey-" + "test-" + "1" * 64,
+        # inngest-rs signature.rs
+        "signkey-" + "test-" + "8ee2262a15e8d3c42d6a840db7af3de2aab08ef632b32a37a687f24b34dba3ff",
+        "signkey-" + "test-" + "e4bf4a2e7f55c7eb954b6e72f8f69628fbc409fe7da6d0f6958770987dcf0e02",
+        # inngest-kt BearerTokenKtTest.kt — same hash under both env segments
+        "signkey-" + "prod-" + "b2ed992186a5cb19f6668aade821f502c1d00970dfd0e35128d51bac4649916c",
+        "signkey-" + "test-" + "b2ed992186a5cb19f6668aade821f502c1d00970dfd0e35128d51bac4649916c",
+    ]
+    for sample in vendor_samples:
+        findings = scan(f"INNGEST_SIGNING_KEY={sample}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "inngest_signing_key"]
+        assert len(matched) == 1, f"Inngest known test value not detected: {sample[:20]}"
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence < 0.30
+
+
 # --- ngrok Authtoken (context-gated) ---
 
 _NGROK_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz" + "_" + "0123456789AbCdEfGhIj"
