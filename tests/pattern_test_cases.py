@@ -2442,6 +2442,26 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.60,
     },
+    # ── Batch 13 — vendor-sourced patterns (2026-07-18) ──────────────────
+    "cisco_meraki_api_key": {
+        # Context-gated 40-char lowercase hex — there is NO distinctive prefix;
+        # the regex requires an X-Cisco-Meraki-API-Key / MERAKI_DASHBOARD_API_KEY
+        # / meraki label adjacent to the value. Positive bodies differ from the
+        # registered known_test_value (the Cisco doc placeholder) so they are not
+        # down-scored. confidence_base is 0.60.
+        "positives": [
+            "X-Cisco-Meraki-API-Key: a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4",
+            "MERAKI_DASHBOARD_API_KEY=0f1e2d3c4b5a69788796a5b4c3d2e1f0deadbeef",
+        ],
+        "negatives": [
+            # Bare 40-hex with no Meraki context (SHA-1 / git-hash shaped) — must
+            # not match.
+            "commit a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4",
+            # Has context label but too short (12 hex chars).
+            "X-Cisco-Meraki-API-Key: a1b2c3d4e5f6",
+        ],
+        "min_confidence": 0.60,
+    },
 }
 
 # fmt: on
