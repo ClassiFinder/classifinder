@@ -3630,3 +3630,76 @@ def test_salesforce_and_okta_do_not_collide():
     okta_findings = scan(f"OKTA_API_TOKEN={okta}", min_confidence=0.01)
     okta_types = {f.type for f in okta_findings}
     assert "salesforce_access_token" not in okta_types
+
+
+# ---------------------------------------------------------------------------
+# Checkout.com secret key (2026-07-20)
+# ---------------------------------------------------------------------------
+
+# Synthetic keys — not registered known_test_values, so they score normally.
+_CHECKOUT_PROD_KEY = "sk_" + "q7f3m2rk9tzb5w8xh4nd6pcv1s"
+_CHECKOUT_SANDBOX_KEY = "sk_" + "sbox_" + "z4k8rmq2vh6tn9xb3fd7wsc5lq2"
+
+
+def test_checkout_com_secret_key_detected():
+    """Production and sandbox Checkout.com secret keys are detected at high
+    confidence and marked critical."""
+    for key in (_CHECKOUT_PROD_KEY, _CHECKOUT_SANDBOX_KEY):
+        findings = scan(f"CKO_SECRET_KEY={key}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "checkout_com_secret_key"]
+        assert len(matched) == 1, f"Checkout.com key not detected: {key}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+
+
+def test_checkout_com_secret_key_true_negative():
+    """Bodies that are too short/long, uppercase, or carry a different prefix
+    must not match."""
+    negatives = [
+        "sk_" + "abc123",  # body far too short
+        "sk_" + "q7f3m2rk9tzb5w8xh4nd6pcv1",  # 25 chars, one below the floor
+        "sk_" + "Q7F3M2RK9TZB5W8XH4ND6PCV1S",  # uppercase body (Stripe-shaped)
+        "sk-" + "proj1234567890abcdefghijklmnop",  # OpenAI-style hyphen prefix
+        "pk_" + "q7f3m2rk9tzb5w8xh4nd6pcv1s",  # publishable, not secret
+        "xsk_" + "q7f3m2rk9tzb5w8xh4nd6pcv1s",  # not on a word boundary
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "checkout_com_secret_key"]
+        assert len(matched) == 0, f"checkout_com_secret_key wrongly matched: {neg}"
+
+
+def test_checkout_com_secret_key_known_test_value_downscored():
+    """The vendor-published sandbox example must be detected but flagged as a
+    test value and down-scored to ~0.15."""
+    known = "sk_" + "sbox_" + "wjvrysklsqjmrhn3yoexnshsl72"
+    findings = scan(known, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "checkout_com_secret_key"]
+    assert len(matched) == 1, "Checkout.com known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_checkout_com_and_stripe_do_not_collide():
+    """Both directions of the sk_ prefix collision: a Stripe live/test secret
+    key must never produce a Checkout.com finding, and a Checkout.com key must
+    never produce a Stripe finding."""
+    stripe_live = "sk_live_" + "51H8kQ2eZvKYlo2CabcdefGH"
+    stripe_test_lower = "sk_test_" + "abcdefghij0123456789abcdefgh"
+
+    for stripe_key, expected in (
+        (stripe_live, "stripe_live_secret_key"),
+        (stripe_test_lower, "stripe_test_secret_key"),
+    ):
+        types = {f.type for f in scan(stripe_key, min_confidence=0.01)}
+        assert expected in types, f"Stripe pattern stopped matching: {stripe_key}"
+        assert "checkout_com_secret_key" not in types, (
+            f"Checkout.com stole a Stripe key: {stripe_key}"
+        )
+
+    for checkout_key in (_CHECKOUT_PROD_KEY, _CHECKOUT_SANDBOX_KEY):
+        types = {f.type for f in scan(checkout_key, min_confidence=0.01)}
+        assert "checkout_com_secret_key" in types
+        assert "stripe_live_secret_key" not in types
+        assert "stripe_test_secret_key" not in types
+        assert "stripe_restricted_key" not in types
