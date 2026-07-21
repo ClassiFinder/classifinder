@@ -3744,3 +3744,48 @@ def test_checkout_com_and_stripe_do_not_collide():
         assert "stripe_live_secret_key" not in types
         assert "stripe_test_secret_key" not in types
         assert "stripe_restricted_key" not in types
+
+
+# --- Xata API Key (prefix-anchored: xau_ user / xao_ organization) ---
+
+_XATA_BODY = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456"  # 33 base62 chars
+
+
+def test_xata_api_key_true_positive():
+    """Both the user ('xau_') and organization ('xao_') prefixes are detected."""
+    for prefix in ("xau_", "xao_"):
+        token = prefix + _XATA_BODY
+        findings = scan(f"XATA_API_KEY={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "xata_api_key"]
+        assert len(matched) == 1, f"Xata API key not detected for {prefix}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "high"
+
+
+def test_xata_api_key_true_negative():
+    """Near-misses (wrong prefix, body too short/long, embedded) must not match."""
+    negatives = [
+        "xau_short",  # body far below the 32-char minimum
+        "xat_" + _XATA_BODY,  # third letter is not 'u' or 'o'
+        "XAU_" + _XATA_BODY,  # wrong-case prefix
+        "xau" + _XATA_BODY,  # missing underscore separator
+        "xau_" + "A" * 40,  # body exceeds the vendor MaxLength bound
+        "prefixxau_" + _XATA_BODY,  # embedded in a longer alphanumeric run
+        "the exam was on xylophones and audio",  # prose, no token
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "xata_api_key"]
+        assert len(matched) == 0, f"xata_api_key wrongly matched: {neg}"
+
+
+def test_xata_api_key_known_test_values_downscored():
+    """Xata's own published key_test.go fixtures down-score to ~0.15."""
+    published_body = "xoWnROvXetYNTeVzfIyA10QcC8UNZufs2"
+    for prefix in ("xau_", "xao_"):
+        token = prefix + published_body
+        findings = scan(f"XATA_API_KEY={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "xata_api_key"]
+        assert len(matched) == 1, f"Xata known test value not detected for {prefix}"
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence < 0.30
