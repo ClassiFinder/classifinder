@@ -2298,6 +2298,19 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "amazon_mws_auth_token": {
+        # Prefix-anchored on the public 'amzn.mws.' literal + canonical UUID.
+        # Sequential-hex body differs from the registered all-zero known_test_value
+        # so it is not down-scored.
+        "positives": [
+            "MWSAuthToken=amzn.mws.01234567-89ab-cdef-0123-456789abcdef",
+        ],
+        "negatives": [
+            "amzn.mws.01234567-89ab-cdef-0123",  # UUID truncated
+            "amzn.aws.01234567-89ab-cdef-0123-456789abcdef",  # wrong middle literal
+        ],
+        "min_confidence": 0.80,
+    },
     "ngrok_authtoken": {
         # Context-gated: two base62 segments joined by '_'. Requires an
         # ngrok / authtoken label adjacent to the value. Positive body differs

@@ -63,6 +63,7 @@ ClassiFinder's secret-detection pattern library has multiple lineages. Each patt
 | `nuget_api_key` | db/rules-stable.yml:5280 |
 | `figma_pat` | db/rules-stable.yml:1068 |
 | `ibm_cloud_api_key` | db/rules-stable.yml:1740 |
+| `amazon_mws_auth_token` | datasets/high-confidence.yml ("Amazon MWS Auth Token") |
 
 CC-BY-4.0 requires attribution. Each affected pattern carries an inline comment pointing to the SPDB source line. By using ClassiFinder you acknowledge this attribution.
 

@@ -2559,6 +2559,47 @@ def test_render_api_key_known_test_value_downscored():
     assert matched[0].confidence < 0.30
 
 
+# --- Amazon MWS Auth Token (prefix-anchored 'amzn.mws.' + UUID) ---
+
+# Clearly-synthetic sequential-hex UUID body — valid 0-9a-f, low entropy so it
+# does not trip GitHub's secret scanner; differs from the registered all-zero
+# known_test_value so it is not down-scored.
+_MWS_TOKEN = "amzn.mws.01234567-89ab-cdef-0123-456789abcdef"
+
+
+def test_amazon_mws_auth_token_true_positive():
+    """A well-formed amzn.mws. prefixed UUID token is detected at high confidence."""
+    findings = scan(f"MWSAuthToken={_MWS_TOKEN}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "amazon_mws_auth_token"]
+    assert len(matched) == 1, "Amazon MWS auth token not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+
+
+def test_amazon_mws_auth_token_true_negative():
+    """Near-misses (wrong prefix, non-hex, malformed UUID) must not match."""
+    negatives = [
+        "amzn.mws.01234567-89ab-cdef-0123",  # UUID truncated (missing final group)
+        "amzn.mws.0123456789abcdef0123456789abcdef",  # UUID without hyphens
+        "amzn.aws.01234567-89ab-cdef-0123-456789abcdef",  # wrong middle literal
+        "amzn.mws.0123456g-89ab-cdef-0123-456789abcdef",  # non-hex char 'g'
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "amazon_mws_auth_token"]
+        assert len(matched) == 0, f"amazon_mws_auth_token wrongly matched: {neg}"
+
+
+def test_amazon_mws_auth_token_known_test_value_downscored():
+    """The registered synthetic all-zero token down-scores to ~0.15."""
+    token = "amzn.mws.00000000-0000-0000-0000-000000000000"
+    findings = scan(f"MWSAuthToken={token}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "amazon_mws_auth_token"]
+    assert len(matched) == 1, "Amazon MWS known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
 # --- ngrok Authtoken (context-gated) ---
 
 _NGROK_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz" + "_" + "0123456789AbCdEfGhIj"
