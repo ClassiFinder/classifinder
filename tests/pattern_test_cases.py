@@ -2286,6 +2286,21 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "xata_api_key": {
+        # Prefix-anchored on the vendor's 'xau_' (user) / 'xao_' (organization)
+        # prefixes plus a 32-36 char base62 body. Positive bodies differ from the
+        # registered known_test_values so they are not down-scored.
+        "positives": [
+            "XATA_API_KEY=xau_AbCdEfGhIjKlMnOpQrStUvWxYz0123456",
+            "XATA_API_KEY=xao_AbCdEfGhIjKlMnOpQrStUvWxYz0123456",
+        ],
+        "negatives": [
+            "xau_short",  # body below the 32-char minimum
+            "xat_AbCdEfGhIjKlMnOpQrStUvWxYz0123456",  # wrong prefix letter
+            "XAU_AbCdEfGhIjKlMnOpQrStUvWxYz0123456",  # wrong-case prefix
+        ],
+        "min_confidence": 0.80,
+    },
     "render_api_key": {
         # Prefix-anchored on the public 'rnd_' spec + alphanumeric body.
         # Body differs from the registered known_test_value so it is not down-scored.
