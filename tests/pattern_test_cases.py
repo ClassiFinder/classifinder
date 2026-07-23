@@ -2361,6 +2361,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "checkout_com_secret_key": {
+        # sk_ (production) / sk_sbox_ (sandbox) + 26-32 lowercase alnum chars.
+        # Bodies below differ from every registered known_test_value so they are
+        # not down-scored. Stripe's sk_live_/sk_test_ infixes are excluded by a
+        # negative lookahead, and the lowercase-only body keeps mixed-case
+        # Stripe keys out.
+        "positives": [
+            "CKO_SECRET_KEY=sk_q7f3m2rk9tzb5w8xh4nd6pcv1s",
+            "checkout secret sk_sbox_z4k8rmq2vh6tn9xb3fd7wsc5lq2",
+        ],
+        "negatives": [
+            "sk_live_51H8kQ2eZvKYlo2CabcdefGH",  # Stripe live key
+            "sk_test_abcdefghij0123456789abcdefgh",  # Stripe test key
+            "sk_Q7F3M2RK9TZB5W8XH4ND6PCV1S",  # uppercase body
+            "sk_q7f3m2rk9tzb5w8xh4nd6pcv1",  # 25-char body, below floor
+        ],
+        "min_confidence": 0.85,
+    },
     "wakatime_api_key": {
         # Prefix-anchored: literal waka_ + strict UUID v4. Bare UUID (no prefix)
         # and non-v4 UUIDs must not match — the waka_ anchor is the anti-FP guard.
