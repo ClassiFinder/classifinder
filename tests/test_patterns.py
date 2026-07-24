@@ -3789,3 +3789,50 @@ def test_xata_api_key_known_test_values_downscored():
         assert len(matched) == 1, f"Xata known test value not detected for {prefix}"
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence < 0.30
+
+
+# --- Xendit Secret API Key (prefix-anchored: xnd_production_ / xnd_development_) ---
+
+# Clearly-synthetic base64 body (alphabet sequence + a couple of base64 special
+# chars) — satisfies [A-Za-z0-9+/=]{30,} without tripping GitHub's scanner, and
+# is NOT a registered known_test_value so it scores normally.
+_XENDIT_BODY = "AbCdEfGhIjKlMnOpQrStUvWxYz012345678+/=="
+
+
+def test_xendit_secret_api_key_true_positive():
+    """Both live ('xnd_production_') and test ('xnd_development_') secret keys
+    are detected at high confidence and marked critical."""
+    for prefix in ("xnd_production_", "xnd_development_"):
+        token = prefix + _XENDIT_BODY
+        findings = scan(f"XENDIT_SECRET_KEY={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "xendit_secret_api_key"]
+        assert len(matched) == 1, f"Xendit secret key not detected for {prefix}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+
+
+def test_xendit_secret_api_key_true_negative():
+    """The non-secret publishable key, an unknown environment, a too-short body,
+    and an embedded run must not match."""
+    negatives = [
+        "xnd_public_" + _XENDIT_BODY,  # publishable key — deliberately excluded
+        "xnd_staging_" + _XENDIT_BODY,  # unknown environment infix
+        "xnd_production_" + "AbCdEf",  # body far below the 30-char minimum
+        "0xnd_production_" + _XENDIT_BODY,  # embedded in a longer alphanumeric run
+        "the wind production ramped up",  # prose, no token
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "xendit_secret_api_key"]
+        assert len(matched) == 0, f"xendit_secret_api_key wrongly matched: {neg}"
+
+
+def test_xendit_secret_api_key_known_test_value_downscored():
+    """Xendit's own published Basic-Auth documentation example down-scores to
+    ~0.15 and is flagged as a test value."""
+    known = "xnd_development_" + "P4qDfOss0OCpl8RtKrROHjaQYNCk9dN5lSfk+R1l9Wbe+rSiCwZ3jw=="
+    findings = scan(f"XENDIT_SECRET_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "xendit_secret_api_key"]
+    assert len(matched) == 1, "Xendit known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30

@@ -2301,6 +2301,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    "xendit_secret_api_key": {
+        # Prefix-anchored on the vendor's 'xnd_production_' (live) /
+        # 'xnd_development_' (test) prefixes plus a base64 body ([A-Za-z0-9+/=]).
+        # Positive bodies differ from the registered known_test_value so they are
+        # not down-scored. The non-secret 'xnd_public_' key is excluded.
+        "positives": [
+            "XENDIT_SECRET_KEY=xnd_production_AbCdEfGhIjKlMnOpQrStUvWxYz012345678+/==",
+            "XENDIT_SECRET_KEY=xnd_development_AbCdEfGhIjKlMnOpQrStUvWxYz9876543210==",
+        ],
+        "negatives": [
+            "xnd_public_AbCdEfGhIjKlMnOpQrStUvWxYz012345678",  # publishable, excluded
+            "xnd_production_AbCdEf",  # body below the 30-char minimum
+            "xnd_staging_AbCdEfGhIjKlMnOpQrStUvWxYz012345678",  # unknown environment
+        ],
+        "min_confidence": 0.80,
+    },
     "render_api_key": {
         # Prefix-anchored on the public 'rnd_' spec + alphanumeric body.
         # Body differs from the registered known_test_value so it is not down-scored.
