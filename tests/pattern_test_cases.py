@@ -2565,6 +2565,26 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.60,
     },
+    # ── 2026-07-25 — Klaviyo private API key ─────────────────────────────
+    "klaviyo_private_api_key": {
+        # Prefix-anchored on 'pk_' + a 34-char lowercase-hex body, with an
+        # optional 6-char company-id + '_' segment for multi-account keys.
+        # Positive bodies differ from the registered known_test_value so they
+        # are not down-scored. Negatives cover the ClickUp pk_ token (digits +
+        # '_' + 32 alnum), the Stripe publishable key, a too-short body, and a
+        # body with an out-of-charset (non-hex) character.
+        "positives": [
+            "KLAVIYO_API_KEY=pk_abcdef0123456789abcdef0123456789ab",
+            "KLAVIYO_PRIVATE_KEY=pk_ABC123_0123456789abcdef0123456789abcdef01",
+        ],
+        "negatives": [
+            "pk_12345678_ABCDEF0123456789ABCDEF0123456789",  # ClickUp token
+            "pk_live_abcdef0123456789abcdef01",  # Stripe publishable key
+            "pk_abcdef0123456789abcdef012345",  # body below 34 hex chars
+            "pk_abcdefg123456789abcdef0123456789abcd",  # 'g' is not hex
+        ],
+        "min_confidence": 0.80,
+    },
 }
 
 # fmt: on
