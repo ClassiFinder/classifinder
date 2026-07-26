@@ -3836,3 +3836,70 @@ def test_xendit_secret_api_key_known_test_value_downscored():
     assert len(matched) == 1, "Xendit known test value not detected"
     assert matched[0].is_likely_test_value is True
     assert matched[0].confidence < 0.30
+
+
+# --- Klaviyo Private API Key (prefix-anchored: pk_ + 34 lowercase-hex) ---
+
+# Clearly-synthetic hex bodies — NOT the registered known_test_value, so they
+# score normally. 34 lowercase-hex chars each.
+_KLAVIYO_BODY = "abcdef0123456789abcdef0123456789ab"
+_KLAVIYO_MULTI = "ABC123_0123456789abcdef0123456789abcdef01"
+
+
+def test_klaviyo_private_api_key_true_positive():
+    """Both the base 'pk_<34 hex>' form and the multi-account
+    'pk_<companyId>_<34 hex>' form are detected at high confidence and marked
+    high severity."""
+    for body in (_KLAVIYO_BODY, _KLAVIYO_MULTI):
+        token = "pk_" + body
+        findings = scan(f"KLAVIYO_API_KEY={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "klaviyo_private_api_key"]
+        assert len(matched) == 1, f"Klaviyo key not detected for {token}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "high"
+
+
+def test_klaviyo_private_api_key_true_negative():
+    """A too-short body, an out-of-charset (non-hex) body, an embedded run, and
+    prose must not match."""
+    negatives = [
+        "pk_abcdef0123456789abcdef012345",  # 30 hex — below the 34-char body
+        "pk_abcdefg123456789abcdef0123456789abcd",  # 'g' is not hex
+        "xpk_abcdef0123456789abcdef0123456789ab",  # embedded in a longer run
+        "the pkg private key was rotated",  # prose, no token
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "klaviyo_private_api_key"]
+        assert len(matched) == 0, f"klaviyo_private_api_key wrongly matched: {neg}"
+
+
+def test_klaviyo_private_api_key_known_test_value_downscored():
+    """The registered synthetic placeholder down-scores to ~0.15 and is flagged
+    as a test value."""
+    known = "pk_" + "0123456789abcdef0123456789abcdef01"
+    findings = scan(f"KLAVIYO_API_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "klaviyo_private_api_key"]
+    assert len(matched) == 1, "Klaviyo known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_klaviyo_private_api_key_no_collision_with_clickup_or_stripe():
+    """The shared 'pk_' prefix must not cause Klaviyo to swallow ClickUp tokens
+    (pk_<digits>_<32 alnum>) or Stripe publishable keys (pk_live_/pk_test_),
+    and those patterns must not fire as Klaviyo."""
+    clickup = "pk_12345678_ABCDEF0123456789ABCDEF0123456789"
+    stripe = "pk_live_abcdef0123456789abcdef01"
+    for token, expected in ((clickup, "clickup_pat"), (stripe, "stripe_live_publishable_key")):
+        findings = scan(token, min_confidence=0.05)
+        types = {f.type for f in findings}
+        assert "klaviyo_private_api_key" not in types, f"Klaviyo wrongly matched {token}"
+        assert expected in types, f"{expected} not detected for {token}"
+
+    # Reverse direction: a genuine Klaviyo key is not read as a ClickUp token.
+    klaviyo = "pk_" + _KLAVIYO_BODY
+    findings = scan(klaviyo, min_confidence=0.05)
+    types = {f.type for f in findings}
+    assert "klaviyo_private_api_key" in types
+    assert "clickup_pat" not in types
