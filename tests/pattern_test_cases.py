@@ -2585,6 +2585,27 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    # ── 2026-07-26 — Mercado Pago access token ───────────────────────────
+    "mercadopago_access_token": {
+        # 'APP_USR-' + numeric client id + 6-digit MMddHH stamp + 32 lowercase
+        # hex + numeric user_id. Positive bodies are synthetic and differ from
+        # the registered known_test_value so they are not down-scored.
+        # Negatives cover the non-secret Mercado Pago public key (UUID body,
+        # same APP_USR- prefix), the refresh token ('TG-'), an uppercase-hex
+        # segment-3, a 31-char segment-3, and a missing MMddHH segment.
+        "positives": [
+            "MERCADOPAGO_ACCESS_TOKEN=APP_USR-4934588586838432-060115-a1b2c3d4e5f60718293a4b5c6d7e8f90-241983636",
+            "mercadopago_token = 'APP_USR-1585551492-030918-fedcba98765432100123456789abcdef-2880736'",
+        ],
+        "negatives": [
+            "APP_USR-d0a26210-1c2b-4f3e-9a8b-479f0400869e",  # public key (UUID body)
+            "TG-5f8a1b2c3d4e5f60718293a4-241983636",  # refresh token
+            "APP_USR-4934588586838432-060115-A1B2C3D4E5F60718293A4B5C6D7E8F90-241983636",  # uppercase hex
+            "APP_USR-4934588586838432-060115-a1b2c3d4e5f60718293a4b5c6d7e8f9-241983636",  # 31-char hex
+            "APP_USR-4934588586838432-a1b2c3d4e5f60718293a4b5c6d7e8f90-241983636",  # no MMddHH stamp
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

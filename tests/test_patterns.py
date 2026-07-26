@@ -3903,3 +3903,74 @@ def test_klaviyo_private_api_key_no_collision_with_clickup_or_stripe():
     types = {f.type for f in findings}
     assert "klaviyo_private_api_key" in types
     assert "clickup_pat" not in types
+
+
+# --- Mercado Pago Access Token (APP_USR- + 4 structured segments) ---
+
+# Synthetic tokens in the vendor-documented shape. Built by concatenation so no
+# scannable token literal exists in source, and deliberately different from the
+# registered known_test_value so they score normally.
+_MP_TOKEN = "APP_USR-" + "4934588586838432-060115-a1b2c3d4e5f60718293a4b5c6d7e8f90-241983636"
+_MP_TOKEN_SHORT_ID = "APP_USR-" + "1585551492-030918-fedcba98765432100123456789abcdef-2880736"
+
+
+def test_mercadopago_access_token_true_positive():
+    """Both the 16-digit and 10-digit client-id forms are detected at high
+    confidence and flagged critical."""
+    for token in (_MP_TOKEN, _MP_TOKEN_SHORT_ID):
+        findings = scan(f"MERCADOPAGO_ACCESS_TOKEN={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "mercadopago_access_token"]
+        assert len(matched) == 1, f"Mercado Pago token not detected for {token}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+
+
+def test_mercadopago_access_token_true_negative():
+    """Structural violations and neighbouring Mercado Pago credential types must
+    not match."""
+    negatives = [
+        # Refresh token — 'TG-' prefix, not APP_USR-.
+        "TG-5f8a1b2c3d4e5f60718293a4-241983636",
+        # Segment 3 uppercase — the vendor body is lowercase hex only.
+        "APP_USR-4934588586838432-060115-A1B2C3D4E5F60718293A4B5C6D7E8F90-241983636",
+        # Segment 3 is 31 chars, one short of the required 32.
+        "APP_USR-4934588586838432-060115-a1b2c3d4e5f60718293a4b5c6d7e8f9-241983636",
+        # Missing the 6-digit MMddHH creation stamp.
+        "APP_USR-4934588586838432-a1b2c3d4e5f60718293a4b5c6d7e8f90-241983636",
+        # Embedded inside a longer alphanumeric run.
+        "XAPP_USR-4934588586838432-060115-a1b2c3d4e5f60718293a4b5c6d7e8f90-241983636",
+        # Prose mentioning the prefix but carrying no token.
+        "the APP_USR credential type is documented in the OAuth reference",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "mercadopago_access_token"]
+        assert len(matched) == 0, f"mercadopago_access_token wrongly matched: {neg}"
+
+
+def test_mercadopago_access_token_known_test_value_downscored():
+    """The registered synthetic placeholder down-scores to ~0.15 and is flagged
+    as a test value."""
+    known = "APP_USR-" + "1234567890-010101-" + "0123456789abcdef0123456789abcdef" + "-1234567"
+    findings = scan(f"MERCADOPAGO_ACCESS_TOKEN={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mercadopago_access_token"]
+    assert len(matched) == 1, "Mercado Pago known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_mercadopago_access_token_does_not_match_public_key():
+    """The non-secret Mercado Pago public key shares the 'APP_USR-' prefix but
+    carries a UUID body — it must produce no Mercado Pago finding, or the
+    pattern would flag a value that is published in frontend bundles by design.
+    """
+    public_keys = [
+        # Vendor's own (partially redacted) public_key example.
+        "APP_USR-d0a26210-XXXXXXXX-479f0400869e",
+        # Full UUID-shaped public key.
+        "APP_USR-d0a26210-1c2b-4f3e-9a8b-479f0400869e",
+    ]
+    for pk in public_keys:
+        findings = scan(f"MERCADOPAGO_PUBLIC_KEY={pk}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "mercadopago_access_token"]
+        assert len(matched) == 0, f"mercadopago_access_token wrongly matched public key: {pk}"
