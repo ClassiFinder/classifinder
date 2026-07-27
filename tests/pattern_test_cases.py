@@ -2628,6 +2628,175 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # ── 2026-07-27 — Polar personal access token ─────────────────────────
+    "polar_personal_access_token": {
+        # 'polar_pat_' + exactly 43 base62 characters (37 random + 6-char CRC32).
+        # Bodies are synthetic alphabet sequences assembled by concatenation and
+        # differ from the registered known_test_value so they score normally.
+        # Negatives cover the catalog-published (and wrong) '_'/'-' body charset,
+        # off-by-one lengths, and the sibling organization-token prefix.
+        "positives": [
+            "POLAR_ACCESS_TOKEN=polar_pat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFg",
+            "Authorization: Bearer polar_pat_" + "qRsTuVwXyZaBcDeFgHiJkLmNoP9876543210qRsTuVw",
+        ],
+        "negatives": [
+            "polar_pat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeF",  # 42 chars
+            "polar_pat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFgH",  # 44 chars
+            "polar_pat_" + "aBcDeFgHiJkLmNoPqRs-uVwXyZ9876543210aBcDeFg",  # hyphen in body
+            "polar_pat_" + "aBcDeFgHiJkLmNoPqRs_uVwXyZ9876543210aBcDeFg",  # underscore in body
+            "polar_oat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFg",  # organization token
+            "the polar_pat_ prefix is documented in the Polar server source",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-07-27 — Polar organization access token ─────────────────────
+    "polar_organization_access_token": {
+        # Same generator as the personal token, different prefix.
+        "positives": [
+            "POLAR_ORGANIZATION_TOKEN=polar_oat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFg",
+            "Authorization: Bearer polar_oat_" + "qRsTuVwXyZaBcDeFgHiJkLmNoP9876543210qRsTuVw",
+        ],
+        "negatives": [
+            "polar_oat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeF",  # 42 chars
+            "polar_oat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFgH",  # 44 chars
+            "polar_oat_" + "aBcDeFgHiJkLmNoPqRs-uVwXyZ9876543210aBcDeFg",  # hyphen in body
+            "polar_pat_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFg",  # personal token
+            "polar_rt_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFg",  # refresh-token prefix
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-07-27 — Mercury production API token ────────────────────────
+    "mercury_production_api_token": {
+        # 'mercury_production_' + lowercase sub-tag + '_' + 40-50 alphanumerics
+        # + the literal '_yrucrem' terminator. The terminator is the anchor.
+        "positives": [
+            "Authorization: secret-token:mercury_production_"
+            + "abc_"
+            + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFgHi"
+            + "_yrucrem",
+            "MERCURY_API_TOKEN=mercury_production_"
+            + "wmabcd_"
+            + "qRsTuVwXyZaBcDeFgHiJkLmNoP9876543210qRsTuVwXy"
+            + "_yrucrem",
+        ],
+        "negatives": [
+            # Missing the '_yrucrem' terminator.
+            "mercury_production_" + "abc_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFgHi",
+            # Uppercase sub-tag — the vendor segment is lowercase.
+            "mercury_production_" + "ABC_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFgHi" + "_yrucrem",
+            # Body is 39 characters, below the 40 minimum.
+            "mercury_production_" + "abc_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ98765432100" + "_yrucrem",
+            # Sandbox-style prefix that is not the production token.
+            "mercury_sandbox_" + "abc_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcDeFgHi" + "_yrucrem",
+            "the mercury_production_ prefix ends with the reversed _yrucrem marker",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-07-27 — Zuplo consumer API key ──────────────────────────────
+    "zuplo_consumer_api_key": {
+        # 'zpka_' + 32 alphanumerics + '_' + 8 lowercase-hex CRC32 (46 total).
+        "positives": [
+            "ZUPLO_API_KEY=zpka_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210"[:32] + "_0f1e2d3c",
+            "authorization: zpka_" + "qRsTuVwXyZaBcDeFgHiJkLmNoP98765432"[:32] + "_4a5b6c7d",
+        ],
+        "negatives": [
+            # Checksum is uppercase hex.
+            "zpka_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ98765432" + "_0F1E2D3C",
+            # Checksum is 7 characters.
+            "zpka_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ98765432" + "_0f1e2d3",
+            # Body is 31 characters, one short of 32.
+            "zpka_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543" + "_0f1e2d3c",
+            # No underscore separator before the checksum.
+            "zpka_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ98765432" + "0f1e2d3c",
+            "zuplo keys use the zpka_ prefix and a CRC32 checksum suffix",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-07-27 — Authress service client access key ──────────────────
+    "authress_service_client_access_key": {
+        # Four dot-separated segments: 'sc_'<clientId>.<keyId>.acc<sep><accountId>
+        # .<base64 PKCS#8 private key>. The literal 'acc' marker in segment 3 is
+        # mandatory — 'sc_' alone is far too generic to detect on.
+        "positives": [
+            "AUTHRESS_ACCESS_KEY=sc_"
+            + "aBcDeFgHiJkLmNoP.aB3z.acc_a1b2c3d4e5f6g7h8."
+            + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210",
+            "serviceClientAccessKey: sc_"
+            + "qRsTuVwXyZaBcDeF.xY9q.acc-9a8b7c6d5e4f3g2h."
+            + "qRsTuVwXyZaBcDeFgHiJkLmNoP9876543210+/==",
+        ],
+        "negatives": [
+            # Only three segments — the private-key segment is missing.
+            "sc_" + "aBcDeFgHiJkLmNoP.aB3z.acc_a1b2c3d4e5f6g7h8",
+            # Segment 3 lacks the literal 'acc' marker.
+            "sc_"
+            + "aBcDeFgHiJkLmNoP.aB3z.org_a1b2c3d4e5f6g7h8."
+            + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210",
+            # Bare 'sc_' identifier with no structure at all.
+            "sc_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ",
+            # Final segment is only 20 characters, below the 30 minimum.
+            "sc_" + "aBcDeFgHiJkLmNoP.aB3z.acc_a1b2c3d4e5f6g7h8." + "aBcDeFgHiJkLmNoPqRsT",
+            "an Authress service client id looks like sc_ followed by an identifier",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-07-27 — Databento API key ───────────────────────────────────
+    "databento_api_key": {
+        # 'db-' + exactly 29 alphanumerics (32 total, enforced by the vendor SDK).
+        "positives": [
+            "DATABENTO_API_KEY=db-" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987",
+            "databento_key = 'db-" + "qRsTuVwXyZaBcDeFgHiJkLmNoP987'",
+        ],
+        "negatives": [
+            "db-" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ98",  # 28 chars — 31 total
+            "db-" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876",  # 30 chars — 33 total
+            "db-" + "aBcDeFgHiJkLmNoPqRs-uVwXyZ987",  # hyphen inside the body
+            "adb-" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987",  # embedded in a longer word
+            "Databento keys are 32 characters long and start with db-",
+        ],
+        "min_confidence": 0.80,
+    },
+    # ── 2026-07-27 — Cfx.re server key ───────────────────────────────────
+    "cfxre_server_key": {
+        # 'cfxk_' + 20-40 body characters + '_' + a 4-10 character base62 CRC32B
+        # checksum. Bounds are deliberately tighter than the vendor's own
+        # '{1,60}_{1,20}' validation regex, which would match 'cfxk_a_b'.
+        "positives": [
+            'sv_licenseKey "cfxk_' + "aBcDeFgHiJkLmNoPqRsT" + '_1f2e3d"',
+            "CFX_LICENSE_KEY=cfxk_" + "qRsTuVwXyZaBcDeFgHiJkLmNoP" + "_4a5b6c7d",
+        ],
+        "negatives": [
+            "cfxk_a_b",  # the vendor's loose bounds would accept this; ours must not
+            "cfxk_" + "aBcDeFgHiJkLmNoPqRs" + "_1f2e3d",  # body 19 chars, below 20
+            "cfxk_" + "aBcDeFgHiJkLmNoPqRsT" + "_1f2e3d4a5b6",  # checksum 11 chars, above 10
+            "cfxk_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ",  # no checksum segment
+            "the new Cfx.re server keys carry a cfxk_ prefix",
+        ],
+        "min_confidence": 0.85,
+    },
+    # ── 2026-07-27 — Lob API key (label-gated) ───────────────────────────
+    "lob_api_key": {
+        # 'live_'/'test_' + 35 body characters (40 total), gated on a nearby Lob
+        # key label. The gate is mandatory: a bare live_ prefix collides with
+        # GoCardless access tokens and Stripe's sk_live_/pk_live_/rk_live_ keys.
+        "positives": [
+            "LOB_API_KEY=live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987654321",
+            '{"lob_secret_key": "live_' + 'qRsTuVwXyZaBcDeFgHiJkLmNoP987654321"}',
+        ],
+        "negatives": [
+            # No Lob label anywhere — the pattern is deliberately gated.
+            "live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987654321",
+            # 40-character body — that is a GoCardless access token, not Lob.
+            "LOB_API_KEY=live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210aBcD",
+            # Stripe secret key under a Lob label.
+            "LOB_API_KEY=sk_live_" + "aBcDeFgHiJkLmNoPqRsTuVwX",
+            # 'lob' appears only as a substring of 'global'.
+            "global_key=live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987654321",
+            # Body is 34 characters, one short.
+            "LOB_API_KEY=live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ98765432",
+        ],
+        "min_confidence": 0.80,
+    },
 }
 
 # fmt: on
