@@ -4468,3 +4468,88 @@ def test_lob_api_key_known_test_value_downscored():
     assert len(matched) == 1, "Lob known test value not detected"
     assert matched[0].is_likely_test_value is True
     assert matched[0].confidence < 0.30
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-28 — Supabase secret API key (new sb_secret_ opaque format)
+# ---------------------------------------------------------------------------
+
+# Synthetic keys in the vendor-documented shape, assembled by concatenation so
+# no scannable key literal exists in source, and deliberately different from the
+# registered known_test_value (the Supabase CLI local-dev default) so they score
+# normally.
+_SUPABASE_SECRET = "sb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123Yz"
+_SUPABASE_SECRET_ALT = "sb_secret_" + "9zYxWvUtSrQpOnMlKjIhGf" + "_" + "4dCbA321"
+
+
+def test_supabase_secret_key_true_positive():
+    """The new-format Supabase secret key is detected at high confidence and
+    flagged critical — it bypasses Row Level Security like the service_role key
+    it replaces."""
+    for key in (_SUPABASE_SECRET, _SUPABASE_SECRET_ALT):
+        findings = scan(f"SUPABASE_SECRET_KEY={key}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "supabase_secret_key"]
+        assert len(matched) == 1, f"Supabase secret key not detected for {key[:14]}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+
+
+def test_supabase_secret_key_true_negative():
+    """Structural violations and the sibling key prefixes must not match."""
+    negatives = [
+        # Publishable key — client-safe by design, must never be flagged.
+        "sb_publishable_" + "ACJWlzQHlZjBrEguHvfOxg" + "_" + "3BJgxAaH",
+        # Platform temp key — same generator, different prefix.
+        "sb_temp_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123Yz",
+        # Random segment is 21 characters, one short of the required 22.
+        "sb_secret_" + "AbCdEfGhIjKlMnOpQrStU" + "_" + "Wx0123Yz",
+        # Random segment is 23 characters, one over.
+        "sb_secret_" + "AbCdEfGhIjKlMnOpQrStUvW" + "_" + "Wx0123Yz",
+        # Checksum segment is 7 characters, one short of 8.
+        "sb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123Y",
+        # Checksum segment is 9 characters, one over.
+        "sb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzA",
+        # No separating underscore between the two segments.
+        "sb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "Wx0123Yz",
+        # '.' is outside the base64url charset the generator emits.
+        "sb_secret_" + "AbCdEfGh.jKlMnOpQrStUv" + "_" + "Wx0123Yz",
+        # Embedded inside a longer token — must not fire on a slice.
+        "xxsb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123Yz",
+        # Prose naming the prefix but carrying no key.
+        "rotate the sb_secret_ key under Project Settings > API Keys",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "supabase_secret_key"]
+        assert len(matched) == 0, f"supabase_secret_key wrongly matched: {neg}"
+
+
+def test_supabase_secret_key_known_test_value_downscored():
+    """The Supabase CLI's local-development default key ships in the vendor repo
+    and is the most-copied value of this shape; it down-scores to ~0.15."""
+    known = "sb_secret_" + "N7UND0UgjKTVK-Uodkm0Hg" + "_" + "xSvEMPvz"
+    findings = scan(f"SUPABASE_SECRET_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "supabase_secret_key"]
+    assert len(matched) == 1, "Supabase known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_supabase_secret_key_no_collision_with_service_role_jwt():
+    """The two Supabase patterns are separately revocable credentials. The legacy
+    service_role pattern requires the literal HS256 JWT header, so an opaque
+    sb_secret_ key cannot be claimed by it — and vice versa."""
+    findings = scan(f"SUPABASE_SECRET_KEY={_SUPABASE_SECRET}", min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "supabase_secret_key" in types
+    assert "supabase_service_key" not in types, "legacy JWT pattern claimed an opaque key"
+
+    legacy_jwt = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+        "." + "eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UifQ"
+        + "." + "dc8f7a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f"
+    )
+    legacy_findings = scan(f"SUPABASE_SERVICE_ROLE_KEY={legacy_jwt}", min_confidence=0.01)
+    legacy_types = {f.type for f in legacy_findings}
+    assert "supabase_service_key" in legacy_types, "legacy service_role key no longer detected"
+    assert "supabase_secret_key" not in legacy_types, "opaque pattern claimed a JWT"
