@@ -3974,3 +3974,80 @@ def test_mercadopago_access_token_does_not_match_public_key():
         findings = scan(f"MERCADOPAGO_PUBLIC_KEY={pk}", min_confidence=0.01)
         matched = [f for f in findings if f.type == "mercadopago_access_token"]
         assert len(matched) == 0, f"mercadopago_access_token wrongly matched public key: {pk}"
+
+
+# --- Zoho OAuth Token (1000. + two 32-char lowercase-hex segments) ---
+
+# Synthetic tokens in the vendor-documented shape, built by concatenation so no
+# scannable token literal exists in source, and deliberately different from the
+# registered known_test_values (Zoho's own published doc examples) so they score
+# normally.
+_ZOHO_TOKEN = "1000." + "a1b2c3d4e5f60718293a4b5c6d7e8f90" + "." + "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+_ZOHO_REFRESH = "1000." + "9f8e7d6c5b4a39281706f5e4d3c2b1a0" + "." + "1122334455667788990aabbccddeeff0"
+
+
+def test_zoho_oauth_token_true_positive():
+    """Access tokens and refresh tokens share one shape; both are detected at
+    high confidence and flagged high severity."""
+    for token in (_ZOHO_TOKEN, _ZOHO_REFRESH):
+        findings = scan(f"ZOHO_ACCESS_TOKEN={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "zoho_oauth_token"]
+        assert len(matched) == 1, f"Zoho OAuth token not detected for {token}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "high"
+
+
+def test_zoho_oauth_token_true_negative():
+    """Structural violations must not match."""
+    negatives = [
+        # Uppercase hex — the vendor body is lowercase hex only.
+        "1000." + "A1B2C3D4E5F60718293A4B5C6D7E8F90" + "." + "0F1E2D3C4B5A69788796A5B4C3D2E1F0",
+        # First segment is 31 chars, one short of the required 32.
+        "1000." + "a1b2c3d4e5f60718293a4b5c6d7e8f9" + "." + "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        # Second segment is 33 chars, one over.
+        "1000." + "a1b2c3d4e5f60718293a4b5c6d7e8f90" + "." + "0f1e2d3c4b5a69788796a5b4c3d2e1f0a",
+        # Wrong leading portal segment — the literal is '1000.', not '2000.'.
+        "2000." + "a1b2c3d4e5f60718293a4b5c6d7e8f90" + "." + "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        # Only one hex segment (no second dot).
+        "1000." + "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        # Embedded inside a longer hex run — must not fire on a slice of a blob.
+        "abcdef1000." + "a1b2c3d4e5f60718293a4b5c6d7e8f90" + "." + "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        # Longer dotted chain — the trailing '.hex' means this is not a token.
+        "1000." + "a1b2c3d4e5f60718293a4b5c6d7e8f90" + "." + "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+        + "." + "1122334455667788990aabbccddeeff0",
+        # Prose mentioning the token type but carrying no token.
+        "the Zoho refresh token is returned once by the OAuth token endpoint",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "zoho_oauth_token"]
+        assert len(matched) == 0, f"zoho_oauth_token wrongly matched: {neg}"
+
+
+def test_zoho_oauth_token_known_test_value_downscored():
+    """Zoho's own published documentation examples are the most-copied values of
+    this shape; they are registered as known test values and down-score to ~0.15."""
+    doc_examples = [
+        "1000." + "2deaf8d0c268e3c85daa2a013a843b10" + "." + "703adef2bb337b8ca36cfc5d7b83cf24",
+        "1000." + "86a03ca5dbfccb7445b1889b8215efb0" + "." + "cad9e1ae4989a1196fe05aa729fcb4e1",
+    ]
+    for known in doc_examples:
+        findings = scan(f"ZOHO_ACCESS_TOKEN={known}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "zoho_oauth_token"]
+        assert len(matched) == 1, "Zoho known test value not detected"
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence < 0.30
+
+
+def test_zoho_oauth_token_does_not_match_client_id():
+    """The Zoho client_id shares the '1000.' leading segment but is a single
+    uppercase-alphanumeric segment and is a non-secret, publicly exposed value —
+    it must produce no Zoho finding."""
+    client_ids = [
+        "1000.GMB0YULZHJK411284S8I5GZ4CHUEX0",
+        "1000.0FQ4ISG54XA6ZUZTJFWLLWM3RGRWWS",
+    ]
+    for cid in client_ids:
+        findings = scan(f"ZOHO_CLIENT_ID={cid}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "zoho_oauth_token"]
+        assert len(matched) == 0, f"zoho_oauth_token wrongly matched client_id: {cid}"

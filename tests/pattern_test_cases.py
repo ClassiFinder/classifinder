@@ -2606,6 +2606,28 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # ── 2026-07-27 — Zoho OAuth token ────────────────────────────────────
+    "zoho_oauth_token": {
+        # '1000.' + two dot-separated 32-char lowercase-hex segments. Access
+        # tokens and refresh tokens share this exact shape. Positive bodies are
+        # synthetic and differ from the registered known_test_values (Zoho's own
+        # published doc examples) so they are not down-scored. Negatives cover
+        # the non-secret Zoho client_id (same '1000.' lead, single uppercase
+        # alphanumeric segment), uppercase hex, a 31-char segment, a wrong
+        # leading segment, and a longer dotted chain.
+        "positives": [
+            "ZOHO_ACCESS_TOKEN=1000.a1b2c3d4e5f60718293a4b5c6d7e8f90.0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+            "zoho_refresh_token = '1000.9f8e7d6c5b4a39281706f5e4d3c2b1a0.1122334455667788990aabbccddeeff0'",
+        ],
+        "negatives": [
+            "1000.GMB0YULZHJK411284S8I5GZ4CHUEX0",  # client_id (single uppercase segment)
+            "1000.A1B2C3D4E5F60718293A4B5C6D7E8F90.0F1E2D3C4B5A69788796A5B4C3D2E1F0",  # uppercase hex
+            "1000.a1b2c3d4e5f60718293a4b5c6d7e8f9.0f1e2d3c4b5a69788796a5b4c3d2e1f0",  # 31-char segment
+            "2000.a1b2c3d4e5f60718293a4b5c6d7e8f90.0f1e2d3c4b5a69788796a5b4c3d2e1f0",  # wrong lead segment
+            "1000.a1b2c3d4e5f60718293a4b5c6d7e8f90.0f1e2d3c4b5a69788796a5b4c3d2e1f0.1122334455667788990aabbccddeeff0",  # longer dotted chain
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
