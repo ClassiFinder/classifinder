@@ -4051,3 +4051,420 @@ def test_zoho_oauth_token_does_not_match_client_id():
         findings = scan(f"ZOHO_CLIENT_ID={cid}", min_confidence=0.01)
         matched = [f for f in findings if f.type == "zoho_oauth_token"]
         assert len(matched) == 0, f"zoho_oauth_token wrongly matched client_id: {cid}"
+
+
+# ═══════════════════════════════════════════════
+# 2026-07-27 BATCH — Polar, Mercury, Zuplo, Authress, Databento, Cfx.re, Lob
+#
+# Every credential literal below is assembled by string concatenation from
+# alphabet-sequence fragments. That defeats the entropy half of GitHub's
+# partner secret-scanning heuristics while still satisfying each pattern's
+# regex, so no scannable token literal ever lands in git.
+# ═══════════════════════════════════════════════
+
+_SEQ = "aBcDeFgHiJkLmNoPqRsTuVwXyZ9876543210"  # 36 synthetic base62 characters
+_SEQ2 = "qRsTuVwXyZaBcDeFgHiJkLmNoP9876543210"  # 36 more, distinct from _SEQ
+
+
+# --- Polar personal / organization access tokens (polar_pat_ / polar_oat_) ---
+
+_POLAR_PAT = "polar_pat_" + _SEQ + "aBcDeFg"  # 43-char body: 36 + 7
+_POLAR_OAT = "polar_oat_" + _SEQ + "aBcDeFg"
+
+
+def test_polar_personal_access_token_true_positive():
+    """polar_pat_ + exactly 43 base62 characters is detected at high confidence."""
+    findings = scan(f"POLAR_ACCESS_TOKEN={_POLAR_PAT}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "polar_personal_access_token"]
+    assert len(matched) == 1, "Polar personal access token not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+
+
+def test_polar_organization_access_token_true_positive():
+    """polar_oat_ shares the generator but is a distinct, org-scoped credential."""
+    findings = scan(f"POLAR_ORGANIZATION_TOKEN={_POLAR_OAT}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "polar_organization_access_token"]
+    assert len(matched) == 1, "Polar organization access token not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+
+
+def test_polar_tokens_reject_catalog_published_body_charset():
+    """Third-party catalogs publish the body as '[a-zA-Z0-9_-]{20,60}'. Polar's
+    own generator emits 43 base62 characters with no '_' and no '-', so bodies
+    carrying those characters — or the wrong length — must not match."""
+    negatives = [
+        "polar_pat_" + _SEQ + "aBcDeF",           # 42 — one short
+        "polar_pat_" + _SEQ + "aBcDeFgH",         # 44 — one long
+        "polar_pat_" + _SEQ[:20] + "-" + _SEQ[:22],  # hyphen in body
+        "polar_pat_" + _SEQ[:20] + "_" + _SEQ[:22],  # underscore in body
+        "polar_oat_" + _SEQ + "aBcDeF",           # 42 — one short
+        "polar_oat_" + _SEQ[:20] + "-" + _SEQ[:22],
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [
+            f
+            for f in findings
+            if f.type
+            in ("polar_personal_access_token", "polar_organization_access_token")
+        ]
+        assert len(matched) == 0, f"Polar pattern wrongly matched: {neg}"
+
+
+def test_polar_tokens_do_not_cross_match():
+    """The personal and organization patterns must not claim each other's token —
+    they are separately revocable credentials with different blast radii."""
+    findings = scan(f"POLAR_ACCESS_TOKEN={_POLAR_PAT}", min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "polar_personal_access_token" in types
+    assert "polar_organization_access_token" not in types
+
+    findings = scan(f"POLAR_ORGANIZATION_TOKEN={_POLAR_OAT}", min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "polar_organization_access_token" in types
+    assert "polar_personal_access_token" not in types
+
+
+def test_polar_known_test_values_downscored():
+    """Both registered synthetic placeholders down-score to ~0.15."""
+    cases = [
+        (
+            "polar_personal_access_token",
+            "polar_pat_" + "AbCdEfGhIj" + "KlMnOpQrSt" + "UvWxYz0123" + "456789AbCd" + "EfG",
+        ),
+        (
+            "polar_organization_access_token",
+            "polar_oat_" + "ZyXwVuTsRq" + "PoNmLkJiHg" + "FeDcBa9876" + "543210ZyXw" + "VuT",
+        ),
+    ]
+    for pattern_id, known in cases:
+        findings = scan(f"POLAR_TOKEN={known}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == pattern_id]
+        assert len(matched) == 1, f"{pattern_id} known test value not detected"
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence < 0.30
+
+
+# --- Mercury production API token ('_yrucrem' terminator anchor) ---
+
+_MERCURY = (
+    "mercury_production_" + "abc_" + _SEQ + "aBcDeFgHi" + "_yrucrem"
+)  # 45-char body
+
+
+def test_mercury_production_api_token_true_positive():
+    """The bank token is detected in its documented 'secret-token:' transport
+    form and flagged critical."""
+    findings = scan(f"Authorization: secret-token:{_MERCURY}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mercury_production_api_token"]
+    assert len(matched) == 1, "Mercury production token not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+
+
+def test_mercury_production_api_token_requires_terminator():
+    """The '_yrucrem' terminator is the structural anchor — without it there is
+    no reliable way to bound the token, so the pattern must not fire."""
+    negatives = [
+        "mercury_production_" + "abc_" + _SEQ + "aBcDeFgHi",          # no terminator
+        "mercury_production_" + "ABC_" + _SEQ + "aBcDeFgHi" + "_yrucrem",  # uppercase sub-tag
+        "mercury_production_" + "abc_" + _SEQ[:30] + "_yrucrem",      # body below 40
+        "mercury_sandbox_" + "abc_" + _SEQ + "aBcDeFgHi" + "_yrucrem",  # wrong prefix
+        "Mercury tokens end with the reversed _yrucrem marker",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "mercury_production_api_token"]
+        assert len(matched) == 0, f"mercury_production_api_token wrongly matched: {neg}"
+
+
+def test_mercury_production_api_token_known_test_value_downscored():
+    """Mercury's own published documentation example down-scores to ~0.15."""
+    known = (
+        "mercury_production_"
+        + "wma_"
+        + "24SCp4G81X3yHL4Wq8FgzuaP9ye3VKf2mgTDctXyRg5HY"
+        + "_yrucrem"
+    )
+    findings = scan(f"MERCURY_API_TOKEN={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mercury_production_api_token"]
+    assert len(matched) == 1, "Mercury known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Zuplo consumer API key (zpka_ + CRC32 checksum) ---
+
+_ZUPLO = "zpka_" + _SEQ[:32] + "_0f1e2d3c"
+
+
+def test_zuplo_consumer_api_key_true_positive():
+    """zpka_ + 32 alphanumerics + '_' + 8 hex is detected at high confidence."""
+    findings = scan(f"ZUPLO_API_KEY={_ZUPLO}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "zuplo_consumer_api_key"]
+    assert len(matched) == 1, "Zuplo consumer API key not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert len(matched[0].value_preview) > 0
+
+
+def test_zuplo_consumer_api_key_true_negative():
+    """Length and charset violations in either segment must not match."""
+    negatives = [
+        "zpka_" + _SEQ[:32] + "_0F1E2D3C",   # uppercase checksum
+        "zpka_" + _SEQ[:32] + "_0f1e2d3",    # 7-char checksum
+        "zpka_" + _SEQ[:31] + "_0f1e2d3c",   # 31-char body
+        "zpka_" + _SEQ[:32] + "0f1e2d3c",    # missing separator
+        "Zuplo publishes the zpka_ key format for leak detection",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "zuplo_consumer_api_key"]
+        assert len(matched) == 0, f"zuplo_consumer_api_key wrongly matched: {neg}"
+
+
+def test_zuplo_consumer_api_key_known_test_value_downscored():
+    known = "zpka_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345" + "_" + "0123abcd"
+    findings = scan(f"ZUPLO_API_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "zuplo_consumer_api_key"]
+    assert len(matched) == 1, "Zuplo known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Authress service client access key (four-segment structure) ---
+
+_AUTHRESS = (
+    "sc_" + _SEQ[:16] + "." + "aB3z" + "." + "acc_" + "a1b2c3d4e5f6g7h8" + "." + _SEQ
+)
+
+
+def test_authress_service_client_access_key_true_positive():
+    """The full four-segment key is detected and flagged critical — the final
+    segment is a base64 PKCS#8 private key, so this is a signing-key leak."""
+    findings = scan(f"AUTHRESS_ACCESS_KEY={_AUTHRESS}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "authress_service_client_access_key"]
+    assert len(matched) == 1, "Authress service client access key not detected"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+
+
+def test_authress_service_client_access_key_requires_full_structure():
+    """'sc_' plus alphanumerics is far too generic to detect on. The pattern must
+    require all four segments including the literal 'acc' account marker — this
+    test is the guard against anyone relaxing it into an FP factory."""
+    negatives = [
+        # Only three segments — no private-key segment.
+        "sc_" + _SEQ[:16] + "." + "aB3z" + "." + "acc_" + "a1b2c3d4e5f6g7h8",
+        # Segment 3 lacks the 'acc' marker.
+        "sc_" + _SEQ[:16] + "." + "aB3z" + "." + "org_a1b2c3d4e5f6g7h8" + "." + _SEQ,
+        # A bare service-client identifier.
+        "sc_" + _SEQ[:16],
+        # A bare 'sc_' token of the shape a relaxed pattern would match.
+        "SERVICE_CLIENT=sc_" + _SEQ[:24],
+        # Final segment only 20 characters, below the 30 minimum.
+        "sc_" + _SEQ[:16] + "." + "aB3z" + "." + "acc_" + "a1b2c3d4e5f6g7h8" + "." + _SEQ[:20],
+        # Segment 2 too long (7 characters, max 6).
+        "sc_" + _SEQ[:16] + "." + "aB3zQw7" + "." + "acc_" + "a1b2c3d4e5f6g7h8" + "." + _SEQ,
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [
+            f for f in findings if f.type == "authress_service_client_access_key"
+        ]
+        assert len(matched) == 0, f"authress key wrongly matched: {neg}"
+
+
+def test_authress_service_client_access_key_accepts_hyphen_account_separator():
+    """Authress writes the account segment as either 'acc_' or 'acc-'."""
+    hyphen_form = (
+        "sc_" + _SEQ2[:16] + "." + "xY9q" + "." + "acc-9a8b7c6d5e4f3g2h" + "." + _SEQ2
+    )
+    findings = scan(f"serviceClientAccessKey: {hyphen_form}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "authress_service_client_access_key"]
+    assert len(matched) == 1, "Authress hyphen account separator not detected"
+
+
+def test_authress_service_client_access_key_known_test_value_downscored():
+    known = (
+        "sc_" + "AbCdEfGhIjKlMnOp" + "." + "xY3z" + "."
+        + "acc_" + "a1b2c3d4e5f6g7h8" + "."
+        + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+    )
+    findings = scan(f"AUTHRESS_ACCESS_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "authress_service_client_access_key"]
+    assert len(matched) == 1, "Authress known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Databento API key (db- + exactly 29 characters) ---
+
+_DATABENTO = "db-" + _SEQ[:29]
+
+
+def test_databento_api_key_true_positive():
+    """db- + exactly 29 alphanumerics (32 total) is detected."""
+    findings = scan(f"DATABENTO_API_KEY={_DATABENTO}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "databento_api_key"]
+    assert len(matched) == 1, "Databento API key not detected"
+    assert matched[0].confidence >= 0.80
+    assert matched[0].severity == "high"
+
+
+def test_databento_api_key_enforces_exact_length():
+    """Databento's own client rejects any key whose total length is not 32, so
+    the pattern pins the body at exactly 29 characters. The 'db-' prefix is
+    short, so the surrounding word boundaries matter as much as the length."""
+    negatives = [
+        "db-" + _SEQ[:28],           # 31 total
+        "db-" + _SEQ[:30],           # 33 total
+        "db-" + _SEQ[:19] + "-" + _SEQ[:9],  # hyphen inside the body
+        "adb-" + _SEQ[:29],          # embedded in a longer word
+        "db-" + _SEQ[:29] + "x",     # trailing alphanumeric
+        "Databento API keys are 32 characters long and start with db-",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "databento_api_key"]
+        assert len(matched) == 0, f"databento_api_key wrongly matched: {neg}"
+
+
+def test_databento_api_key_known_test_value_downscored():
+    known = "db-" + "AbCdEfGhIj" + "KlMnOpQrSt" + "UvWxYz012"
+    findings = scan(f"DATABENTO_API_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "databento_api_key"]
+    assert len(matched) == 1, "Databento known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Cfx.re server key (cfxk_, vendor bounds deliberately tightened) ---
+
+_CFXRE = "cfxk_" + _SEQ[:24] + "_1f2e3d"
+
+
+def test_cfxre_server_key_true_positive():
+    """The cfxk_ key is detected in its natural server.cfg context."""
+    findings = scan(f'sv_licenseKey "{_CFXRE}"', min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cfxre_server_key"]
+    assert len(matched) == 1, "Cfx.re server key not detected"
+    assert matched[0].confidence >= 0.85
+    assert matched[0].severity == "medium"
+
+
+def test_cfxre_server_key_rejects_vendor_loose_bounds():
+    """txAdmin's own validation regex allows '{1,60}_{1,20}', which would happily
+    accept 'cfxk_a_b'. Shipping those bounds verbatim would make this pattern a
+    false-positive generator, so the tightened bounds are asserted here."""
+    negatives = [
+        "cfxk_a_b",                       # the vendor regex accepts this; we must not
+        "cfxk_" + _SEQ[:19] + "_1f2e3d",  # body 19 — below the 20 minimum
+        "cfxk_" + (_SEQ + _SEQ2)[:41] + "_1f2e3d",  # body 41 — above the 40 maximum
+        "cfxk_" + _SEQ[:24] + "_1f2e3d4a5b6",  # checksum 11 — above the 10 maximum
+        "cfxk_" + _SEQ[:24],              # no checksum segment
+        "the new Cfx.re server key format uses a cfxk_ prefix",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "cfxre_server_key"]
+        assert len(matched) == 0, f"cfxre_server_key wrongly matched: {neg}"
+
+
+def test_cfxre_server_key_known_test_value_downscored():
+    known = "cfxk_" + "AbCdEfGhIjKlMnOpQrStUvWx" + "_" + "0a1b2c"
+    findings = scan(f"CFX_LICENSE_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cfxre_server_key"]
+    assert len(matched) == 1, "Cfx.re known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+# --- Lob API key (label-gated; collides with GoCardless and Stripe on 'live_') ---
+
+_LOB_LIVE = "live_" + _SEQ[:35]           # 40 chars total
+_LOB_TEST = "test_" + _SEQ2[:35]
+_GOCARDLESS_TOKEN = "live_" + _SEQ + "aBcD"  # 40-char body — GoCardless shape
+
+
+def test_lob_api_key_true_positive():
+    """Both the live_ and test_ prefixes are detected when a Lob key label is
+    adjacent."""
+    for token in (_LOB_LIVE, _LOB_TEST):
+        findings = scan(f"LOB_API_KEY={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "lob_api_key"]
+        assert len(matched) == 1, f"Lob API key not detected for {token[:12]}..."
+        assert matched[0].confidence >= 0.80
+        assert matched[0].severity == "high"
+
+
+def test_lob_api_key_requires_label_gate():
+    """A bare live_/test_ prefix is shared with GoCardless and Stripe, so the
+    ungated form must produce no Lob finding. 'lob' appearing only as a
+    substring of another word (e.g. 'global') must not open the gate either."""
+    negatives = [
+        _LOB_LIVE,                                     # no label at all
+        f"global_key={_LOB_LIVE}",                     # 'lob' inside 'global'
+        f"blob_storage_key={_LOB_LIVE}",               # 'lob' inside 'blob'
+        f"LOB_API_KEY=live_{_SEQ[:34]}",               # 34-char body
+        f"LOB_API_KEY=live_{_SEQ}aBcDeF",              # 42-char body
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "lob_api_key"]
+        assert len(matched) == 0, f"lob_api_key wrongly matched: {neg}"
+
+
+def test_lob_api_key_no_collision_with_gocardless():
+    """Both providers claim a bare 'live_' prefix. GoCardless bodies are 40
+    characters and Lob bodies are 35, and each pattern is gated on its own
+    vendor label — so neither can steal the other's finding in either
+    direction."""
+    # GoCardless token in its own context: GoCardless fires, Lob does not.
+    findings = scan(
+        f"GOCARDLESS_ACCESS_TOKEN={_GOCARDLESS_TOKEN}", min_confidence=0.01
+    )
+    types = {f.type for f in findings}
+    assert "gocardless_access_token" in types
+    assert "lob_api_key" not in types
+
+    # The same 40-character GoCardless token under a Lob label: still not Lob.
+    findings = scan(f"LOB_API_KEY={_GOCARDLESS_TOKEN}", min_confidence=0.01)
+    assert [f for f in findings if f.type == "lob_api_key"] == []
+
+    # Lob key in its own context: Lob fires, GoCardless does not.
+    findings = scan(f"LOB_API_KEY={_LOB_LIVE}", min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "lob_api_key" in types
+    assert "gocardless_access_token" not in types
+
+    # The 35-character Lob key under a GoCardless label: still not GoCardless.
+    findings = scan(f"GOCARDLESS_ACCESS_TOKEN={_LOB_LIVE}", min_confidence=0.01)
+    assert [f for f in findings if f.type == "gocardless_access_token"] == []
+
+
+def test_lob_api_key_no_collision_with_stripe():
+    """Stripe's sk_live_ / pk_live_ / rk_live_ keys embed 'live_' after a
+    two-character prefix. The Lob secret must start at the live_/test_ prefix
+    immediately after the label separator, so Stripe keys cannot be claimed."""
+    stripe_keys = {
+        "sk_live_" + _SEQ[:24]: "stripe_live_secret_key",
+        "pk_live_" + _SEQ[:24]: "stripe_live_publishable_key",
+        "rk_live_" + _SEQ[:24]: "stripe_restricted_key",
+    }
+    for key, expected_type in stripe_keys.items():
+        findings = scan(f"LOB_API_KEY={key}", min_confidence=0.01)
+        types = {f.type for f in findings}
+        assert "lob_api_key" not in types, f"lob_api_key wrongly matched Stripe key {key[:10]}"
+        assert expected_type in types, f"{expected_type} no longer detected for {key[:10]}"
+
+
+def test_lob_api_key_known_test_value_downscored():
+    known = "test_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345678"
+    findings = scan(f"LOB_API_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "lob_api_key"]
+    assert len(matched) == 1, "Lob known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
