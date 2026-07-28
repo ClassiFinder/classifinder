@@ -2797,6 +2797,36 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    # ── 2026-07-28 — Supabase secret API key (new sb_secret_ format) ─────
+    "supabase_secret_key": {
+        # 'sb_secret_' + 22 base64url chars + '_' + 8 base64url chars (41 total),
+        # per Supabase's own key-rotation generator. Positive bodies are
+        # synthetic and differ from the registered known_test_value (the vendor
+        # CLI local-dev default) so they score normally. Negatives cover the
+        # sibling sb_publishable_/sb_temp_ prefixes, off-by-one segment lengths,
+        # an out-of-charset body, and an embedded slice of a longer token.
+        "positives": [
+            "SUPABASE_SECRET_KEY=sb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123Yz",
+            'supabase = {"secret": "sb_secret_' + "9zYxWvUtSrQpOnMlKjIhGf" + "_" + '4dCbA321"}',
+        ],
+        "negatives": [
+            # Publishable (client-safe) key — different prefix, not a secret.
+            "sb_publishable_" + "ACJWlzQHlZjBrEguHvfOxg" + "_" + "3BJgxAaH",
+            # Platform temp key — same generator, different prefix.
+            "sb_temp_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123Yz",
+            # Random segment is 21 characters, one short of 22.
+            "sb_secret_" + "AbCdEfGhIjKlMnOpQrStU" + "_" + "Wx0123Yz",
+            # Checksum segment is 9 characters, one over 8.
+            "sb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzA",
+            # '.' is outside the base64url charset.
+            "sb_secret_" + "AbCdEfGh.jKlMnOpQrStUv" + "_" + "Wx0123Yz",
+            # Embedded in a longer token — must not fire on a slice.
+            "xxsb_secret_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123Yz",
+            # Prose naming the prefix but carrying no key.
+            "rotate the sb_secret_ key under Project Settings > API Keys",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
