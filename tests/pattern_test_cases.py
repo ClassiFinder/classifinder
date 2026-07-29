@@ -2827,6 +2827,42 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # ── 2026-07-29 — CockroachDB Cloud service-account API key ───────────
+    "cockroachdb_cloud_api_key": {
+        # 'CCDB1_' + 22 alphanumerics + '_' + 40 alphanumerics (69 total), per
+        # the full-length example in CockroachDB's own Terraform provider repo.
+        # Positive bodies are synthetic and differ from the registered
+        # known_test_value (that vendor example) so they score normally.
+        # Negatives cover off-by-one on both segments, a missing separator, an
+        # out-of-charset body, a wrong version prefix, and an embedded slice.
+        "positives": [
+            "COCKROACH_API_KEY=CCDB1_"
+            + "AbCdEfGhIjKlMnOpQrStUv"
+            + "_"
+            + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+            'ccloud = {"api_key": "CCDB1_'
+            + "9zYxWvUtSrQpOnMlKjIhGf"
+            + "_"
+            + '4dCbA3219zYxWvUtSrQpOnMlKjIhGf4dCbA32109"}',
+        ],
+        "negatives": [
+            # Random segment is 21 characters, one short of 22.
+            "CCDB1_" + "AbCdEfGhIjKlMnOpQrStU" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+            # Secret segment is 41 characters, one over 40.
+            "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAbC",
+            # No separating underscore between the two segments.
+            "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+            # '-' is outside the alphanumeric charset the vendor emits.
+            "CCDB1_" + "AbCdEfGhIjKlMnOpQr-tUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+            # Wrong version prefix — only CCDB1_ is the vendor's key marker.
+            "CCDB2_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+            # Embedded in a longer token — must not fire on a slice.
+            "xxCCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+            # Prose naming the prefix but carrying no key.
+            "the ccloud CLI prints a secret starting with CCDB1_",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
