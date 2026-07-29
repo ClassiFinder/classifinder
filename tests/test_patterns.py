@@ -4621,3 +4621,95 @@ def test_cockroachdb_cloud_api_key_known_test_value_downscored():
     assert len(matched) == 1, "CockroachDB known test value not detected"
     assert matched[0].is_likely_test_value is True
     assert matched[0].confidence < 0.30
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-29 — Trigger.dev secret key (tr_<env>_[sk_]<24 alnum>)
+# ---------------------------------------------------------------------------
+
+# Synthetic keys in the vendor-generated shape, assembled by concatenation so no
+# scannable key literal exists in source, and deliberately different from the
+# registered known_test_value (the vendor's published docs placeholder) so they
+# score normally. Root keys omit the 'sk_' segment; "additional" keys carry it.
+_TRIGGER_DEV_ROOT = "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWx"
+_TRIGGER_PROD_ADDITIONAL = "tr_" + "prod_" + "sk_" + "9zYxWvUtSrQpOnMlKjIhGf07"
+_TRIGGER_STG_ROOT = "tr_" + "stg_" + "0123456789AbCdEfGhIjKlMn"
+_TRIGGER_PREVIEW_ROOT = "tr_" + "preview_" + "MnOpQrStUvWx0123456789Ab"
+
+
+def test_trigger_dev_secret_key_true_positive():
+    """A Trigger.dev secret key is detected at high confidence and flagged high —
+    it authenticates writes to the environment it belongs to (triggering tasks,
+    reading run payloads), and the production prefix means production data."""
+    for key in (
+        _TRIGGER_DEV_ROOT,
+        _TRIGGER_PROD_ADDITIONAL,
+        _TRIGGER_STG_ROOT,
+        _TRIGGER_PREVIEW_ROOT,
+    ):
+        findings = scan(f"TRIGGER_SECRET_KEY={key}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "trigger_dev_secret_key"]
+        assert len(matched) == 1, f"Trigger.dev secret key not detected for {key[:12]}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "high"
+
+
+def test_trigger_dev_secret_key_true_negative():
+    """Structural violations must not match. The vendor generator emits exactly
+    24 characters from a 62-character alphanumeric alphabet after the environment
+    prefix, with an optional literal 'sk_' segment in between."""
+    negatives = [
+        # 23-character body, one short of the generator's fixed 24.
+        "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvW",
+        # 25-character body, one over.
+        "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWxY",
+        # 23-character body on an 'additional' (sk_) key.
+        "tr_" + "prod_" + "sk_" + "9zYxWvUtSrQpOnMlKjIhGf0",
+        # 'test' is not one of the four environment types the vendor emits
+        # (DEVELOPMENT / STAGING / PRODUCTION / PREVIEW).
+        "tr_" + "test_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+        # Missing the environment segment entirely.
+        "tr_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+        # '-' is outside the 62-character alphabet the generator uses.
+        "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQr-tUvWx",
+        # Embedded inside a longer token — must not fire on a slice.
+        "xxtr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+        # Trailing characters — must not fire on a 24-char prefix of a longer blob.
+        "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWxYZ",
+        # Prose naming the prefix but carrying no key.
+        "Your TRIGGER_SECRET_KEY starts with tr_dev_ in the development environment",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "trigger_dev_secret_key"]
+        assert len(matched) == 0, f"trigger_dev_secret_key wrongly matched: {neg}"
+
+
+def test_trigger_dev_secret_key_does_not_match_publishable_keys():
+    """Trigger.dev's pk_dev_ / pk_prod_ keys are publishable client-side keys, not
+    secrets (packages/cli-v3/src/utilities/getApiKeyType.ts types tr_* as 'server'
+    and pk_* as 'public'). Flagging them would be a false positive. The tr_pat_
+    personal access token is a different credential with a different body and is
+    deliberately out of this pattern's scope too."""
+    non_secrets = [
+        "pk_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+        "pk_" + "prod_" + "9zYxWvUtSrQpOnMlKjIhGf07",
+        "tr_" + "pat_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+    ]
+    for value in non_secrets:
+        findings = scan(f"TRIGGER_PUBLIC_API_KEY={value}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "trigger_dev_secret_key"]
+        assert len(matched) == 0, f"publishable/out-of-scope key wrongly matched: {value}"
+
+
+def test_trigger_dev_secret_key_known_test_value_downscored():
+    """The placeholder published in Trigger.dev's own docs
+    (docs/guides/example-projects/clickhouse-chat-agent.mdx) happens to be exactly
+    24 characters, so it matches the real shape and is the most-copied value of
+    this form; it down-scores to ~0.15."""
+    known = "tr_" + "dev_" + "x" * 24
+    findings = scan(f"TRIGGER_SECRET_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "trigger_dev_secret_key"]
+    assert len(matched) == 1, "Trigger.dev known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
