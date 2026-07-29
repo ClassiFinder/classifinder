@@ -2863,6 +2863,41 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # ── 2026-07-29 — Trigger.dev secret key ───────────────────────────────
+    "trigger_dev_secret_key": {
+        # 'tr_' + dev|stg|prod|preview + '_' + optional 'sk_' + 24 characters
+        # from the vendor generator's 62-character alphanumeric alphabet.
+        # Positive bodies are synthetic and differ from the registered
+        # known_test_value (the vendor's docs placeholder) so they score
+        # normally. Negatives cover off-by-one on the body, an unknown
+        # environment segment, an out-of-charset body, the publishable pk_ keys,
+        # the out-of-scope tr_pat_ token, and an embedded slice.
+        "positives": [
+            "TRIGGER_SECRET_KEY=tr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+            'trigger = {"secretKey": "tr_' + "prod_" + "sk_" + '9zYxWvUtSrQpOnMlKjIhGf07"}',
+            "TRIGGER_SECRET_KEY=tr_" + "preview_" + "MnOpQrStUvWx0123456789Ab",
+        ],
+        "negatives": [
+            # 23-character body, one short of the generator's fixed 24.
+            "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvW",
+            # 25-character body, one over.
+            "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWxY",
+            # 'test' is not one of the four environments the vendor emits.
+            "tr_" + "test_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+            # '-' is outside the 62-character alphabet the generator uses.
+            "tr_" + "dev_" + "AbCdEfGhIjKlMnOpQr-tUvWx",
+            # Publishable client-side keys — not secrets, must never match.
+            "pk_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+            "pk_" + "prod_" + "9zYxWvUtSrQpOnMlKjIhGf07",
+            # Personal access token — a different credential, out of scope.
+            "tr_" + "pat_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+            # Embedded in a longer token — must not fire on a slice.
+            "xxtr_" + "dev_" + "AbCdEfGhIjKlMnOpQrStUvWx",
+            # Prose naming the prefix but carrying no key.
+            "your TRIGGER_SECRET_KEY starts with tr_dev_ in development",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
