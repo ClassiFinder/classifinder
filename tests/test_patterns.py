@@ -4553,3 +4553,71 @@ def test_supabase_secret_key_no_collision_with_service_role_jwt():
     legacy_types = {f.type for f in legacy_findings}
     assert "supabase_service_key" in legacy_types, "legacy service_role key no longer detected"
     assert "supabase_secret_key" not in legacy_types, "opaque pattern claimed a JWT"
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-29 — CockroachDB Cloud service-account API key (CCDB1_ format)
+# ---------------------------------------------------------------------------
+
+# Synthetic keys in the vendor-documented shape, assembled by concatenation so
+# no scannable key literal exists in source, and deliberately different from the
+# registered known_test_value (the vendor's published import.sh example) so they
+# score normally.
+_CCDB_KEY = "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb"
+_CCDB_KEY_ALT = (
+    "CCDB1_" + "9zYxWvUtSrQpOnMlKjIhGf" + "_" + "4dCbA3219zYxWvUtSrQpOnMlKjIhGf4dCbA32109"
+)
+
+
+def test_cockroachdb_cloud_api_key_true_positive():
+    """A CockroachDB Cloud service-account API key is detected at high
+    confidence and flagged high — it grants programmatic Cloud API access."""
+    for key in (_CCDB_KEY, _CCDB_KEY_ALT):
+        findings = scan(f"COCKROACH_API_KEY={key}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "cockroachdb_cloud_api_key"]
+        assert len(matched) == 1, f"CockroachDB Cloud API key not detected for {key[:12]}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "high"
+
+
+def test_cockroachdb_cloud_api_key_true_negative():
+    """Structural violations must not match. The key is a fixed 69 characters:
+    'CCDB1_' + 22 alphanumerics + '_' + 40 alphanumerics."""
+    negatives = [
+        # Random segment is 21 characters, one short of the required 22.
+        "CCDB1_" + "AbCdEfGhIjKlMnOpQrStU" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+        # Random segment is 23 characters, one over.
+        "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUvW" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+        # Secret segment is 39 characters, one short of 40.
+        "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzA",
+        # Secret segment is 41 characters, one over.
+        "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAbC",
+        # No separating underscore between the two segments.
+        "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+        # '-' is outside the alphanumeric charset the vendor emits.
+        "CCDB1_" + "AbCdEfGhIjKlMnOpQr-tUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+        # '_' inside the trailing segment — the interior separator is fixed.
+        "CCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123Yz_b",
+        # Wrong version prefix — only CCDB1_ is the vendor's key marker.
+        "CCDB2_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+        # Embedded inside a longer token — must not fire on a slice.
+        "xxCCDB1_" + "AbCdEfGhIjKlMnOpQrStUv" + "_" + "Wx0123YzAbCdEfGhIjKlMnOpQrStUvWx0123YzAb",
+        # Prose naming the prefix but carrying no key.
+        "ccloud service-account api-key create prints a secret starting with CCDB1_",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "cockroachdb_cloud_api_key"]
+        assert len(matched) == 0, f"cockroachdb_cloud_api_key wrongly matched: {neg}"
+
+
+def test_cockroachdb_cloud_api_key_known_test_value_downscored():
+    """The example key published in CockroachDB's own Terraform provider repo
+    (examples/resources/cockroach_api_key/import.sh) is the most-copied value of
+    this shape; it down-scores to ~0.15."""
+    known = "CCDB1_" + "D4zMI3pZTmk5rGrzYqMhbc" + "_" + "NkcXLI8d81Mtx3djD45iwPfgtnaRv0XCh0Z9047K"
+    findings = scan(f"COCKROACH_API_KEY={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cockroachdb_cloud_api_key"]
+    assert len(matched) == 1, "CockroachDB known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
