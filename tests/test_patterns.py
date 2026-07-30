@@ -4713,3 +4713,104 @@ def test_trigger_dev_secret_key_known_test_value_downscored():
     assert len(matched) == 1, "Trigger.dev known test value not detected"
     assert matched[0].is_likely_test_value is True
     assert matched[0].confidence < 0.30
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-30 — Infisical service token (st.<uuid>.<32 hex>[.<hex>])
+# ---------------------------------------------------------------------------
+
+# Synthetic tokens in the vendor-generated shape, assembled by concatenation so
+# no scannable token literal exists in source. The middle segment is a canonical
+# lowercase UUID (the service-token row id) and the third segment is exactly 32
+# lowercase hex characters (crypto.randomBytes(16).toString("hex")). The
+# four-segment form is the full user-facing token; the trailing hex segment
+# decrypts the project key and is not part of the Bearer credential.
+_INFISICAL_UUID = "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d"
+_INFISICAL_SECRET = "9a8b7c6d5e4f30291827364554637281"
+_INFISICAL_SERVICE_TOKEN = "st." + _INFISICAL_UUID + "." + _INFISICAL_SECRET
+_INFISICAL_SERVICE_TOKEN_WITH_KEY = (
+    _INFISICAL_SERVICE_TOKEN + "." + "0badc0de1234abcd5678ef9012345678"
+)
+
+
+def test_infisical_service_token_true_positive():
+    """Both real-world shapes of an Infisical service token are detected at high
+    confidence and flagged critical — the token reads every secret in the project
+    environment it is scoped to, which is the whole point of a secrets manager."""
+    for token in (_INFISICAL_SERVICE_TOKEN, _INFISICAL_SERVICE_TOKEN_WITH_KEY):
+        findings = scan(f"INFISICAL_TOKEN={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "infisical_service_token"]
+        assert len(matched) == 1, f"Infisical service token not detected for {token[:8]}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+
+
+def test_infisical_service_token_detected_in_authorization_header():
+    """The three-segment form is what applications send as the Bearer credential
+    (docs/internals/service-tokens.mdx), so it must be caught in a header dump."""
+    findings = scan(
+        f"Authorization: Bearer {_INFISICAL_SERVICE_TOKEN}", min_confidence=0.01
+    )
+    matched = [f for f in findings if f.type == "infisical_service_token"]
+    assert len(matched) == 1, "Infisical service token not detected in Bearer header"
+    assert matched[0].confidence >= 0.90
+
+
+def test_infisical_service_token_true_negative():
+    """Structural violations must not match. The vendor generator fixes the third
+    segment at exactly 32 lowercase hex characters and the middle segment at a
+    canonical 8-4-4-4-12 UUID; relaxing either would turn a two-character prefix
+    into a near-generic dotted-hex matcher."""
+    negatives = [
+        # 31-hex secret segment, one short of randomBytes(16).toString("hex").
+        "st." + _INFISICAL_UUID + "." + _INFISICAL_SECRET[:-1],
+        # 33-hex secret segment, one over.
+        "st." + _INFISICAL_UUID + "." + _INFISICAL_SECRET + "a",
+        # Uppercase secret segment — Node's hex encoding emits lowercase only.
+        "st." + _INFISICAL_UUID + "." + _INFISICAL_SECRET.upper(),
+        # UUID with the dashes stripped — not the canonical 36-character id.
+        "st." + _INFISICAL_UUID.replace("-", "") + "." + _INFISICAL_SECRET,
+        # UUID whose final group is 11 characters instead of 12.
+        "st." + _INFISICAL_UUID[:-1] + "." + _INFISICAL_SECRET,
+        # Non-hex character inside the UUID.
+        "st." + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4czz" + "." + _INFISICAL_SECRET,
+        # Middle segment present but no secret segment at all.
+        "st." + _INFISICAL_UUID,
+        # Embedded inside a longer token — must not fire on a slice.
+        "xst." + _INFISICAL_UUID + "." + _INFISICAL_SECRET,
+        # Prose naming the prefix but carrying no token.
+        "Infisical service tokens are prefixed with st. and sent as a Bearer token",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "infisical_service_token"]
+        assert len(matched) == 0, f"infisical_service_token wrongly matched: {neg}"
+
+
+def test_infisical_service_token_does_not_match_other_prefixes():
+    """The 'st.' literal is the vendor's own routing anchor: backend-go/internal/
+    services/auth/apiauth/classify.go returns AuthModeServiceToken only for that
+    prefix and routes every other three-part dotted token to AuthModeJWT. A token
+    carrying the identical dotted layout under a different prefix is therefore a
+    different credential family and must not be reported as a service token."""
+    non_matches = [
+        "ak." + _INFISICAL_UUID + "." + _INFISICAL_SECRET,
+        "ust." + _INFISICAL_UUID + "." + _INFISICAL_SECRET,
+        "pt." + _INFISICAL_UUID + "." + _INFISICAL_SECRET,
+    ]
+    for value in non_matches:
+        findings = scan(f"INFISICAL_TOKEN={value}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "infisical_service_token"]
+        assert len(matched) == 0, f"non-service-token prefix wrongly matched: {value}"
+
+
+def test_infisical_service_token_known_test_value_downscored():
+    """The all-zero UUID with an all-zero secret is the canonical placeholder shape
+    for this token and is definitionally not a live credential; it down-scores to
+    ~0.15 rather than firing as a critical finding."""
+    known = "st." + "00000000-0000-0000-0000-000000000000" + "." + "0" * 32
+    findings = scan(f"INFISICAL_TOKEN={known}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == "infisical_service_token"]
+    assert len(matched) == 1, "Infisical known test value not detected"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30

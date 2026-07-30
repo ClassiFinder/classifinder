@@ -2898,6 +2898,55 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # ── 2026-07-30 — Infisical service token ──────────────────────────────
+    "infisical_service_token": {
+        # 'st.' + the service-token row id (a canonical lowercase UUID) + '.' +
+        # exactly 32 lowercase hex characters, with an optional 4th hex segment
+        # that carries the project-key decryption material. Positive bodies are
+        # synthetic and differ from the registered known_test_value so they
+        # score normally. Negatives cover off-by-one on the secret segment, a
+        # de-dashed UUID, a truncated UUID group, uppercase hex, other credential
+        # prefixes sharing the same dotted layout, and an embedded slice.
+        "positives": [
+            "INFISICAL_TOKEN=st."
+            + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d"
+            + "."
+            + "9a8b7c6d5e4f30291827364554637281",
+            "Authorization: Bearer st."
+            + "7d6c5b4a-1e2f-3a4b-5c6d-7e8f9a0b1c2d"
+            + "."
+            + "fedcba98765432100123456789abcdef",
+            'infisical = {"serviceToken": "st.'
+            + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d"
+            + "."
+            + "9a8b7c6d5e4f30291827364554637281"
+            + "."
+            + '0badc0de1234abcd5678ef9012345678"}',
+        ],
+        "negatives": [
+            # 31-hex secret segment, one short of randomBytes(16) -> hex.
+            "st." + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d" + "." + "9a8b7c6d5e4f3029182736455463728",
+            # 33-hex secret segment, one over.
+            "st."
+            + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d"
+            + "."
+            + "9a8b7c6d5e4f30291827364554637281a",
+            # Uppercase secret — Node's hex encoding emits lowercase only.
+            "st." + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d" + "." + "9A8B7C6D5E4F30291827364554637281",
+            # UUID with the dashes stripped — not the canonical 36-char id.
+            "st." + "3f0a1c2d4e5b6a7f8c9d0e1f2a3b4c5d" + "." + "9a8b7c6d5e4f30291827364554637281",
+            # UUID whose final group is 11 characters instead of 12.
+            "st." + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5" + "." + "9a8b7c6d5e4f30291827364554637281",
+            # Different credential prefixes sharing the identical dotted layout.
+            "ak." + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d" + "." + "9a8b7c6d5e4f30291827364554637281",
+            "ust." + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d" + "." + "9a8b7c6d5e4f30291827364554637281",
+            # Embedded in a longer token — must not fire on a slice.
+            "xst." + "3f0a1c2d-4e5b-6a7f-8c9d-0e1f2a3b4c5d" + "." + "9a8b7c6d5e4f30291827364554637281",
+            # Prose naming the prefix but carrying no token.
+            "Infisical service tokens are prefixed with st. and sent as a Bearer token",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
