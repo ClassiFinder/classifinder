@@ -4814,3 +4814,133 @@ def test_infisical_service_token_known_test_value_downscored():
     assert len(matched) == 1, "Infisical known test value not detected"
     assert matched[0].is_likely_test_value is True
     assert matched[0].confidence < 0.30
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-01 — Contentful Management personal access token (CFPAT-)
+# ---------------------------------------------------------------------------
+
+# Synthetic bodies in the two real vendor shapes, assembled by concatenation so
+# no scannable token literal exists in source. The current shape is 43
+# characters of base64url (32 random bytes, unpadded); the legacy shape is 64
+# lowercase hex characters. The one real token that exists publicly — inside
+# Contentful's own 2018 PHP SDK HTTP recording — is deliberately not used here.
+_CFPAT_BODY_43 = "9zYxWvUtSrQpOnMlKjIhGfEdCbA-0123456789_qwer"
+_CFPAT_BODY_43_ALT = "fD8kL2mQ7xN4pR1sT6vY9wZ0aB3cE5gH-jK_uI8oP2q"
+_CFPAT_BODY_64_HEX = (
+    "a1b2c3d4e5f60718293a4b5c6d7e8f90" + "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+)
+_CFPAT_CURRENT = "CFPAT-" + _CFPAT_BODY_43
+_CFPAT_LEGACY = "CFPAT-" + _CFPAT_BODY_64_HEX
+
+
+def test_contentful_management_pat_true_positive():
+    """Both real shapes of a Contentful Management personal access token are
+    detected at high confidence and flagged critical. Unlike the read-only
+    delivery token, a CMA personal access token creates, publishes and deletes
+    content — and manages the space's own API keys — across every space the
+    issuing user can reach."""
+    for token in (_CFPAT_CURRENT, _CFPAT_LEGACY):
+        findings = scan(f"CONTENTFUL_MANAGEMENT_TOKEN={token}", min_confidence=0.01)
+        matched = [
+            f for f in findings
+            if f.type == "contentful_management_personal_access_token"
+        ]
+        assert len(matched) == 1, f"CFPAT token not detected for {token[:10]}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+
+
+def test_contentful_management_pat_detected_in_authorization_header():
+    """The token is sent as a bearer credential against api.contentful.com, so it
+    must be caught in a header dump and in a CLI invocation."""
+    for text in (
+        f"Authorization: Bearer {_CFPAT_CURRENT}",
+        f"contentful space export --management-token {_CFPAT_LEGACY}",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [
+            f for f in findings
+            if f.type == "contentful_management_personal_access_token"
+        ]
+        assert len(matched) == 1, f"CFPAT token not detected in: {text[:40]}"
+        assert matched[0].confidence >= 0.90
+
+
+def test_contentful_management_pat_true_negative():
+    """Structural violations must not match. Both body lengths are fixed, so an
+    off-by-one in either direction — and any body that is neither 43 base64url
+    characters nor 64 lowercase hex characters — matches nothing at all."""
+    negatives = [
+        # 42-character body, one short of the current shape.
+        "CFPAT-" + _CFPAT_BODY_43[:-1],
+        # 44-character body, one over.
+        "CFPAT-" + _CFPAT_BODY_43 + "a",
+        # 63 hex characters, one short of the legacy shape.
+        "CFPAT-" + _CFPAT_BODY_64_HEX[:-1],
+        # 65 hex characters, one over.
+        "CFPAT-" + _CFPAT_BODY_64_HEX + "0",
+        # 64 UPPERCASE hex — the legacy recording is lowercase hex only, and 64
+        # is not the current base64url length either.
+        "CFPAT-" + _CFPAT_BODY_64_HEX.upper(),
+        # Lowercase prefix — the vendor emits and redacts the uppercase literal.
+        "cfpat-" + _CFPAT_BODY_43,
+        # Prefix without the separating hyphen.
+        "CFPAT" + _CFPAT_BODY_43,
+        # Embedded inside a longer token — must not fire on a slice.
+        "XCFPAT-" + _CFPAT_BODY_43,
+        # Body carrying a character outside the vendor's base64url charset.
+        "CFPAT-" + _CFPAT_BODY_43[:-1] + "$",
+        # Prose naming the prefix but carrying no token.
+        "Contentful management tokens are prefixed with CFPAT- in the CMA docs",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [
+            f for f in findings
+            if f.type == "contentful_management_personal_access_token"
+        ]
+        assert len(matched) == 0, f"contentful CFPAT wrongly matched: {neg}"
+
+
+def test_contentful_management_pat_does_not_collide_with_delivery_token():
+    """The pre-existing contentful_delivery_api_token is a DIFFERENT credential:
+    a context-gated, read-only 43-character delivery token with no prefix. A
+    management token must be reported as exactly one finding of the new type and
+    must not also surface as a delivery token — the CFPAT- prefix puts six extra
+    characters of the same class in front of the body, so the delivery pattern's
+    43-character window can never close on its trailing boundary."""
+    for token in (_CFPAT_CURRENT, _CFPAT_LEGACY):
+        findings = scan(f"CONTENTFUL_MANAGEMENT_TOKEN={token}", min_confidence=0.01)
+        delivery = [f for f in findings if f.type == "contentful_delivery_api_token"]
+        assert len(delivery) == 0, f"delivery pattern wrongly fired on {token[:10]}"
+
+
+def test_contentful_delivery_token_still_detected_after_cfpat_added():
+    """Recall regression guard: adding the prefix-anchored management pattern must
+    not change the behaviour of the existing context-gated delivery token."""
+    findings = scan(
+        f"CONTENTFUL_DELIVERY_TOKEN={_CFPAT_BODY_43_ALT}", min_confidence=0.01
+    )
+    delivery = [f for f in findings if f.type == "contentful_delivery_api_token"]
+    assert len(delivery) == 1, "existing contentful_delivery_api_token regressed"
+    management = [
+        f for f in findings
+        if f.type == "contentful_management_personal_access_token"
+    ]
+    assert len(management) == 0, "management pattern fired on a bare delivery token"
+
+
+def test_contentful_management_pat_known_test_value_downscored():
+    """All-zero bodies are the canonical placeholder shape for this token and are
+    definitionally not live credentials; they down-score to ~0.15 rather than
+    firing as critical findings."""
+    for known in ("CFPAT-" + "0" * 43, "CFPAT-" + "0" * 64):
+        findings = scan(f"CONTENTFUL_MANAGEMENT_TOKEN={known}", min_confidence=0.01)
+        matched = [
+            f for f in findings
+            if f.type == "contentful_management_personal_access_token"
+        ]
+        assert len(matched) == 1, "Contentful known test value not detected"
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence < 0.30
