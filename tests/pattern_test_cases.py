@@ -2947,6 +2947,51 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # ── 2026-08-01 — Contentful Management personal access token ──────────
+    "contentful_management_personal_access_token": {
+        # Literal 'CFPAT-' + either 43 base64url characters (current, 32 random
+        # bytes) or 64 lowercase hex characters (legacy, per Contentful's own
+        # 2018 PHP SDK HTTP recording). Positive bodies are synthetic and differ
+        # from the registered all-zero known_test_values so they score normally.
+        # Negatives cover off-by-one on both bodies, uppercase hex, a lowercase
+        # prefix, a missing hyphen, an out-of-charset character, an embedded
+        # slice, and a bare delivery token (the pre-existing, prefix-less
+        # contentful_delivery_api_token, which must not be absorbed here).
+        "positives": [
+            "CONTENTFUL_MANAGEMENT_TOKEN=CFPAT-"
+            + "9zYxWvUtSrQpOnMlKjIhGfEdCbA-0123456789_qwer",
+            "Authorization: Bearer CFPAT-"
+            + "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+            + "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+            "contentful space export --management-token CFPAT-"
+            + "fD8kL2mQ7xN4pR1sT6vY9wZ0aB3cE5gH-jK_uI8oP2q",
+        ],
+        "negatives": [
+            # 42-character body, one short of the current shape.
+            "CFPAT-" + "9zYxWvUtSrQpOnMlKjIhGfEdCbA-0123456789_qwe",
+            # 44-character body, one over.
+            "CFPAT-" + "9zYxWvUtSrQpOnMlKjIhGfEdCbA-0123456789_qwera",
+            # 63 hex characters, one short of the legacy shape.
+            "CFPAT-"
+            + "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+            + "0f1e2d3c4b5a69788796a5b4c3d2e1f",
+            # 64 UPPERCASE hex — the legacy recording is lowercase hex only.
+            "CFPAT-"
+            + "A1B2C3D4E5F60718293A4B5C6D7E8F90"
+            + "0F1E2D3C4B5A69788796A5B4C3D2E1F0",
+            # Lowercase prefix — the vendor emits the uppercase literal.
+            "cfpat-" + "9zYxWvUtSrQpOnMlKjIhGfEdCbA-0123456789_qwer",
+            # Prefix without the separating hyphen.
+            "CFPAT" + "9zYxWvUtSrQpOnMlKjIhGfEdCbA-0123456789_qwer",
+            # Embedded in a longer token — must not fire on a slice.
+            "XCFPAT-" + "9zYxWvUtSrQpOnMlKjIhGfEdCbA-0123456789_qwer",
+            # Bare delivery token — a different Contentful credential entirely.
+            "fD8kL2mQ7xN4pR1sT6vY9wZ0aB3cE5gH-jK_uI8oP2q",
+            # Prose naming the prefix but carrying no token.
+            "Contentful management tokens are prefixed with CFPAT- in the docs",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
