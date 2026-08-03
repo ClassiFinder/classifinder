@@ -4944,3 +4944,294 @@ def test_contentful_management_pat_known_test_value_downscored():
         assert len(matched) == 1, "Contentful known test value not detected"
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence < 0.30
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-03 batch — Doppler (5 families), GCS HMAC, Ramp, Thunderstore,
+# Unkey, HubSpot private app token
+#
+# Every provider in this batch is a GitHub secret-scanning partner, so all
+# fixture bodies are assembled by string concatenation from clearly-synthetic
+# alphabet sequences. No contiguous token literal exists in this source.
+# ---------------------------------------------------------------------------
+
+_DOPPLER_BODY = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf"  # 42 chars, in the 40-44 range
+
+
+@pytest.mark.parametrize(
+    "pattern_id,prefix,severity",
+    [
+        ("doppler_cli_token", "dp.ct.", "critical"),
+        ("doppler_service_token", "dp.st.", "critical"),
+        ("doppler_service_account_token", "dp.sa.", "critical"),
+        ("doppler_audit_token", "dp.audit.", "medium"),
+        ("doppler_scim_token", "dp.scim.", "high"),
+    ],
+)
+def test_doppler_token_families_true_positive(pattern_id, prefix, severity):
+    """Each Doppler auth-token family is detected at high confidence and carries
+    the severity its scope earns: the CLI, service and service-account tokens
+    read secrets (critical), SCIM provisions users (high), and the audit token
+    is read-only over activity metadata (medium)."""
+    findings = scan(f"DOPPLER_TOKEN={prefix}{_DOPPLER_BODY}", min_confidence=0.01)
+    matched = [f for f in findings if f.type == pattern_id]
+    assert len(matched) == 1, f"{pattern_id} not detected for prefix {prefix}"
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == severity
+
+
+def test_doppler_service_token_matches_bare_and_segmented_forms():
+    """The optional config segment is what distinguishes dp.st. from the other
+    dp.* families. Doppler emits BOTH `dp.st.<config>.<body>` and the bare
+    `dp.st.<body>`; making the segment mandatory would silently miss every bare
+    service token, which is the default dashboard-issued shape."""
+    for token in (
+        "dp.st." + _DOPPLER_BODY,
+        "dp.st." + "dev." + _DOPPLER_BODY,
+        "dp.st." + "prd-api_v2." + _DOPPLER_BODY,
+    ):
+        findings = scan(f"DOPPLER_TOKEN={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "doppler_service_token"]
+        assert len(matched) == 1, f"doppler_service_token missed: {token[:12]}"
+        assert matched[0].confidence >= 0.90
+
+
+def test_doppler_service_account_token_does_not_absorb_said_identity_token():
+    """Doppler documents a DISTINCT `dp.said.` Service Account *Identity* token
+    alongside `dp.sa.`. The service account pattern is anchored on the literal
+    `dp.sa.` — the dot after `sa` — so a dp.said. value must produce zero
+    doppler_service_account_token findings rather than being mis-attributed."""
+    for text in (
+        "dp.said." + _DOPPLER_BODY,
+        "DOPPLER_TOKEN=dp.said." + _DOPPLER_BODY,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "doppler_service_account_token"]
+        assert len(matched) == 0, f"dp.said. wrongly matched as a dp.sa. token: {text}"
+
+
+def test_doppler_families_do_not_cross_match():
+    """The six Doppler families (including the pre-existing dp.pt.) each carry a
+    distinct literal segment, so a token of one family must never be reported as
+    another. Guards against a future widening that collapses them."""
+    families = {
+        "dp.ct.": "doppler_cli_token",
+        "dp.st.": "doppler_service_token",
+        "dp.sa.": "doppler_service_account_token",
+        "dp.audit.": "doppler_audit_token",
+        "dp.scim.": "doppler_scim_token",
+        "dp.pt.": "doppler_token",
+    }
+    for prefix, expected_id in families.items():
+        findings = scan(f"DOPPLER_TOKEN={prefix}{_DOPPLER_BODY}", min_confidence=0.01)
+        doppler = [f for f in findings if f.type.startswith("doppler")]
+        assert len(doppler) == 1, f"{prefix} produced {len(doppler)} doppler findings"
+        assert doppler[0].type == expected_id
+
+
+# --- GCS HMAC access key ID -------------------------------------------------
+
+_GCS_BODY_57 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTU"
+_GCS_BODY_20 = "ABCDEFGHIJKLMNOPQRST"
+
+
+def test_gcs_hmac_access_key_id_both_documented_lengths():
+    """Google documents two HMAC access key ID lengths: 61 characters for a
+    service account and 24 for a user account. Both must detect, and the 61-char
+    form must not be truncated into a 24-char reading."""
+    for body in (_GCS_BODY_57, _GCS_BODY_20):
+        token = "GOOG" + body
+        findings = scan(f"GCS_ACCESS_ID={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "gcs_hmac_access_key_id"]
+        assert len(matched) == 1, f"GCS HMAC key ID not detected (body len {len(body)})"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+        assert matched[0].span_end - matched[0].span_start == len(token)
+
+
+def test_gcs_hmac_access_key_id_true_negative():
+    """The prefix is plain GOOG per Google's own example — not the
+    widely-circulated GOOG1E variant — and both lengths are exact. Off-by-one in
+    either direction, or a lowercase body, must match nothing."""
+    negatives = [
+        "GOOG" + _GCS_BODY_57[:-1],   # 60 chars total
+        "GOOG" + _GCS_BODY_57 + "V",  # 62 chars total
+        "GOOG" + _GCS_BODY_20[:-1],   # 23 chars total
+        "GOOG" + _GCS_BODY_20 + "U",  # 25 chars total
+        "GOOG" + _GCS_BODY_20.lower(),
+        "AIzaSyAAAABBBBCCCCDDDDEEEEFFFFGGGGHHHII",  # GCP API key, different credential
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "gcs_hmac_access_key_id"]
+        assert len(matched) == 0, f"gcs_hmac_access_key_id wrongly matched: {neg}"
+
+
+def test_gcs_hmac_paired_secret_is_deliberately_not_registered():
+    """Scope decision, asserted so it cannot be silently reverted: only the
+    access key ID is flagged. The paired HMAC secret is a bare, unanchored
+    40-character base64 string — registering it would be a generic-base64
+    false-positive cannon. This mirrors how the engine already handles AWS AKIA
+    access key IDs, whose secret half is likewise omitted."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    ids = {p.id for p in PATTERN_REGISTRY}
+    assert "gcs_hmac_access_key_id" in ids
+    assert "gcs_hmac_secret" not in ids
+    assert "gcs_hmac_secret_access_key" not in ids
+
+
+# --- Ramp / Thunderstore / Unkey -------------------------------------------
+
+_RAMP_BODY = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKl"  # exactly 48
+_TSS_BODY = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"               # exactly 36
+_UNKEY_BODY = "AbCdEfGhJkMnPqRsTuVwXy23"                          # exactly 24, base58-safe
+
+
+def test_ramp_client_secret_true_positive():
+    """A Ramp client secret authenticates against a live corporate-card and
+    spend-management account, so it is critical severity."""
+    findings = scan("RAMP_CLIENT_SECRET=ramp_sec_" + _RAMP_BODY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ramp_client_secret"]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+
+
+def test_ramp_client_id_is_not_flagged_as_a_secret():
+    """Ramp issues a ramp_id_ / ramp_sec_ pair. Only the secret half is a
+    credential; the identifier is public and must not be reported."""
+    findings = scan("RAMP_CLIENT_ID=ramp_id_" + _RAMP_BODY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ramp_client_secret"]
+    assert len(matched) == 0
+
+
+def test_thunderstore_api_token_true_positive():
+    """Thunderstore's own generator emits a fixed 36-character body: 30 random
+    alphanumerics plus a 6-character base62 CRC32 checksum. Scope is limited to
+    publishing mod packages for one team, hence medium severity."""
+    findings = scan("THUNDERSTORE_API_TOKEN=tss_" + _TSS_BODY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "thunderstore_api_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "medium"
+
+
+def test_unkey_root_key_true_positive():
+    """An Unkey root key administers the whole workspace — it can mint, read and
+    revoke every API key Unkey manages for the account — so it is critical."""
+    findings = scan("UNKEY_ROOT_KEY=unkey_" + _UNKEY_BODY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "unkey_root_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+
+
+def test_unkey_root_key_rejects_non_base58_characters():
+    """The body charset is Bitcoin base58, which EXCLUDES the four visually
+    ambiguous characters 0 (zero), O, I and l. A plain [A-Za-z0-9] class would
+    accept bodies Unkey's generator can never emit — each excluded character is
+    asserted individually so a future widening fails loudly."""
+    for excluded in ("0", "O", "I", "l"):
+        body = excluded + _UNKEY_BODY[1:]
+        findings = scan("unkey_" + body, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "unkey_root_key"]
+        assert len(matched) == 0, f"unkey_root_key accepted excluded char {excluded!r}"
+
+    # All four together, still exactly 24 characters.
+    findings = scan("unkey_" + "0OIl" + _UNKEY_BODY[4:], min_confidence=0.01)
+    assert [f for f in findings if f.type == "unkey_root_key"] == []
+
+
+# --- HubSpot private app token (collision-mitigated) ------------------------
+
+_HUBSPOT_UUID = "abcdef01-2345-6789-abcd-ef0123456789"
+
+
+def test_hubspot_private_app_token_true_positive():
+    """The prefix-anchored private app token replaced HubSpot's deprecated
+    bare-UUID API key. Both published regions must detect."""
+    for region in ("na1", "eu1"):
+        token = "pat-" + region + "-" + _HUBSPOT_UUID
+        findings = scan(f"HUBSPOT_TOKEN={token}", min_confidence=0.01)
+        matched = [f for f in findings if f.type == "hubspot_private_app_token"]
+        assert len(matched) == 1, f"hubspot private app token missed for {region}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "high"
+
+
+def test_hubspot_private_app_token_single_finding_on_realistic_env_line():
+    """Collision mitigation, required because the engine already carries a
+    context-gated bare-UUID `hubspot_api_key`. On the realistic env-var line the
+    new token's UUID substring sits inside a HUBSPOT_TOKEN= context, which is
+    exactly the shape the old pattern gates on. The line must yield EXACTLY ONE
+    finding, and the survivor must be the longer, prefix-anchored token span —
+    not the embedded UUID."""
+    token = "pat-na1-" + _HUBSPOT_UUID
+    line = f"HUBSPOT_TOKEN={token}"
+    findings = scan(line, min_confidence=0.01)
+
+    assert len(findings) == 1, (
+        "expected exactly one finding, got: "
+        + repr([(f.type, f.span_start, f.span_end) for f in findings])
+    )
+    survivor = findings[0]
+    assert survivor.type == "hubspot_private_app_token"
+    # The survivor covers the whole prefixed token, not just the embedded UUID.
+    assert line[survivor.span_start:survivor.span_end] == token
+    assert survivor.span_end - survivor.span_start == 44
+
+
+def test_hubspot_legacy_api_key_still_detected_after_private_app_token_added():
+    """Recall regression guard: adding the prefix-anchored pattern must not
+    change the behaviour of the pre-existing context-gated bare-UUID pattern."""
+    findings = scan(f"HUBSPOT_API_KEY={_HUBSPOT_UUID}", min_confidence=0.01)
+    legacy = [f for f in findings if f.type == "hubspot_api_key"]
+    assert len(legacy) == 1, "existing hubspot_api_key regressed"
+    new = [f for f in findings if f.type == "hubspot_private_app_token"]
+    assert len(new) == 0, "private app pattern fired on a bare UUID"
+
+
+def test_hubspot_private_app_token_does_not_collide_with_gitlab_pat():
+    """`glpat-` and `pat-na1-` share the letters 'pat' but not the anchor —
+    'pat-na1-' contains no 'glpat-' substring and vice versa. Asserted in both
+    directions so neither pattern drifts into the other's space."""
+    gitlab = "glpat-" + "AbCdEfGhIjKlMnOpQrSt"
+    findings = scan(f"GITLAB_TOKEN={gitlab}", min_confidence=0.01)
+    assert [f for f in findings if f.type == "hubspot_private_app_token"] == []
+    assert [f for f in findings if f.type == "gitlab_pat"]
+
+    hubspot = "pat-na1-" + _HUBSPOT_UUID
+    findings = scan(f"HUBSPOT_TOKEN={hubspot}", min_confidence=0.01)
+    assert [f for f in findings if f.type == "gitlab_pat"] == []
+
+
+# --- Known-test-value down-scoring for the whole batch ---------------------
+
+
+@pytest.mark.parametrize(
+    "pattern_id,value",
+    [
+        ("doppler_cli_token", "dp.ct." + "0" * 43),
+        ("doppler_service_token", "dp.st." + "0" * 43),
+        ("doppler_service_token", "dp.st." + "dev." + "0" * 43),
+        ("doppler_service_account_token", "dp.sa." + "0" * 43),
+        ("doppler_audit_token", "dp.audit." + "0" * 43),
+        ("doppler_scim_token", "dp.scim." + "0" * 43),
+        ("gcs_hmac_access_key_id", "GOOG" + "0" * 57),
+        ("gcs_hmac_access_key_id", "GOOG" + "0" * 20),
+        ("ramp_client_secret", "ramp_sec_" + "0" * 48),
+        ("thunderstore_api_token", "tss_" + "0" * 36),
+        ("unkey_root_key", "unkey_" + "1" * 24),
+        ("hubspot_private_app_token", "pat-na1-" + "00000000-0000-0000-0000-000000000000"),
+    ],
+)
+def test_batch_2026_08_03_known_test_values_downscored(pattern_id, value):
+    """All-placeholder bodies in each token's documented shape are definitionally
+    not live credentials. They must still be *detected* (so the shape stays
+    covered) but down-scored to ~0.15 rather than firing at critical."""
+    findings = scan(value, min_confidence=0.01)
+    matched = [f for f in findings if f.type == pattern_id]
+    assert len(matched) == 1, f"{pattern_id} known test value not detected: {value[:14]}"
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30

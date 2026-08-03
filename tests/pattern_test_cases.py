@@ -2992,6 +2992,214 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # ── 2026-08-03 batch ─────────────────────────────────────────────────
+    # Every provider below is a GitHub secret-scanning partner, so all token
+    # bodies are assembled by string concatenation and use clearly-synthetic
+    # alphabet sequences — no contiguous token literal exists in this source.
+
+    # Doppler publishes an explicit regex per auth-token family. dp.pt. already
+    # shipped; these are the remaining five. Each family's literal segment is
+    # distinct, so cross-family double-matching is structurally impossible.
+    "doppler_cli_token": {
+        "positives": [
+            "DOPPLER_CLI_TOKEN=dp.ct." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "negatives": [
+            # 39-character body, one short of the documented 40-44 range.
+            "dp.ct." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789Abc",
+            # 45-character body, one over.
+            "dp.ct." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhI",
+            # Sibling families must not be absorbed by the CLI anchor.
+            "dp.st." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "dp.sa." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            # Embedded in a longer identifier — must not fire on a slice.
+            "Xdp.ct." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            # Prose naming the prefix but carrying no token.
+            "Doppler CLI tokens are prefixed with dp.ct. in the auth docs",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # The service token is the only family with an optional config segment.
+    # BOTH the segmented and bare forms are emitted by Doppler and both are
+    # asserted here — making the segment mandatory silently misses every bare
+    # service token, which is the common dashboard-issued shape.
+    "doppler_service_token": {
+        "positives": [
+            "DOPPLER_TOKEN=dp.st." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "DOPPLER_TOKEN=dp.st." + "dev." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "DOPPLER_TOKEN=dp.st." + "prd-api_v2." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "negatives": [
+            "dp.st." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789Abc",
+            "dp.st." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhI",
+            # Config segment carrying uppercase — the segment charset is lowercase.
+            "dp.st." + "DEV." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            # Sibling families.
+            "dp.ct." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "dp.scim." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "Xdp.st." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # dp.sa. must NOT absorb the separately-documented dp.said. service account
+    # IDENTITY token — a different credential that this library does not detect.
+    "doppler_service_account_token": {
+        "positives": [
+            "DOPPLER_SA_TOKEN=dp.sa." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "negatives": [
+            "dp.sa." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789Abc",
+            "dp.sa." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhI",
+            # Service account IDENTITY token — distinct family, must not match.
+            "dp.said." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "DOPPLER_TOKEN=dp.said." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "dp.st." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "Xdp.sa." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "doppler_audit_token": {
+        "positives": [
+            "DOPPLER_AUDIT_TOKEN=dp.audit." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "negatives": [
+            "dp.audit." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789Abc",
+            "dp.audit." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhI",
+            "dp.aud." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "Xdp.audit." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "doppler_scim_token": {
+        "positives": [
+            "DOPPLER_SCIM_TOKEN=dp.scim." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "negatives": [
+            "dp.scim." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789Abc",
+            "dp.scim." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhI",
+            "dp.sc." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+            "Xdp.scim." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # GCS HMAC access key ID. Two published lengths (61 = service account,
+    # 24 = user account). The paired 40-char base64 secret is deliberately NOT
+    # registered — it is unanchored and would be a generic-base64 FP cannon.
+    "gcs_hmac_access_key_id": {
+        "positives": [
+            "GCS_ACCESS_ID=GOOG" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTU",
+            "GCS_ACCESS_ID=GOOG" + "ABCDEFGHIJKLMNOPQRST",
+        ],
+        "negatives": [
+            # 56 body characters — one short of the 61-char service-account key.
+            "GOOG" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRST",
+            # 58 body characters — one over.
+            "GOOG" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUV",
+            # 19 and 21 body characters — off-by-one on the user-account key.
+            "GOOG" + "ABCDEFGHIJKLMNOPQRS",
+            "GOOG" + "ABCDEFGHIJKLMNOPQRSTU",
+            # Lowercase body — the vendor emits uppercase alphanumerics only.
+            "GOOG" + "abcdefghijklmnopqrst",
+            # Google API key (AIza...) must not be absorbed here.
+            "AIzaSyAAAABBBBCCCCDDDDEEEEFFFFGGGGHHHII",
+            # Prose naming the prefix but carrying no key.
+            "GCS HMAC access key IDs begin with GOOG for both account types",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Ramp OAuth client secret. The companion ramp_id_ client identifier is an
+    # identifier rather than a credential and is deliberately not registered.
+    "ramp_client_secret": {
+        "positives": [
+            "RAMP_CLIENT_SECRET=ramp_sec_"
+            + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKl",
+        ],
+        "negatives": [
+            # 47-character body, one short of the fixed 48.
+            "ramp_sec_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjK",
+            # 49-character body, one over.
+            "ramp_sec_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlM",
+            # The public client identifier — same shape, not a secret.
+            "ramp_id_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKl",
+            # Embedded in a longer token.
+            "Xramp_sec_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKl",
+            "Ramp client secrets are prefixed with ramp_sec_ in the API docs",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Thunderstore service account token: 'tss_' + a deterministic 36-character
+    # body (30 random alphanumerics + a 6-character base62 CRC32 checksum).
+    "thunderstore_api_token": {
+        "positives": [
+            "THUNDERSTORE_API_TOKEN=tss_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        ],
+        "negatives": [
+            # 35-character body, one short of the generator's fixed 36.
+            "tss_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345678",
+            # 37-character body, one over.
+            "tss_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789A",
+            # Uppercase prefix — the generator emits lowercase.
+            "TSS_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+            # Missing the separating underscore.
+            "tss" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+            "Xtss_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Unkey root key. The body is Bitcoin base58, which EXCLUDES 0, O, I and l —
+    # a plain [A-Za-z0-9] class would accept bodies the generator cannot emit.
+    "unkey_root_key": {
+        "positives": [
+            "UNKEY_ROOT_KEY=unkey_" + "AbCdEfGhJkMnPqRsTuVwXy23",
+        ],
+        "negatives": [
+            # 23 body characters, one short of the fixed 24.
+            "unkey_" + "AbCdEfGhJkMnPqRsTuVwXy2",
+            # 25 body characters, one over.
+            "unkey_" + "AbCdEfGhJkMnPqRsTuVwXy234",
+            # Each of the four characters base58 deliberately excludes.
+            "unkey_" + "0bCdEfGhJkMnPqRsTuVwXy23",
+            "unkey_" + "AbCdEfGhJkMnPqRsTuVwXyO3",
+            "unkey_" + "IbCdEfGhJkMnPqRsTuVwXy23",
+            "unkey_" + "AbCdEfGhJkMnPqRsTuVwXyl3",
+            # All four excluded characters together.
+            "unkey_" + "0OIl" + "EfGhJkMnPqRsTuVwXy23AbCd",
+            "Xunkey_" + "AbCdEfGhJkMnPqRsTuVwXy23",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # HubSpot private app access token — the prefix-anchored replacement for the
+    # deprecated bare-UUID API key. Region tag is na1 or eu1.
+    "hubspot_private_app_token": {
+        "positives": [
+            "HUBSPOT_TOKEN=pat-na1-" + "abcdef01-2345-6789-abcd-ef0123456789",
+            "Authorization: Bearer pat-eu1-" + "abcdef01-2345-6789-abcd-ef0123456789",
+        ],
+        "negatives": [
+            # Unpublished region tag.
+            "pat-ap1-" + "abcdef01-2345-6789-abcd-ef0123456789",
+            # Region tag present but the body is not a canonical UUID.
+            "pat-na1-" + "abcdef012345678-9abcd-ef0123456789ab",
+            # Final UUID group 11 characters instead of 12.
+            "pat-na1-" + "abcdef01-2345-6789-abcd-ef012345678",
+            # GitLab PAT — shares the 'pat' letters but not the 'pat-' anchor.
+            "glpat-" + "AbCdEfGhIjKlMnOpQrSt",
+            # Bare UUID with no region prefix.
+            "abcdef01-2345-6789-abcd-ef0123456789",
+            "HubSpot private app tokens start with pat-na1- or pat-eu1-",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
