@@ -3200,6 +3200,49 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # hCaptcha siteverify secret key. Deliberately context-gated: the legacy
+    # '0x' + 40-hex form is byte-identical to a public Ethereum ADDRESS, so every
+    # negative below that carries a bare 0x value is guarding against turning
+    # ordinary wallet/contract text into findings.
+    "hcaptcha_siteverify_secret_key": {
+        "positives": [
+            "HCAPTCHA_SECRET=0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52",
+            'hcaptcha_secret_key: "0x' + '3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52"',
+            # Current enterprise shape.
+            "HCAPTCHA_SECRET_KEY=ES_" + "7f3a9c1e5b2d8046af13c95e7b28d40c",
+            # Uppercase hex body — the vendor charset is case-insensitive.
+            "HCAPTCHA_SECRET=0x" + "3F9A7C1E5B2D8046AF13C95E7B28D40C6E1A9F52",
+            # Realistic verification call; 'siteverify' is the other gate word.
+            "curl -X POST https://api.hcaptcha.com/siteverify -d secret=0x"
+            + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52",
+        ],
+        "negatives": [
+            # THE central false-positive risk: a bare Ethereum address, which is
+            # public data and not a secret at all. No hCaptcha context -> no finding.
+            "0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52",
+            "WALLET_ADDRESS=0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52",
+            "Refund sent to 0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52 on mainnet",
+            "CONTRACT_ADDRESS=0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52",
+            # Bare enterprise-shaped value with no hCaptcha context.
+            "ES_" + "7f3a9c1e5b2d8046af13c95e7b28d40c",
+            # Context word present but the value is one hex short / one hex long.
+            "HCAPTCHA_SECRET=0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f5",
+            "HCAPTCHA_SECRET=0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f521",
+            "HCAPTCHA_SECRET=ES_" + "7f3a9c1e5b2d8046af13c95e7b28d40",
+            "HCAPTCHA_SECRET=ES_" + "7f3a9c1e5b2d8046af13c95e7b28d40c1",
+            # 'ES_' occurring inside a longer identifier is not a key prefix.
+            "hcaptcha KUBERNETES_" + "7f3a9c1e5b2d8046af13c95e7b28d40c",
+            "hcaptcha POSTGRES_" + "7f3a9c1e5b2d8046af13c95e7b28d40c",
+            # Missing the '0x' / 'ES_' prefix entirely.
+            "HCAPTCHA_SECRET=" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52",
+            # The hCaptcha *sitekey* is a public UUID, not a credential.
+            "hcaptcha sitekey 10000000-ffff-ffff-ffff-000000000001",
+            # Prose about the format, with no key.
+            "hCaptcha secret keys are 0x plus 40 hex characters, or ES_ plus 32.",
+        ],
+        "min_confidence": 0.80,
+    },
 }
 
 # fmt: on
