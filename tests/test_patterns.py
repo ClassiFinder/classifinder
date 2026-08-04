@@ -5235,3 +5235,129 @@ def test_batch_2026_08_03_known_test_values_downscored(pattern_id, value):
     assert len(matched) == 1, f"{pattern_id} known test value not detected: {value[:14]}"
     assert matched[0].is_likely_test_value is True
     assert matched[0].confidence < 0.30
+
+
+# ═══════════════════════════════════════════════
+# HCAPTCHA — SITEVERIFY SECRET KEY (2026-08-04)
+# ═══════════════════════════════════════════════
+
+# Synthetic bodies, assembled by concatenation so no contiguous key literal
+# exists in this source file.
+_HCAPTCHA_0X = "0x" + "3f9a7c1e5b2d8046af13c95e7b28d40c6e1a9f52"
+_HCAPTCHA_ES = "ES_" + "7f3a9c1e5b2d8046af13c95e7b28d40c"
+# Vendor-published dummy secret from the hCaptcha test key pairs.
+_HCAPTCHA_TEST_SECRET = "0x" + "0" * 40
+# Hardhat account #0 private key — 0x + 64 hex, the neighbouring shape.
+_ETH_PRIVATE_KEY = "0x" + "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "HCAPTCHA_SECRET=" + _HCAPTCHA_0X,
+        "HCAPTCHA_SECRET_KEY=" + _HCAPTCHA_ES,
+        'hcaptcha_secret_key: "' + _HCAPTCHA_0X + '"',
+        "curl -X POST https://api.hcaptcha.com/siteverify -d secret=" + _HCAPTCHA_0X,
+        '{"provider": "hcaptcha", "secret": "' + _HCAPTCHA_ES + '"}',
+    ],
+)
+def test_hcaptcha_siteverify_secret_key_detected_in_context(text):
+    """Both published shapes are detected whenever an hCaptcha context word
+    precedes the value on the same line."""
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"]
+    assert len(matched) == 1, f"not detected: {text[:60]}"
+    assert matched[0].confidence >= 0.80
+    assert matched[0].provider == "hcaptcha"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A bare Ethereum address. Public data, published on every block explorer.
+        _HCAPTCHA_0X,
+        "Treasury wallet: " + _HCAPTCHA_0X,
+        "WALLET_ADDRESS=" + _HCAPTCHA_0X,
+        "CONTRACT_ADDRESS=" + _HCAPTCHA_0X,
+        "ETH_ADDRESS=" + _HCAPTCHA_0X,
+        "https://etherscan.io/address/" + _HCAPTCHA_0X,
+        "transfer(" + _HCAPTCHA_0X + ", 1000)",
+    ],
+)
+def test_ethereum_address_never_matches_hcaptcha_secret(text):
+    """THE non-collision guard for this pattern.
+
+    hCaptcha's legacy secret is '0x' + 40 hex — byte-identical to an Ethereum
+    wallet address, which is public and appears freely in ordinary text. The
+    pattern is context-gated precisely so an uncontextualised address produces
+    NO finding at all, not merely a low-confidence one. If this test ever fails,
+    the gate has been removed and the pattern has become a false-positive cannon.
+    """
+    findings = scan(text, min_confidence=0.01)
+    assert [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"] == [], (
+        "hCaptcha pattern fired on an uncontextualised Ethereum address: " + text[:60]
+    )
+
+
+def test_hcaptcha_secret_does_not_collide_with_ethereum_private_key():
+    """0x + 40 hex and 0x + 64 hex cannot overlap on length. Asserted in both
+    directions so neither pattern drifts into the other's space."""
+    findings = scan("ETH_PRIVATE_KEY=" + _ETH_PRIVATE_KEY, min_confidence=0.01)
+    assert [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"] == []
+    assert [f for f in findings if f.type == "ethereum_private_key"]
+
+    findings = scan("HCAPTCHA_SECRET=" + _HCAPTCHA_0X, min_confidence=0.01)
+    assert [f for f in findings if f.type == "ethereum_private_key"] == []
+    assert [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"]
+
+
+def test_hcaptcha_secret_span_covers_exactly_the_key():
+    """The reported span is the credential only — not the gating context word."""
+    line = "HCAPTCHA_SECRET=" + _HCAPTCHA_0X
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _HCAPTCHA_0X
+    assert f.span_end - f.span_start == 42
+
+    line = "HCAPTCHA_SECRET=" + _HCAPTCHA_ES
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _HCAPTCHA_ES
+    assert f.span_end - f.span_start == 35
+
+
+def test_hcaptcha_context_word_must_precede_the_value():
+    """The gate is directional. A value followed by the context word is not a
+    match — otherwise 'send to 0x<addr> for the hcaptcha invoice' would fire."""
+    findings = scan("secret=" + _HCAPTCHA_0X + " # hcaptcha", min_confidence=0.01)
+    assert [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"] == []
+
+
+def test_hcaptcha_context_word_must_be_on_the_same_line():
+    """The gap between the context word and the value cannot span a newline,
+    so an unrelated address further down a document is not swept in."""
+    text = "hcaptcha configuration follows\n" + "PAYOUT=" + _HCAPTCHA_0X
+    findings = scan(text, min_confidence=0.01)
+    assert [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"] == []
+
+
+def test_hcaptcha_context_gap_is_bounded():
+    """The context word must be within 60 characters of the value. A distant
+    mention on the same long line does not gate an unrelated address."""
+    text = "hcaptcha is enabled for this environment" + " " * 61 + "PAYOUT=" + _HCAPTCHA_0X
+    findings = scan(text, min_confidence=0.01)
+    assert [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"] == []
+
+
+def test_hcaptcha_vendor_test_secret_downscored():
+    """hCaptcha publishes an all-zero dummy secret for integration testing. It
+    must still be detected (so the shape stays covered) but scored ~0.15."""
+    findings = scan("HCAPTCHA_SECRET=" + _HCAPTCHA_TEST_SECRET, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "hcaptcha_siteverify_secret_key"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
