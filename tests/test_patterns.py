@@ -5528,3 +5528,148 @@ def test_posthog_secret_api_token_detected_in_local_evaluation_call():
     matched = [f for f in findings if f.type == "posthog_secret_api_token"]
     assert len(matched) == 1
     assert matched[0].confidence >= 0.95
+# MONGODB ATLAS — SERVICE ACCOUNT CLIENT SECRET (2026-08-05)
+# ═══════════════════════════════════════════════
+
+# Synthetic secrets, assembled by concatenation so no contiguous key literal
+# exists in this source file (GitHub push protection scans the public repo).
+_ATLAS_SA_SECRET = "mdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK"
+_ATLAS_SA_SECRET_ALT = "mdb_sa_sk_" + "aZ4-tK" + "Hj9WmPq2XvRc7NbLd5FsGyTu8AeKzQ3MoJ"
+# The example published in MongoDB's own kingfisher rule file — registered as a
+# known test value, so it must down-score rather than page anyone.
+_ATLAS_SA_VENDOR_EXAMPLE = "mdb_sa_sk_" + "BdIX_j" + "Lzut2WTgglKzKvSgWMDDj5hEoTqdwOyLOL"
+# The PUBLIC companion half of the OAuth2 client-credentials pair.
+_ATLAS_SA_CLIENT_ID = "mdb_sa_id_" + "68a1f2b3c4d5e6f7a8b9c0d1"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _ATLAS_SA_SECRET,
+        "MONGODB_ATLAS_CLIENT_SECRET=" + _ATLAS_SA_SECRET,
+        'client_secret: "' + _ATLAS_SA_SECRET_ALT + '"',
+        '{"clientSecret": "' + _ATLAS_SA_SECRET + '"}',
+        "atlas api login --clientId " + _ATLAS_SA_CLIENT_ID
+        + " --clientSecret " + _ATLAS_SA_SECRET,
+    ],
+)
+def test_mongodb_atlas_service_account_client_secret_detected(text):
+    """The 'mdb_sa_sk_' prefix is a 10-character vendor-unique literal, so the
+    secret is detected with or without surrounding context."""
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"]
+    assert len(matched) == 1, f"not detected: {text[:70]}"
+    assert matched[0].confidence >= 0.95
+    assert matched[0].provider == "mongodb"
+    assert matched[0].severity == "high"
+
+
+def test_mongodb_atlas_sa_secret_span_covers_exactly_the_key():
+    """The reported span is the 50-character credential and nothing else."""
+    line = "MONGODB_ATLAS_CLIENT_SECRET=" + _ATLAS_SA_SECRET
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _ATLAS_SA_SECRET
+    assert f.span_end - f.span_start == 50
+
+
+def test_mongodb_atlas_sa_client_id_is_never_a_finding():
+    """THE non-collision guard for this pattern.
+
+    'mdb_sa_id_...' is the PUBLIC username half of the Atlas Admin API OAuth2
+    client-credentials pair. It is printed in dashboards, config files and
+    support tickets, and it is not a credential. Only the 'mdb_sa_sk_' half is.
+    """
+    for text in (
+        _ATLAS_SA_CLIENT_ID,
+        "MONGODB_ATLAS_CLIENT_ID=" + _ATLAS_SA_CLIENT_ID,
+        "Service account " + _ATLAS_SA_CLIENT_ID + " has org owner on this project.",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [
+            f for f in findings
+            if f.type == "mongodb_atlas_service_account_client_secret"
+        ] == [], "Atlas pattern fired on the public client ID: " + text[:60]
+
+
+def test_mongodb_atlas_sa_secret_does_not_collide_with_connection_string():
+    """The only other provider='mongodb' pattern is mongodb_connection_string,
+    which matches mongodb:// and mongodb+srv:// URIs. Asserted in both
+    directions so neither drifts into the other's space."""
+    uri = "mongodb+srv://appuser:s3cr3tP4ss@cluster0.ab1cd.mongodb.net/prod"
+    findings = scan(uri, min_confidence=0.01)
+    assert [
+        f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"
+    ] == []
+    assert [f for f in findings if f.type == "mongodb_connection_string"]
+
+    findings = scan(_ATLAS_SA_SECRET, min_confidence=0.01)
+    assert [f for f in findings if f.type == "mongodb_connection_string"] == []
+    assert [f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"]
+
+
+def test_mongodb_atlas_sa_secret_style_guide_placeholder_not_matched():
+    """mongodb/docs' style guide prints 'mdb_sa_sk_' + 24 hex as a PLACEHOLDER,
+    mirroring the client-ID shape rather than the real 40-character body (Atlas
+    API responses mask the real value entirely). Widening the body to admit that
+    24-character form would trade the pattern's precision for a doc artifact."""
+    findings = scan("mdb_sa_sk_" + "bef04cc04bc44fbcb2dbafa7", min_confidence=0.01)
+    assert [
+        f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"
+    ] == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body 39 / 41 characters — the length is fixed at 40.
+        "mdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBn",
+        "mdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKx",
+        # Prefix embedded in a longer word or trailing into a longer token.
+        "XYmdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+        "mdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK" + "-more",
+        # Wrong separator / truncated prefix.
+        "mdb-sa-sk-" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+        "mdb_sa_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+        # The masked form Atlas API responses return in place of the secret.
+        "mdb_sa_sk...XXXX",
+    ],
+)
+def test_mongodb_atlas_sa_secret_boundaries(text):
+    """Length and token boundaries are exact — a near-miss is not a finding."""
+    findings = scan(text, min_confidence=0.01)
+    assert [
+        f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"
+    ] == [], "false positive on: " + text[:70]
+
+
+def test_mongodb_atlas_sa_secret_vendor_example_downscored():
+    """The example published in MongoDB's own kingfisher rule file is a known
+    test value and must score ~0.15, not ~0.95."""
+    findings = scan(_ATLAS_SA_VENDOR_EXAMPLE, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence < 0.30
+
+
+def test_mongodb_atlas_sa_secret_wins_over_generic_api_key_env():
+    """Before this pattern existed, 'MONGODB_ATLAS_CLIENT_SECRET=<value>' was
+    only reachable as a generic_api_key_env guess at ~0.82. The specific,
+    prefix-anchored pattern must win deduplication so the finding names the
+    actual credential type."""
+    line = "MONGODB_ATLAS_CLIENT_SECRET=" + _ATLAS_SA_SECRET
+    findings = scan(line, min_confidence=0.01)
+    assert findings, "no findings at all"
+    assert findings[0].type == "mongodb_atlas_service_account_client_secret"
+    assert [f for f in findings if f.type == "generic_api_key_env"] == []
+
+
+def test_mongodb_atlas_sa_secret_value_preview_masks_the_body():
+    """Security rule 2: the full secret value is never returned."""
+    findings = scan(_ATLAS_SA_SECRET, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"]
+    assert len(matched) == 1
+    assert _ATLAS_SA_SECRET not in matched[0].value_preview
