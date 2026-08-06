@@ -5673,3 +5673,145 @@ def test_mongodb_atlas_sa_secret_value_preview_masks_the_body():
     matched = [f for f in findings if f.type == "mongodb_atlas_service_account_client_secret"]
     assert len(matched) == 1
     assert _ATLAS_SA_SECRET not in matched[0].value_preview
+# CRATES.IO — API TOKEN (2026-08-06)
+# ═══════════════════════════════════════════════
+
+# Synthetic 32-character bodies, assembled by concatenation so no contiguous
+# token literal exists in this source file.
+_CRATES_TOKEN = "c" + "io" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp"
+_CRATES_TOKEN_2 = "c" + "io" + "kR4mZ9tWq2LxBv7NcHy5JdPs1AeGf3Uo"
+# Same shape, but a repeating low-entropy body — the kind of placeholder that
+# the {32} length bound alone would happily accept.
+_CRATES_LOW_ENTROPY = "c" + "io" + "abcdefgh" * 4
+
+
+def test_crates_io_api_token_detected():
+    """cio + exactly 32 alphanumerics, in the forms cargo actually writes it."""
+    for text in (
+        "CARGO_REGISTRY_TOKEN=" + _CRATES_TOKEN,
+        "cargo login " + _CRATES_TOKEN,
+        '[registry]\ntoken = "' + _CRATES_TOKEN + '"',
+        "crates.io token: " + _CRATES_TOKEN,
+        _CRATES_TOKEN,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "crates_io_api_token"]
+        assert len(matched) == 1, f"not detected: {text[:60]}"
+        assert matched[0].confidence >= 0.80
+        assert matched[0].provider == "crates_io"
+        assert matched[0].severity == "critical"
+
+
+def test_crates_io_api_token_length_is_exact():
+    """crates.io's generator is TOKEN_PREFIX + 32 chars, with TOKEN_LENGTH a
+    compile-time constant. 31 and 33 must both miss — the length bound is the
+    main thing standing between a 3-character anchor and a false-positive
+    cannon, so a drift to {31,} would fail here rather than in production.
+    """
+    body = "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp"
+    for candidate in (
+        "c" + "io" + body[:31],
+        "c" + "io" + body + "Z",
+        "c" + "io" + body[:20],
+    ):
+        findings = scan("CARGO_REGISTRY_TOKEN=" + candidate, min_confidence=0.01)
+        assert [f for f in findings if f.type == "crates_io_api_token"] == [], (
+            "wrong-length value matched: " + candidate[:12]
+        )
+
+
+def test_crates_io_api_token_boundaries_reject_embedded_runs():
+    """Both boundaries exclude alphanumerics AND the two delimiters that show up
+    in base64url blobs, so a correct-length run hanging off a longer opaque
+    string is not swept in."""
+    for text in (
+        "x" + _CRATES_TOKEN,
+        _CRATES_TOKEN + "x",
+        "prefix_" + _CRATES_TOKEN,
+        _CRATES_TOKEN + "_suffix",
+        "blob-" + _CRATES_TOKEN,
+        _CRATES_TOKEN + "-tail",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "crates_io_api_token"] == [], (
+            "matched inside a longer run: " + text[:50]
+        )
+
+
+def test_crates_io_api_token_prefix_is_case_sensitive():
+    """TOKEN_PREFIX is the lowercase literal "cio". Uppercase forms are the
+    common English abbreviation, not a credential."""
+    for text in (
+        "CIO" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+        "Cio" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+        "cIO" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "crates_io_api_token"] == [], (
+            "uppercase prefix matched: " + text[:12]
+        )
+
+
+def test_crates_io_api_token_low_entropy_is_penalised():
+    """The `cio` anchor is only three characters, so entropy is a real gate here
+    and not decoration. A repeating 32-character body is still shaped like a
+    token; it must fall out of the actionable band rather than score 0.80.
+    """
+    findings = scan("CARGO_REGISTRY_TOKEN=" + _CRATES_LOW_ENTROPY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "crates_io_api_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence < 0.40, (
+        "low-entropy placeholder scored in the actionable band: "
+        f"{matched[0].confidence}"
+    )
+
+
+def test_crates_io_api_token_span_covers_exactly_the_token():
+    """The reported span is the 35-character credential — never the surrounding
+    variable name or quotes."""
+    line = "CARGO_REGISTRY_TOKEN=" + _CRATES_TOKEN
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "crates_io_api_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _CRATES_TOKEN
+    assert f.span_end - f.span_start == 35
+
+
+def test_crates_io_api_token_does_not_collide_with_other_registry_tokens():
+    """crates.io sits next to npm, PyPI, RubyGems and NuGet in vcs.py. None of
+    those prefixes can produce a crates.io match, and a crates.io token must not
+    be claimed by any of them."""
+    neighbours = {
+        "npm_token": "NPM_TOKEN=npm_" + "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
+        "rubygems_token": (
+            "GEM_HOST_API_KEY=rubygems_"
+            + "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCdEfGhIjKl"
+        ),
+        "nuget_api_key": "NUGET_API_KEY=oy2" + "abcdefghijklmnopqrstuvwxyz1234567890abcdefg",
+    }
+    for pattern_id, text in neighbours.items():
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "crates_io_api_token"] == [], (
+            "crates_io_api_token fired on a " + pattern_id + " value"
+        )
+        assert [f for f in findings if f.type == pattern_id], (
+            pattern_id + " no longer detected"
+        )
+
+    findings = scan("CARGO_REGISTRY_TOKEN=" + _CRATES_TOKEN_2, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "crates_io_api_token" in types
+    assert types.isdisjoint({"npm_token", "pypi_token", "rubygems_token", "nuget_api_key"})
+
+
+def test_crates_io_api_token_legacy_prefixless_tokens_are_not_matched():
+    """Pre-2020 crates.io tokens were a bare 32-character alphanumeric string
+    with no prefix. HashedToken::parse now rejects anything without the `cio`
+    prefix, so those are dead credentials — matching them would mean firing on
+    every 32-character alphanumeric blob in existence."""
+    findings = scan(
+        "CARGO_REGISTRY_TOKEN=" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+        min_confidence=0.01,
+    )
+    assert [f for f in findings if f.type == "crates_io_api_token"] == []

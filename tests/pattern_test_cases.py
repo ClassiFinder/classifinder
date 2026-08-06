@@ -1135,6 +1135,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.50,
     },
 
+    # crates.io tokens are "cio" + exactly 32 [A-Za-z0-9]. Every fixture below is
+    # assembled by concatenation so no contiguous token literal exists in source.
+    "crates_io_api_token": {
+        "positives": [
+            "CARGO_REGISTRY_TOKEN=" + "c" + "io" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+            "cargo login " + "c" + "io" + "kR4mZ9tWq2LxBv7NcHy5JdPs1AeGf3Uo",
+            '[registry]\ntoken = "' + "c" + "io" + "8yTn3XvQ6bKz1MwLpR5cHjD9sFgA2eUq" + '"',
+        ],
+        "negatives": [
+            # 31 body chars — one short of the fixed length.
+            "CARGO_REGISTRY_TOKEN=" + "c" + "io" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgX",
+            # 33 body chars — one over.
+            "CARGO_REGISTRY_TOKEN=" + "c" + "io" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpZ",
+            # Correct length but embedded in a longer alphanumeric run.
+            "x" + "c" + "io" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+            # Correct length but hanging off a delimited blob on either side.
+            "prefix_" + "c" + "io" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+            "c" + "io" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp" + "-tail",
+            # Uppercase prefix — crates.io's TOKEN_PREFIX is lowercase only.
+            "CIO" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXp",
+            # A hyphenated UUID-ish value that merely starts with the letters.
+            "cio-8yTn3XvQ-6bKz-1MwL-pR5cHjD9sFgA",
+        ],
+        "min_confidence": 0.75,
+    },
+
     "airtable_api_key": {
         "positives": [
             "AIRTABLE_KEY=patAbCdEfGhIjKlMn.a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
