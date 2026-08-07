@@ -3243,6 +3243,55 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+
+    # PostHog secret API token (phs_). The body is PostHog's BASE57 alphabet —
+    # base62 minus 0, 1, O, I and l — and is 48 OR 49 characters long, because
+    # base-57 encoding a forced-top-bit 280-bit integer does not land on a
+    # constant width. Bodies below are alphabet/counting sequences, not
+    # generator output, and every literal is assembled by concatenation.
+    "posthog_secret_api_token": {
+        "positives": [
+            # 48-character body — the ~97% case.
+            "POSTHOG_SECRET_API_KEY=phs_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQ",
+            # 49-character body — the ~3% case a fixed {48} bound would miss.
+            "POSTHOG_SECRET_API_KEY=phs_"
+            + "Nf8sJyRb4TvMqAe2XkWdZp6HcUgLnSt3BrYjQ5EvKmDxWzA9u",
+            'posthog_secret_api_key: "phs_'
+            + 'Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzChTd5w"',
+            "curl -H 'Authorization: Bearer phs_"
+            + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzChTd5w'"
+            + " https://us.i.posthog.com/api/feature_flag/local_evaluation",
+        ],
+        "negatives": [
+            # One short and one long — the {48,49} bound is exact on both sides.
+            "POSTHOG_SECRET_API_KEY=phs_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNP",
+            "POSTHOG_SECRET_API_KEY=phs_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRS",
+            # Ambiguous characters PostHog's generator can never emit: 0 and l.
+            "POSTHOG_SECRET_API_KEY=phs_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNP0",
+            "POSTHOG_SECRET_API_KEY=phs_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPl",
+            # A correct-length run hanging off a longer base64url blob.
+            "eyJhbGciOiJIUzI1NiJ9phs_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQ",
+            "phs_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQ"
+            + "-trailing",
+            # The sibling PostHog credentials, which are separate patterns.
+            "POSTHOG_PROJECT_API_KEY=phc_"
+            + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzC",
+            "POSTHOG_PERSONAL_API_KEY=phx_"
+            + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzChTd5",
+            # Placeholder body — underscores are not in the base57 alphabet.
+            "POSTHOG_SECRET_API_KEY=phs_your_secret_api_key_here",
+            # Prose about the format, with no key.
+            "PostHog secret tokens start with phs_ and carry a 48-character body.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on

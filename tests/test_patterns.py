@@ -5361,3 +5361,170 @@ def test_hcaptcha_vendor_test_secret_downscored():
     assert len(matched) == 1
     assert matched[0].is_likely_test_value is True
     assert matched[0].confidence < 0.30
+
+
+# ═══════════════════════════════════════════════
+# POSTHOG — SECRET API TOKEN (2026-08-07)
+# ═══════════════════════════════════════════════
+
+# Synthetic bodies drawn from PostHog's BASE57 alphabet (base62 minus the
+# ambiguous characters 0, 1, O, I and l). Assembled by concatenation so no
+# contiguous `phs_`-prefixed literal exists in this source file.
+_PH_BODY_48 = "23456789" + "abcdefghijkmnopqrstuvwxyz" + "ABCDEFGHJKLMNPQ"
+_PH_BODY_49 = "Nf8sJyRb4TvMqAe2XkWdZp6" + "HcUgLnSt3BrYjQ5EvKmDxWzA9u"
+_POSTHOG_SECRET_48 = "phs_" + _PH_BODY_48
+_POSTHOG_SECRET_49 = "phs_" + _PH_BODY_49
+# The two sibling PostHog credentials — separate patterns, separate prefixes.
+_POSTHOG_PROJECT = "phc_" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzC"
+_POSTHOG_PERSONAL = "phx_" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzChTd5"
+
+
+def test_posthog_secret_api_token_48_char_body_detected():
+    """The 48-character body is the common case (~97% of generated tokens)."""
+    text = "POSTHOG_SECRET_API_KEY=" + _POSTHOG_SECRET_48
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "posthog_secret_api_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.95
+    assert matched[0].provider == "posthog"
+    assert matched[0].severity == "high"
+
+
+def test_posthog_secret_api_token_49_char_body_detected():
+    """The 49-character body is the ~3% case.
+
+    PostHog's own source comment claims the forced top bit makes the encoded
+    length constant, but 57**48 == 2**279.98 < 2**280, so roughly one token in
+    34 encodes to 49 characters. A `{48}`-only bound would silently miss those,
+    which is exactly the kind of quiet false negative this test exists to catch.
+    """
+    text = "POSTHOG_SECRET_API_KEY=" + _POSTHOG_SECRET_49
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "posthog_secret_api_token"]
+    assert len(matched) == 1
+    assert len(matched[0].value_preview) > 0
+    assert matched[0].confidence >= 0.95
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # 47 characters — one short of the lower bound.
+        _PH_BODY_48[:-1],
+        # 50 characters — one past the upper bound.
+        _PH_BODY_49 + "S",
+    ],
+)
+def test_posthog_secret_api_token_length_bounds_are_exact(body):
+    """{48,49} is a closed interval — 47 and 50 must both miss."""
+    text = "POSTHOG_SECRET_API_KEY=phs_" + body
+    findings = scan(text, min_confidence=0.01)
+    assert [f for f in findings if f.type == "posthog_secret_api_token"] == []
+
+
+@pytest.mark.parametrize("ambiguous", ["0", "1", "O", "I", "l"])
+def test_posthog_secret_api_token_rejects_ambiguous_characters(ambiguous):
+    """PostHog's BASE57 alphabet is base62 minus 0, 1, O, I and l.
+
+    The generator cannot emit those five characters, so a body containing one
+    is not a PostHog secret token. Using the restricted class rather than
+    [A-Za-z0-9] is what makes this pattern narrower than its phc_/phx_ siblings.
+    """
+    text = "POSTHOG_SECRET_API_KEY=phs_" + _PH_BODY_48[:-1] + ambiguous
+    findings = scan(text, min_confidence=0.01)
+    assert [f for f in findings if f.type == "posthog_secret_api_token"] == [], (
+        "base57 class not enforced — ambiguous character '" + ambiguous + "' accepted"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A correct-length run hanging off the tail of a longer base64url blob.
+        "eyJhbGciOiJIUzI1NiJ9" + _POSTHOG_SECRET_48,
+        # ...and off the front.
+        _POSTHOG_SECRET_48 + "9wYXlsb2FkIGdvZXMgaGVyZQ",
+        # Hyphen and underscore are excluded by the boundaries, not just
+        # alphanumerics, so a base64url neighbour cannot smuggle a match out.
+        "prefix-" + _POSTHOG_SECRET_48 + "-suffix",
+        "PREFIX_" + _POSTHOG_SECRET_48 + "_suffix",
+    ],
+)
+def test_posthog_secret_api_token_boundaries_reject_embedded_runs(text):
+    """The lookarounds keep the pattern from carving a token out of a blob."""
+    findings = scan(text, min_confidence=0.01)
+    assert [f for f in findings if f.type == "posthog_secret_api_token"] == []
+
+
+def test_posthog_secret_api_token_does_not_collide_with_siblings():
+    """Non-collision with phc_ and phx_, asserted in BOTH directions.
+
+    The three PostHog prefixes are mutually exclusive by construction, but the
+    assertion is made explicit so a future widening of any of them (for example
+    to a shared `ph[csx]_` alternation) fails loudly here rather than silently
+    mislabelling a finding and sending a responder to the wrong revocation page.
+    """
+    # A phs_ token must not be claimed by either sibling.
+    findings = scan("POSTHOG_SECRET_API_KEY=" + _POSTHOG_SECRET_48, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "posthog_secret_api_token" in types
+    assert "posthog_project_api_key" not in types
+    assert "posthog_personal_api_key" not in types
+
+    # ...and neither sibling's token may be claimed as a phs_ secret.
+    findings = scan("POSTHOG_PROJECT_API_KEY=" + _POSTHOG_PROJECT, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "posthog_project_api_key" in types
+    assert "posthog_secret_api_token" not in types
+
+    findings = scan("POSTHOG_PERSONAL_API_KEY=" + _POSTHOG_PERSONAL, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "posthog_personal_api_key" in types
+    assert "posthog_secret_api_token" not in types
+
+
+def test_posthog_secret_api_token_span_covers_exactly_the_token():
+    """The reported span is the credential, prefix included, nothing else."""
+    line = "POSTHOG_SECRET_API_KEY=" + _POSTHOG_SECRET_48
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "posthog_secret_api_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _POSTHOG_SECRET_48
+    assert f.span_end - f.span_start == 52
+
+    line = "POSTHOG_SECRET_API_KEY=" + _POSTHOG_SECRET_49
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "posthog_secret_api_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _POSTHOG_SECRET_49
+    assert f.span_end - f.span_start == 53
+
+
+def test_posthog_secret_api_token_low_entropy_body_is_penalised():
+    """PostHog publishes no dummy phs_ token, so no known_test_value is
+    registered. The entropy floor is what down-scores a placeholder instead.
+
+    The threshold is 4.0, measured rather than guessed: across 50,000 simulated
+    tokens the minimum Shannon entropy of a real body was 4.32 bits. A repeating
+    filler body scores 2.0 and takes the -0.50 penalty, landing well below the
+    0.95 base — while no real token is ever penalised.
+    """
+    filler = "phs_" + ("abcd" * 12)
+    findings = scan(filler, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "posthog_secret_api_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence < 0.60
+
+
+def test_posthog_secret_api_token_detected_in_local_evaluation_call():
+    """The credential's actual use: GET /api/feature_flag/local_evaluation."""
+    text = (
+        "curl -H 'Authorization: Bearer " + _POSTHOG_SECRET_48 + "' "
+        "https://us.i.posthog.com/api/feature_flag/local_evaluation"
+    )
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "posthog_secret_api_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.95
