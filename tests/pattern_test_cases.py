@@ -3292,6 +3292,50 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+
+    # MongoDB Atlas Service Account client secret. Prefix-anchored on the
+    # 10-character literal 'mdb_sa_sk_', so no context gate is needed. The
+    # negatives guard the two neighbours that look closest: the PUBLIC companion
+    # client ID 'mdb_sa_id_' (not a credential) and the masked/placeholder forms
+    # MongoDB's own docs print in place of the real secret.
+    "mongodb_atlas_service_account_client_secret": {
+        "positives": [
+            "MONGODB_ATLAS_CLIENT_SECRET=mdb_sa_sk_"
+            + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+            'client_secret: "mdb_sa_sk_'
+            + 'aZ4-tK' + 'Hj9WmPq2XvRc7NbLd5FsGyTu8AeKzQ3MoJ"',
+            '{"clientSecret": "mdb_sa_sk_'
+            + 'wR2nJ8' + 'Vt6YbXc4LpMzQe9HsKdNaFg7UjR3TwZmB1"}',
+            # Bare, no surrounding context — the prefix alone is the anchor.
+            "mdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+            # Realistic Atlas Admin API OAuth2 token exchange.
+            "curl --user 'mdb_sa_id_68a1f2b3c4d5e6f7a8b9c0d1:mdb_sa_sk_"
+            + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK"
+            + "' https://cloud.mongodb.com/api/oauth/token",
+        ],
+        "negatives": [
+            # The companion client ID is PUBLIC — it is the OAuth2 username half.
+            "mdb_sa_id_68a1f2b3c4d5e6f7a8b9c0d1",
+            "MONGODB_ATLAS_CLIENT_ID=mdb_sa_id_68a1f2b3c4d5e6f7a8b9c0d1",
+            # The style-guide placeholder in mongodb/docs: 24 hex characters,
+            # mirroring the client-ID shape. Deliberately NOT admitted — widening
+            # the body to accept it would gut the pattern's precision.
+            "mdb_sa_sk_" + "bef04cc04bc44fbcb2dbafa7",
+            # The masked form Atlas API responses return instead of the secret.
+            "mdb_sa_sk...XXXX",
+            # Body one character short / one character long.
+            "mdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBn",
+            "mdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKx",
+            # Right prefix, wrong separator / wrong prefix.
+            "mdb-sa-sk-" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+            "mdb_sa_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+            # Prefix embedded in a longer identifier is not a key.
+            "XYmdb_sa_sk_" + "Qp7x_v" + "Zk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnK",
+            # Prose about the format, with no key.
+            "Atlas service account secrets are prefixed mdb_sa_sk_ and the ID mdb_sa_id_.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
