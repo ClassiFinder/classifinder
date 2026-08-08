@@ -667,19 +667,46 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    # PostHog bodies are BASE57 (BASE62 minus 0, 1, O, I, l) and the length is
+    # pinned by the generator, not by a detector catalog: phc_ is exactly 44
+    # chars, phx_ is 48 or 49. Bodies below are alphabet sequences, not
+    # generator output, and every literal is assembled by concatenation.
     "posthog_project_api_key": {
         "positives": [
-            "POSTHOG_PROJECT_API_KEY=phc_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ",
+            "POSTHOG_PROJECT_API_KEY=phc_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKL",
         ],
-        "negatives": ["phc_short"],
+        "negatives": [
+            "phc_short",
+            # 43 and 45 — the {44} bound is exact on both sides.
+            "POSTHOG_PROJECT_API_KEY=phc_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJK",
+            "POSTHOG_PROJECT_API_KEY=phc_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLM",
+            # Correct length but carries '0', which BASE57 never emits.
+            "POSTHOG_PROJECT_API_KEY=phc_"
+            + "03456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKL",
+        ],
         "min_confidence": 0.85,
     },
 
     "posthog_personal_api_key": {
         "positives": [
-            "POSTHOG_PERSONAL_API_KEY=phx_AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStU",
+            # 48-character body — the ~97% case.
+            "POSTHOG_PERSONAL_API_KEY=phx_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQ",
+            # 49-character body — the ~3% case a fixed {47} bound never saw.
+            "POSTHOG_PERSONAL_API_KEY=phx_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQR",
         ],
-        "negatives": ["phx_short"],
+        "negatives": [
+            "phx_short",
+            # 47 and 50 — the {48,49} bound is exact on both sides.
+            "POSTHOG_PERSONAL_API_KEY=phx_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNP",
+            "POSTHOG_PERSONAL_API_KEY=phx_"
+            + "23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRS",
+        ],
         "min_confidence": 0.90,
     },
 

@@ -273,24 +273,49 @@ def test_planetscale_password():
 
 
 def test_posthog_project_api_key():
-    """PostHog project keys with phc_ prefix (43 alphanumeric)."""
-    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQ"  # 43 chars
-    assert len(body) == 43
+    """PostHog project keys with phc_ prefix (44-char BASE57 body)."""
+    body = "23456789abcdefghijkmnopqrstuvwxyz" + "ABCDEFGHJKL"  # 44 chars
+    assert len(body) == 44
     text = f"POSTHOG_PROJECT_API_KEY=phc_{body}"
     findings = scan(text)
     ph = [f for f in findings if f.type == "posthog_project_api_key"]
     assert len(ph) == 1
 
 
+def test_posthog_project_api_key_rejects_43_char_body():
+    """The old {43} bound was catalog-derived; the generator emits exactly 44."""
+    body = "23456789abcdefghijkmnopqrstuvwxyz" + "ABCDEFGHJK"  # 43 chars
+    assert len(body) == 43
+    findings = scan(f"POSTHOG_PROJECT_API_KEY=phc_{body}")
+    assert [f for f in findings if f.type == "posthog_project_api_key"] == []
+
+
 def test_posthog_personal_api_key():
-    """PostHog personal keys with phx_ prefix (47 alphanumeric)."""
-    body = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStU"  # 47 chars
-    assert len(body) == 47
+    """PostHog personal keys with phx_ prefix (48-char BASE57 body, ~97% case)."""
+    body = "23456789abcdefghijkmnopqrstuvwxyz" + "ABCDEFGHJKLMNPQ"  # 48 chars
+    assert len(body) == 48
     text = f"POSTHOG_PERSONAL_API_KEY=phx_{body}"
     findings = scan(text)
     ph = [f for f in findings if f.type == "posthog_personal_api_key"]
     assert len(ph) == 1
     assert ph[0].severity == "critical"
+
+
+def test_posthog_personal_api_key_49_char_body():
+    """57**48 < 2**280, so ~3% of personal keys carry a 49th character."""
+    body = "23456789abcdefghijkmnopqrstuvwxyz" + "ABCDEFGHJKLMNPQR"  # 49 chars
+    assert len(body) == 49
+    findings = scan(f"POSTHOG_PERSONAL_API_KEY=phx_{body}")
+    ph = [f for f in findings if f.type == "posthog_personal_api_key"]
+    assert len(ph) == 1
+
+
+def test_posthog_keys_reject_ambiguous_base57_characters():
+    """BASE57 drops 0, 1, O, I and l — a body carrying one is not a real key."""
+    body = "0" + "3456789abcdefghijkmnopqrstuvwxyz" + "ABCDEFGHJKL"  # 44 chars, has '0'
+    assert len(body) == 44
+    findings = scan(f"POSTHOG_PROJECT_API_KEY=phc_{body}")
+    assert [f for f in findings if f.type == "posthog_project_api_key"] == []
 
 
 def test_postman_api_token():
@@ -5375,8 +5400,8 @@ _PH_BODY_49 = "Nf8sJyRb4TvMqAe2XkWdZp6" + "HcUgLnSt3BrYjQ5EvKmDxWzA9u"
 _POSTHOG_SECRET_48 = "phs_" + _PH_BODY_48
 _POSTHOG_SECRET_49 = "phs_" + _PH_BODY_49
 # The two sibling PostHog credentials — separate patterns, separate prefixes.
-_POSTHOG_PROJECT = "phc_" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzC"
-_POSTHOG_PERSONAL = "phx_" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzChTd5"
+_POSTHOG_PROJECT = "phc_" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzCh"
+_POSTHOG_PERSONAL = "phx_" + "Qp7xvZk3RtLm9WdYc2HbNfJsA6EuTgXpQ4VrBnKyMzChTd5w"
 
 
 def test_posthog_secret_api_token_48_char_body_detected():
