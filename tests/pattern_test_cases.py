@@ -3389,6 +3389,57 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+
+    # ── 2026-08-10 — Ghost Admin API key ─────────────────────────────────
+    # 24 hex + ':' + 64 hex, exactly 89 characters, with no literal prefix to
+    # anchor on — the widths and the boundary guards ARE the pattern. Fixtures
+    # are assembled by concatenation and use visibly-patterned hex so no
+    # real-looking contiguous key literal exists in source. Negatives cover the
+    # off-by-one on both halves, the colon-joined hash pairs that are the real
+    # FP surface, either half on its own, the 26-hex Content key, and the Astra
+    # DB token whose 'AstraCS:'-prefixed body can embed this shape.
+    "ghost_admin_api_key": {
+        "positives": [
+            "GHOST_ADMIN_API_KEY="
+            + "a1b2c3d4e5f6a7b8c9d0e1f2" + ":" + "0123456789abcdef" * 4,
+            "new GhostAdminAPI({ key: '"
+            + "f0e1d2c3b4a5968778695a4b" + ":" + "fedcba9876543210" * 4 + "' })",
+            "ghost --admin-key "
+            + "0a1b2c3d4e5f60718293a4b5" + ":" + "0f1e2d3c4b5a6978" * 4,
+        ],
+        "negatives": [
+            # 23 hex on the left — one short of the ObjectId width.
+            "a1b2c3d4e5f6a7b8c9d0e1f" + ":" + "0123456789abcdef" * 4,
+            # 25 hex on the left — one over.
+            "a1b2c3d4e5f6a7b8c9d0e1f2a" + ":" + "0123456789abcdef" * 4,
+            # 63 hex on the right — one short of the admin-secret width.
+            "a1b2c3d4e5f6a7b8c9d0e1f2" + ":" + ("0123456789abcdef" * 4)[:63],
+            # 65 hex on the right — one over.
+            "a1b2c3d4e5f6a7b8c9d0e1f2" + ":" + "0123456789abcdef" * 4 + "a",
+            # md5:sha256 — a colon-joined hash pair. The 32-hex left side must
+            # not be allowed to donate a 24-hex suffix.
+            "d41d8cd98f00b204e9800998ecf8427e" + ":" + "0123456789abcdef" * 4,
+            # sha1:sha256 — same shape, 40 hex on the left.
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+            + ":" + "0123456789abcdef" * 4,
+            # Either half on its own is not a credential: a bare bson ObjectId…
+            "_id: " + "a1b2c3d4e5f6a7b8c9d0e1f2",
+            # …and a bare sha256 digest.
+            "sha256: " + "0123456789abcdef" * 4,
+            # The 26-hex Ghost CONTENT API key — a different, lower-privilege
+            # credential that this pattern must not claim.
+            "GHOST_CONTENT_API_KEY=" + "0123456789abcdef0123456789",
+            # UPPERCASE hex — Ghost hexes are lowercase from toString('hex').
+            "A1B2C3D4E5F6A7B8C9D0E1F2" + ":" + "0123456789ABCDEF" * 4,
+            # DataStax Astra token with an all-lowercase-hex client id, which
+            # embeds this exact shape after 'AstraCS:'.
+            "AstraCS:" + "a1b2c3d4e5f6a7b8c9d0e1f2" + ":"
+            + "0123456789abcdef" * 4,
+            # Prose describing the format but carrying no key.
+            "The Ghost Admin API key is {id}:{secret}, 24 hex and 64 hex.",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

@@ -5840,3 +5840,211 @@ def test_crates_io_api_token_legacy_prefixless_tokens_are_not_matched():
         min_confidence=0.01,
     )
     assert [f for f in findings if f.type == "crates_io_api_token"] == []
+
+
+# ═══════════════════════════════════════════════
+# GHOST — ADMIN API KEY (2026-08-10)
+# ═══════════════════════════════════════════════
+
+# Ghost Admin API keys are {24 hex}:{64 hex}, 89 characters, with NO literal
+# prefix. Every fixture is assembled by concatenation from visibly-patterned hex
+# so no real-looking contiguous key literal exists in this source file.
+_GHOST_ID = "a1b2c3d4e5f6a7b8c9d0e1f2"
+_GHOST_SECRET = "0123456789abcdef" * 4
+_GHOST_KEY = _GHOST_ID + ":" + _GHOST_SECRET
+
+_GHOST_ID_2 = "f0e1d2c3b4a5968778695a4b"
+_GHOST_SECRET_2 = "fedcba9876543210" * 4
+_GHOST_KEY_2 = _GHOST_ID_2 + ":" + _GHOST_SECRET_2
+
+
+def test_ghost_admin_api_key_detected():
+    """The joined {id}:{secret} pair, in the shapes Ghost integrations write it."""
+    for text in (
+        "GHOST_ADMIN_API_KEY=" + _GHOST_KEY,
+        "new GhostAdminAPI({ url, key: '" + _GHOST_KEY_2 + "', version: 'v5.0' })",
+        "ghost-cli --admin-key " + _GHOST_KEY,
+        _GHOST_KEY,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "ghost_admin_api_key"]
+        assert len(matched) == 1, f"not detected: {text[:60]}"
+        assert matched[0].confidence >= 0.90
+        assert matched[0].provider == "ghost"
+        assert matched[0].severity == "critical"
+
+
+def test_ghost_admin_api_key_span_is_exactly_89_characters():
+    """The credential is the single colon-joined string — 24 + 1 + 64. The span
+    must be the key itself, never the surrounding variable name or quotes."""
+    line = 'GHOST_ADMIN_API_KEY="' + _GHOST_KEY + '"'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ghost_admin_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _GHOST_KEY
+    assert f.span_end - f.span_start == 89
+
+
+def test_ghost_admin_api_key_left_half_width_is_exact():
+    """The id half is a 24-character bson-objectid. 23 has too few characters to
+    match at all; 25 must be rejected by the lookbehind rather than matching the
+    trailing 24 — otherwise any longer hex run could donate a left half."""
+    for candidate in (
+        _GHOST_ID[:23] + ":" + _GHOST_SECRET,
+        _GHOST_ID + "a:" + _GHOST_SECRET,
+        _GHOST_ID[:12] + ":" + _GHOST_SECRET,
+    ):
+        findings = scan("GHOST_ADMIN_API_KEY=" + candidate, min_confidence=0.01)
+        assert [f for f in findings if f.type == "ghost_admin_api_key"] == [], (
+            "wrong-width id matched: " + candidate[:30]
+        )
+
+
+def test_ghost_admin_api_key_right_half_width_is_exact():
+    """The admin secret is 32 bytes hex-encoded — exactly 64 characters. 63 is
+    too short to match; 65 must be rejected by the trailing guard rather than
+    matching the first 64 of a longer hex blob."""
+    for candidate in (
+        _GHOST_ID + ":" + _GHOST_SECRET[:63],
+        _GHOST_ID + ":" + _GHOST_SECRET + "a",
+        _GHOST_ID + ":" + _GHOST_SECRET + _GHOST_SECRET,
+    ):
+        findings = scan("GHOST_ADMIN_API_KEY=" + candidate, min_confidence=0.01)
+        assert [f for f in findings if f.type == "ghost_admin_api_key"] == [], (
+            "wrong-width secret matched: " + candidate[:30]
+        )
+
+
+def test_ghost_admin_api_key_ignores_colon_joined_hash_pairs():
+    """The realistic false-positive surface for a prefix-less hex:hex pattern is
+    a checksum manifest line. md5 is 32 hex and sha1 is 40 hex — neither is 24,
+    and neither may donate a 24-hex suffix to the left half, which is precisely
+    what the hex characters in the lookbehind are for."""
+    for text in (
+        "d41d8cd98f00b204e9800998ecf8427e" + ":" + _GHOST_SECRET,
+        "da39a3ee5e6b4b0d3255bfef95601890afd80709" + ":" + _GHOST_SECRET,
+        "md5:sha256 = " + "d41d8cd98f00b204e9800998ecf8427e" + ":" + _GHOST_SECRET,
+        # Two sha256 digests joined the same way.
+        _GHOST_SECRET + ":" + _GHOST_SECRET_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "ghost_admin_api_key"] == [], (
+            "colon-joined hash pair matched: " + text[:40]
+        )
+
+
+def test_ghost_admin_api_key_ignores_either_half_alone():
+    """Neither half is a credential on its own: the id is a public bson
+    ObjectId and a bare 64-hex run is overwhelmingly a sha256 digest."""
+    for text in (
+        '{"_id": "' + _GHOST_ID + '"}',
+        "sha256sum: " + _GHOST_SECRET,
+        "git rev-parse HEAD -> " + _GHOST_ID,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "ghost_admin_api_key"] == [], (
+            "half a key matched: " + text[:40]
+        )
+
+
+def test_ghost_admin_api_key_ignores_content_api_key():
+    """Ghost's generator gives type 'content' 13 bytes / 26 hex and everything
+    else 32 bytes / 64 hex. The Content key is a separate, read-only credential
+    and must not be reported as an admin key."""
+    content_key = "0123456789abcdef0123456789"
+    assert len(content_key) == 26
+    for text in (
+        "GHOST_CONTENT_API_KEY=" + content_key,
+        _GHOST_ID + ":" + content_key,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "ghost_admin_api_key"] == [], (
+            "content key matched: " + text[:40]
+        )
+
+
+def test_ghost_admin_api_key_is_lowercase_hex_only():
+    """toString('hex') emits lowercase. An uppercase pair is some other
+    identifier, not a Ghost key."""
+    for text in (
+        _GHOST_ID.upper() + ":" + _GHOST_SECRET.upper(),
+        _GHOST_ID.upper() + ":" + _GHOST_SECRET,
+        _GHOST_ID + ":" + _GHOST_SECRET.upper(),
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "ghost_admin_api_key"] == [], (
+            "uppercase hex matched: " + text[:40]
+        )
+
+
+def test_ghost_admin_api_key_boundaries_reject_embedded_runs():
+    """Both guards must hold against a key hanging off a longer opaque run, in
+    either direction."""
+    for text in (
+        "f" + _GHOST_KEY,
+        _GHOST_KEY + "f",
+        "x" + _GHOST_KEY,
+        _GHOST_KEY + "X",
+        "token-" + _GHOST_KEY,
+        "v1." + _GHOST_KEY,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "ghost_admin_api_key"] == [], (
+            "matched inside a longer run: " + text[:40]
+        )
+
+
+def test_ghost_admin_api_key_does_not_collide_with_astra_db_token():
+    """DataStax's AstraCS:<24 alnum>:<64 hex> embeds this exact shape whenever
+    its client id happens to be all lowercase hex. That is the reason ':' is in
+    the lookbehind. Asserted in both directions: the Astra token stays Astra's,
+    and a bare Ghost key is never claimed by Astra."""
+    astra = "AstraCS:" + _GHOST_ID + ":" + _GHOST_SECRET
+    findings = scan(astra, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "ghost_admin_api_key" not in types, (
+        "Ghost pattern double-reported an Astra DB token"
+    )
+    assert "astra_db_application_token" in types
+
+    findings = scan("GHOST_ADMIN_API_KEY=" + _GHOST_KEY, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert types == {"ghost_admin_api_key"}, (
+        f"Ghost key claimed by another pattern: {types}"
+    )
+
+
+def test_ghost_admin_api_key_known_test_value_is_downscored():
+    """The all-zero placeholder is the canonical fake and must land at the
+    known-test-value floor, not at the 0.90 structural base."""
+    placeholder = "0" * 24 + ":" + "0" * 64
+    findings = scan("GHOST_ADMIN_API_KEY=" + placeholder, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ghost_admin_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20, (
+        f"known test value scored {matched[0].confidence}"
+    )
+
+
+def test_ghost_admin_api_key_is_not_entropy_penalised():
+    """Hex is low-Shannon by construction — a real 89-character key measures
+    around 4 bits — so entropy_threshold is deliberately 0.0. A real key must
+    score at or above its structural base, and this test fails loudly if
+    someone later adds a threshold that would suppress every genuine key."""
+    findings = scan(_GHOST_KEY_2, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ghost_admin_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90, (
+        "an entropy penalty is suppressing a real key: "
+        f"{matched[0].confidence}"
+    )
+
+
+def test_ghost_admin_api_key_value_preview_masks_the_body():
+    """Never return the full secret — the preview keeps first/last 4 only."""
+    findings = scan("GHOST_ADMIN_API_KEY=" + _GHOST_KEY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ghost_admin_api_key"]
+    assert len(matched) == 1
+    assert _GHOST_KEY not in matched[0].value_preview
+    assert _GHOST_SECRET not in matched[0].value_preview
