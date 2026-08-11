@@ -3470,6 +3470,56 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # ── 2026-08-11 — Braintree production OAuth access token ─────────────
+    # 'access_token$production$<merchant>$<secret>'. Only the production
+    # environment is matched — development/integration/qa fixtures ship
+    # verbatim inside Braintree's own SDK repos. Every fixture is assembled
+    # by concatenation so no contiguous token literal exists in source.
+    "braintree_oauth_access_token": {
+        "positives": [
+            "access_token" + "$production$" + "abc123def456ghij"
+            + "$" + "1234567890abcdef1234567890abcdef",
+            "BRAINTREE_ACCESS_TOKEN=access_token" + "$production$"
+            + "j2fc8gnbrqvwrhxs" + "$" + "afefae5za65de111123a72251111e065",
+            '{"accessToken": "access_token' + "$production$" + "9k2m4n6p8q0r2s4t"
+            + "$" + "0a1b2c3d4e5f60718293a4b5c6d7e8f9" + '"}',
+        ],
+        "negatives": [
+            # Braintree's OWN node unit-test fixtures use the production
+            # environment with placeholder bodies. They must not fire.
+            "access_token" + "$production$merchant_id$token_data",
+            "access_token" + "$production$merchant_id$data",
+            # The ruby/python unit fixture — 9-hex body, development env.
+            "access_token" + "$development$integration_merchant_id$fb27c79dd",
+            # The php fixture — 16-hex body, blocked by the environment gate.
+            "access_token" + "$development$integration_merchant_id$"
+            + "0123456789abcdef",
+            # The other three local-only environments are deliberately unmatched.
+            "access_token" + "$sandbox$" + "abc123def456ghij"
+            + "$" + "1234567890abcdef1234567890abcdef",
+            "access_token" + "$qa$" + "abc123def456ghij"
+            + "$" + "1234567890abcdef1234567890abcdef",
+            "access_token" + "$integration$" + "abc123def456ghij"
+            + "$" + "1234567890abcdef1234567890abcdef",
+            # Body one short of the floor, and one over the ceiling.
+            "access_token" + "$production$" + "abc123def456ghij"
+            + "$" + "0123456789abcde",
+            "access_token" + "$production$" + "abc123def456ghij" + "$" + "a" * 65,
+            # Merchant segment one short of the floor.
+            "access_token" + "$production$" + "short12"
+            + "$" + "1234567890abcdef1234567890abcdef",
+            # The literal anchor hanging off a longer identifier.
+            "my_access_token" + "$production$" + "abc123def456ghij"
+            + "$" + "1234567890abcdef1234567890abcdef",
+            # Braintree's non-secret OAuth halves share the '$'-delimited shape.
+            "client_id" + "$production$" + "abc123def456ghij"
+            + "$" + "1234567890abcdef1234567890abcdef",
+            # Prose about the format, with no token in it.
+            "A Braintree access_token is access_token$<env>$<merchant>$<secret>.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
