@@ -3390,6 +3390,36 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.95,
     },
 
+    # ── 2026-08-08 — Cal.com API key ─────────────────────────────────────
+    # 'cal_live_' + exactly 32 lowercase hex (48 characters). Every fixture is
+    # assembled by concatenation so no contiguous key literal exists in source.
+    "cal_com_api_key": {
+        "positives": [
+            "CALCOM_API_KEY=cal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b60",
+            "Authorization: Bearer cal_live_" + "7d1e4b96c0a2f38d5be71c94a0f6d823",
+            '{"apiKey": "cal_live_' + '5c8b02e7f19d4a63be20c7d81f435a9e"}',
+        ],
+        "negatives": [
+            # Self-hosted default prefix — deliberately not matched.
+            "cal_" + "a3f19c7e2b8d40516ea9c3d71f284b60",
+            # Bare 32-char lowercase hex is an MD5 digest, not a Cal.com key.
+            "checksum=" + "a3f19c7e2b8d40516ea9c3d71f284b60",
+            # 31 hex characters — one short of the fixed body length.
+            "cal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b6",
+            # 33 hex characters — one over.
+            "cal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b60f",
+            # Uppercase hex — Node's toString("hex") emits lowercase only.
+            "cal_live_" + "A3F19C7E2B8D40516EA9C3D71F284B60",
+            # Right length, but 'g' is outside the hex charset.
+            "cal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b6g",
+            # Prefix embedded in a longer identifier.
+            "xcal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b60",
+            # Prose about the format, with no key in it.
+            "Cal.com live keys are prefixed cal_live_ and test keys cal_.",
+        ],
+        "min_confidence": 0.90,
+    },
+
     # ── 2026-08-10 — Ghost Admin API key ─────────────────────────────────
     # 24 hex + ':' + 64 hex, exactly 89 characters, with no literal prefix to
     # anchor on — the widths and the boundary guards ARE the pattern. Fixtures

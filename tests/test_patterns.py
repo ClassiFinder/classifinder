@@ -5843,6 +5843,165 @@ def test_crates_io_api_token_legacy_prefixless_tokens_are_not_matched():
 
 
 # ═══════════════════════════════════════════════
+# CAL.COM — API KEY (2026-08-08)
+# ═══════════════════════════════════════════════
+
+# Synthetic 32-character lowercase-hex bodies, assembled by concatenation so no
+# contiguous key literal exists in this source file.
+_CAL_KEY = "cal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b60"
+_CAL_KEY_2 = "cal_live_" + "7d1e4b96c0a2f38d5be71c94a0f6d823"
+# The value registered as a known_test_value — a sequential-hex placeholder.
+_CAL_PLACEHOLDER = "cal_live_" + "0123456789abcdef0123456789abcdef"
+
+
+def test_cal_com_api_key_detected():
+    """cal_live_ + exactly 32 lowercase hex, in the forms Cal.com keys appear in."""
+    for text in (
+        _CAL_KEY,
+        "CALCOM_API_KEY=" + _CAL_KEY,
+        "Authorization: Bearer " + _CAL_KEY,
+        '{"apiKey": "' + _CAL_KEY + '"}',
+        "curl -H 'Authorization: Bearer " + _CAL_KEY + "' https://api.cal.com/v2/bookings",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "cal_com_api_key"]
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].confidence >= 0.95
+        assert matched[0].provider == "cal_com"
+        assert matched[0].severity == "high"
+
+
+def test_cal_com_api_key_body_length_is_exact():
+    """Cal.com's generator is randomBytes(16).toString("hex"), so the body is
+    exactly 32 hex characters. 31 and 33 must both miss.
+
+    This is the guard against the widely-circulated third-party claim of
+    randomBytes(24) / 48 hex: if someone "corrects" the bound to {32,48} or
+    {32,} on the strength of that article, this test fails rather than the
+    pattern silently carving 32-character slices out of longer hex blobs.
+    """
+    body = "a3f19c7e2b8d40516ea9c3d71f284b60"
+    for candidate in (
+        "cal_live_" + body[:31],
+        "cal_live_" + body + "f",
+        "cal_live_" + body + body,  # the 64-hex reading of the bad article
+        "cal_live_" + body[:16],
+    ):
+        findings = scan("CALCOM_API_KEY=" + candidate, min_confidence=0.01)
+        assert [f for f in findings if f.type == "cal_com_api_key"] == [], (
+            "wrong-length body matched: " + candidate[:20]
+        )
+
+
+def test_cal_com_api_key_charset_is_lowercase_hex_only():
+    """Node's Buffer.toString("hex") emits lowercase only, and hex is 0-9a-f.
+    Uppercase and out-of-charset bodies are not Cal.com keys."""
+    for candidate in (
+        "cal_live_" + "A3F19C7E2B8D40516EA9C3D71F284B60",
+        "cal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b6G",
+        "cal_live_" + "a3f19c7e2b8d40516ea9c3d71f284b6g",
+        "cal_live_" + "a3f19c7e-2b8d-4051-6ea9-c3d71f284b6",
+    ):
+        findings = scan(candidate, min_confidence=0.01)
+        assert [f for f in findings if f.type == "cal_com_api_key"] == [], (
+            "out-of-charset body matched: " + candidate[:24]
+        )
+
+
+def test_cal_com_api_key_self_hosted_and_bare_hex_are_not_matched():
+    """The self-hosted default prefix is the bare `cal_`, which the verified
+    format work explicitly ruled out: `cal_` is an ordinary code identifier
+    prefix and a bare 32-character lowercase-hex string is indistinguishable
+    from an MD5 digest. Matching either would be a false-positive cannon, so
+    only the `cal_live_` anchor is shipped."""
+    for text in (
+        "cal_" + "a3f19c7e2b8d40516ea9c3d71f284b60",
+        "cal_test_" + "a3f19c7e2b8d40516ea9c3d71f284b60",
+        "md5sum: " + "a3f19c7e2b8d40516ea9c3d71f284b60",
+        "calendar_live_" + "a3f19c7e2b8d40516ea9c3d71f284b60",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "cal_com_api_key"] == [], (
+            "weak-anchor form matched: " + text[:30]
+        )
+
+
+def test_cal_com_api_key_boundaries_reject_embedded_runs():
+    """Both boundaries exclude alphanumerics, so a correct-shaped key hanging
+    off a longer opaque run is not carved out of it."""
+    for text in (
+        "x" + _CAL_KEY,
+        _CAL_KEY + "9",
+        "9" + _CAL_KEY,
+        _CAL_KEY + "z",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "cal_com_api_key"] == [], (
+            "matched inside a longer run: " + text[:40]
+        )
+
+
+def test_cal_com_api_key_known_test_value_is_downscored():
+    """The registered sequential-hex placeholder must land at ~0.15, not 0.95 —
+    docs and tutorials paste it, and it is not a live credential."""
+    findings = scan("CALCOM_API_KEY=" + _CAL_PLACEHOLDER, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cal_com_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01), (
+        "known test value scored " + str(matched[0].confidence)
+    )
+
+
+def test_cal_com_api_key_span_covers_exactly_the_key():
+    """The reported span is the 41-character credential — never the surrounding
+    variable name, header or quotes.
+
+    41 = len("cal_live_") + 32. Pinned as a literal because the candidate spec
+    this pattern was built from stated 48, which is wrong in two independent
+    ways: the prefix is 9 characters, not 16, and the body is 32 hex characters
+    per randomBytes(16), not 48.
+    """
+    line = 'CALCOM_API_KEY="' + _CAL_KEY_2 + '"'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cal_com_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _CAL_KEY_2
+    assert f.span_end - f.span_start == 41
+
+
+def test_cal_com_api_key_value_preview_masks_the_body():
+    """Never return the full secret — the mask is a hard product rule."""
+    findings = scan("CALCOM_API_KEY=" + _CAL_KEY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "cal_com_api_key"]
+    assert len(matched) == 1
+    assert _CAL_KEY not in matched[0].value_preview
+
+
+def test_cal_com_api_key_does_not_collide_with_other_live_prefixes():
+    """`_live_` is a crowded suffix: Stripe, Lob and GoCardless all use it. None
+    of those may claim a Cal.com key, and a Cal.com key must not be claimed by
+    any of them."""
+    findings = scan("CALCOM_API_KEY=" + _CAL_KEY, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "cal_com_api_key" in types
+    assert types.isdisjoint(
+        {"stripe_secret_key", "stripe_live_publishable_key", "stripe_restricted_key",
+         "lob_api_key", "gocardless_access_token"}
+    )
+
+    # And the reverse direction: neighbouring live-mode keys stay theirs.
+    for other in (
+        "sk_live_" + "aBcDeFgHiJkLmNoPqRsTuVwX",
+        "LOB_API_KEY=live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987654321",
+    ):
+        findings = scan(other, min_confidence=0.01)
+        assert [f for f in findings if f.type == "cal_com_api_key"] == [], (
+            "cal_com_api_key claimed a foreign live-mode key: " + other[:30]
+        )
+
+
+# ═══════════════════════════════════════════════
 # GHOST — ADMIN API KEY (2026-08-10)
 # ═══════════════════════════════════════════════
 
