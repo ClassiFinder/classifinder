@@ -6449,3 +6449,199 @@ def test_braintree_oauth_access_token_does_not_collide():
         assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
             "braintree_oauth_access_token claimed a foreign value: " + other[:40]
         )
+
+
+# ═══════════════════════════════════════════════
+# ROLLBAR — PROJECT ACCESS TOKEN (2026-08-12)
+# ═══════════════════════════════════════════════
+
+# Synthetic 32-character lowercase-hex bodies, assembled by concatenation so no
+# contiguous token literal exists in this source file. The real vendor fixtures
+# (rollbar/terraform-provider-rollbar) are cited in ATTRIBUTION.md but are
+# deliberately NOT pasted here.
+_ROLLBAR_TOKEN = "3f8c1a90" + "d24b47e6" + "b5109fca" + "7d3e2b48"
+_ROLLBAR_TOKEN_2 = "a71e05cb" + "6f2d4839" + "9c40be71" + "2d8af635"
+# The value registered as a known_test_value — a sequential-hex placeholder.
+_ROLLBAR_PLACEHOLDER = "0123456789abcdef" + "0123456789abcdef"
+
+
+def test_rollbar_project_access_token_detected():
+    """32 lowercase hex, in the labelled forms Rollbar tokens actually appear in.
+
+    The label IS the pattern: the value has no prefix, so every one of these
+    fixtures is a test of the context gate, not of the body.
+    """
+    for text in (
+        "ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN,
+        "ROLLBAR_POST_SERVER_ITEM_ACCESS_TOKEN=" + _ROLLBAR_TOKEN,
+        "ROLLBAR_POST_CLIENT_ITEM_ACCESS_TOKEN=" + _ROLLBAR_TOKEN,
+        "ROLLBAR_SERVER_ACCESS_TOKEN: " + _ROLLBAR_TOKEN,
+        "rollbar.init({accessToken: '" + _ROLLBAR_TOKEN + "', environment: 'production'})",
+        'rollbar: { access_token: "' + _ROLLBAR_TOKEN + '" }',
+        "post_server_item_access_token=" + _ROLLBAR_TOKEN,
+        "post_client_item_access_token = " + _ROLLBAR_TOKEN,
+        "X-Rollbar-Access-Token: " + _ROLLBAR_TOKEN,
+        '{"rollbar": {"access_token": "' + _ROLLBAR_TOKEN + '"}}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "rollbar_project_access_token"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].confidence >= 0.55
+        assert matched[0].provider == "rollbar"
+        assert matched[0].severity == "high"
+
+
+def test_rollbar_project_access_token_requires_a_rollbar_qualified_label():
+    """A bare `access_token` label must NOT fire.
+
+    This is the whole reason the candidate sat blocked: `access_token` is the
+    single most generic credential label in existence (every OAuth2
+    implementation emits it), and the registry already ships
+    braintree_oauth_access_token whose credential literally begins
+    `access_token$production$`. The gate requires ROLLBAR_*, a literal
+    post_server_item / post_client_item scope name, or the word `rollbar`
+    within 40 characters — nothing weaker.
+    """
+    for text in (
+        "access_token = " + _ROLLBAR_TOKEN,
+        'access_token: "' + _ROLLBAR_TOKEN + '"',
+        "oauth access_token: " + _ROLLBAR_TOKEN,
+        "{'access_token': '" + _ROLLBAR_TOKEN + "'}",
+        "GITHUB_ACCESS_TOKEN=" + _ROLLBAR_TOKEN,
+        "api_access_token=" + _ROLLBAR_TOKEN,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "rollbar_project_access_token"] == [], (
+            "fired on a generic access_token label: " + text[:60]
+        )
+
+
+def test_rollbar_project_access_token_does_not_match_bare_hex_or_md5_digests():
+    """A 32-char lowercase-hex string is an MD5 digest until a Rollbar label
+    says otherwise. Checksum manifests are the dominant FP source for this
+    shape — the word `rollbar` appearing in a filename must not be enough."""
+    for text in (
+        _ROLLBAR_TOKEN,
+        "checksum: " + _ROLLBAR_TOKEN,
+        "MD5 (rollbar-2.26.4.tgz) = " + _ROLLBAR_TOKEN,
+        _ROLLBAR_TOKEN + "  ./vendor/rollbar.min.js",
+        "rollbar.js  " + _ROLLBAR_TOKEN,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "rollbar_project_access_token"] == [], (
+            "fired on a bare/checksum hex value: " + text[:60]
+        )
+
+
+def test_rollbar_project_access_token_body_width_is_exactly_32():
+    """128-bit token — exactly 32 hex characters. 31 and 33 must both miss, and
+    a longer hex run must miss CLEANLY rather than partially match its first 32
+    characters.
+
+    The clean-miss half is what documents the known recall gap: Rollbar also
+    issues 512-bit V2 tokens, which this pattern deliberately does not cover.
+    A partial match on a longer token would be worse than no match — it would
+    report a wrong span and a wrong value. If someone later widens the bound to
+    {32,128} on the strength of the rollbar-js-wizard's "32-128 chars" prompt
+    (the same untrustworthy source as the fake `post_server_item_` prefix),
+    this test is what fails.
+    """
+    for text in (
+        "ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN[:31],
+        "ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN + "a",
+        "ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN + _ROLLBAR_TOKEN_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "rollbar_project_access_token"] == [], (
+            "matched a wrong-width body: " + text[:70]
+        )
+
+
+def test_rollbar_project_access_token_charset_is_lowercase_hex_only():
+    """Rollbar renders tokens as lowercase hex. Uppercase hex is a common
+    checksum rendering (CertUtil, some manifest tools) and is pure FP surface.
+
+    This pins the `(?i:...)` scoping in the regex: the label is
+    case-insensitive but the BODY is not. A global re.IGNORECASE would silently
+    widen `[a-f0-9]{32}` to accept uppercase, which is exactly the defect this
+    test caught during implementation.
+    """
+    for text in (
+        "ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN.upper(),
+        "ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN[:31] + "G",
+        "ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN[:31] + "g",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "rollbar_project_access_token"] == [], (
+            "accepted an out-of-charset body: " + text[:70]
+        )
+
+
+def test_rollbar_project_access_token_needs_a_value_not_a_reference():
+    """Prose about the token, and code that reads it from the environment,
+    must not be reported — there is no credential in either."""
+    for text in (
+        "Set ROLLBAR_ACCESS_TOKEN to your post_server_item token.",
+        "rollbar_access_token = os.environ['ROLLBAR_ACCESS_TOKEN']",
+        "ROLLBAR_ACCESS_TOKEN=${ROLLBAR_ACCESS_TOKEN}",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "rollbar_project_access_token"] == [], (
+            "fired without a credential present: " + text[:60]
+        )
+
+
+def test_rollbar_project_access_token_known_test_value_is_downscored():
+    """The registered sequential-hex placeholder must land at ~0.15 — docs and
+    tutorials paste it, and it is not a live credential."""
+    findings = scan("ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_PLACEHOLDER, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "rollbar_project_access_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01), (
+        "known test value scored " + str(matched[0].confidence)
+    )
+
+
+def test_rollbar_project_access_token_span_covers_exactly_the_token():
+    """The reported span is the 32-character credential — never the label,
+    the separator or the surrounding quotes."""
+    line = 'ROLLBAR_ACCESS_TOKEN="' + _ROLLBAR_TOKEN_2 + '"'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "rollbar_project_access_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _ROLLBAR_TOKEN_2
+    assert f.span_end - f.span_start == 32
+
+
+def test_rollbar_project_access_token_value_preview_masks_the_body():
+    """Never return the full secret — the mask is a hard product rule."""
+    findings = scan("ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "rollbar_project_access_token"]
+    assert len(matched) == 1
+    assert _ROLLBAR_TOKEN not in matched[0].value_preview
+
+
+def test_rollbar_project_access_token_does_not_collide_with_adafruit_io_key():
+    """The sharpest collision in the registry: adafruit_io_key is the same bare
+    32-lowercase-hex body behind a different vendor label. Asserted in BOTH
+    directions — neither detector may claim the other's labelled value."""
+    findings = scan("ROLLBAR_ACCESS_TOKEN=" + _ROLLBAR_TOKEN, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert types == {"rollbar_project_access_token"}, (
+        "another pattern also claimed the Rollbar token: " + str(types)
+    )
+
+    for adafruit in (
+        "X-AIO-Key: " + _ROLLBAR_TOKEN,
+        "AIO_KEY=" + _ROLLBAR_TOKEN,
+        "ADAFRUIT_IO_KEY=" + _ROLLBAR_TOKEN,
+    ):
+        findings = scan(adafruit, min_confidence=0.01)
+        types = {f.type for f in findings}
+        assert "rollbar_project_access_token" not in types, (
+            "rollbar claimed an Adafruit IO key: " + adafruit[:40]
+        )
+        assert "adafruit_io_key" in types, (
+            "adafruit_io_key regressed on: " + adafruit[:40]
+        )
