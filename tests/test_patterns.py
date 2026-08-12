@@ -6207,3 +6207,245 @@ def test_ghost_admin_api_key_value_preview_masks_the_body():
     assert len(matched) == 1
     assert _GHOST_KEY not in matched[0].value_preview
     assert _GHOST_SECRET not in matched[0].value_preview
+
+
+# ═══════════════════════════════════════════════
+# BRAINTREE — PRODUCTION OAUTH ACCESS TOKEN (2026-08-11)
+# ═══════════════════════════════════════════════
+
+# Braintree OAuth access tokens are '$'-delimited:
+#   access_token$<environment>$<merchant_id>$<secret>
+# Every fixture below is assembled by concatenation so no contiguous token
+# literal exists in this source file (GitHub push protection).
+_BT = "access_token"
+_BT_PROD = "$production$"
+_BT_KEY = _BT + _BT_PROD + "abc123def456ghij" + "$" + "1234567890abcdef1234567890abcdef"
+_BT_KEY_2 = _BT + _BT_PROD + "j2fc8gnbrqvwrhxs" + "$" + "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+# The registered placeholder — sequential hex in both variable segments.
+_BT_PLACEHOLDER = _BT + _BT_PROD + "0123456789abcdef" + "$" + "0123456789abcdef" * 2
+
+
+def test_braintree_oauth_access_token_detected():
+    """The production token in the forms Braintree integrations write it."""
+    for text in (
+        _BT_KEY,
+        "BRAINTREE_ACCESS_TOKEN=" + _BT_KEY,
+        '{"accessToken": "' + _BT_KEY_2 + '"}',
+        "braintree.connect({ accessToken: '" + _BT_KEY_2 + "' })",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "braintree_oauth_access_token"]
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].confidence >= 0.95
+        assert matched[0].provider == "braintree"
+        assert matched[0].severity == "critical"
+
+
+def test_braintree_oauth_access_token_only_production_environment_matches():
+    """Braintree's Environment.All is exactly development / integration / qa /
+    sandbox / production (braintree_python braintree/environment.py). Only
+    'production' is a live credential, and it is the only one shipped.
+
+    This is not a stylistic choice — the four non-production environments appear
+    VERBATIM in Braintree's own SDK repositories as unit-test fixtures, so
+    matching them would fire on a benign checkout of the vendor's source.
+    """
+    body = "abc123def456ghij" + "$" + "1234567890abcdef1234567890abcdef"
+    for env in ("$development$", "$integration$", "$qa$", "$sandbox$"):
+        text = "BRAINTREE_ACCESS_TOKEN=" + _BT + env + body
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
+            "non-production environment matched: " + env
+        )
+
+
+def test_braintree_oauth_access_token_vendor_sdk_fixtures_do_not_fire():
+    """The exact strings that ship inside Braintree's own SDK test suites.
+
+    braintree_node test/unit/braintree/credentials_parser_spec.js carries
+    PRODUCTION fixtures, not only development ones, so the environment gate
+    alone is not enough — the {16,64} body floor is what excludes them
+    ('token_data' is 10 characters and contains an underscore; 'data' is 4).
+    The ruby/python and php fixtures are excluded by the environment gate.
+    """
+    for fixture in (
+        _BT + _BT_PROD + "merchant_id$token_data",
+        _BT + _BT_PROD + "merchant_id$data",
+        _BT + "$development$integration_merchant_id$fb27c79dd",
+        _BT + "$development$integration_merchant_id$" + "0123456789abcdef",
+    ):
+        findings = scan(fixture, min_confidence=0.01)
+        assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
+            "vendor SDK fixture matched: " + fixture[:60]
+        )
+
+
+def test_braintree_oauth_access_token_body_bounds_are_enforced():
+    """Braintree does NOT publish the width of the secret segment, and neither
+    SDK validates it, so the body is bounded generously at {16,64} rather than
+    pinned to the 32-hex figure third-party catalogs assert.
+
+    The bounds still have to bite in both directions: the floor is what keeps
+    the vendor's own placeholder bodies out, and the ceiling plus the trailing
+    boundary is what stops a 32-character slice being carved out of a longer
+    opaque run.
+    """
+    merchant = "abc123def456ghij"
+    for candidate in (
+        _BT + _BT_PROD + merchant + "$" + "0123456789abcde",   # 15 — one short
+        _BT + _BT_PROD + merchant + "$" + "a" * 65,            # 65 — one over
+        _BT + _BT_PROD + merchant + "$" + "abc",
+    ):
+        findings = scan(candidate, min_confidence=0.01)
+        assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
+            "out-of-bounds body matched: " + candidate[:60]
+        )
+
+    # …and the bounds themselves are inclusive at both ends.
+    for candidate in (
+        _BT + _BT_PROD + merchant + "$" + "0123456789abcdef",  # exactly 16
+        _BT + _BT_PROD + merchant + "$" + "a1b2c3d4" * 8,      # exactly 64
+    ):
+        findings = scan(candidate, min_confidence=0.01)
+        assert len([f for f in findings if f.type == "braintree_oauth_access_token"]) == 1, (
+            "in-bounds body missed: " + candidate[:60]
+        )
+
+
+def test_braintree_oauth_access_token_merchant_segment_bounds():
+    """The merchant id is [A-Za-z0-9_-]{8,40}. The underscore is required —
+    Braintree's own fixtures use 'integration_merchant_id' — and the charset is
+    deliberately wider than the lowercase-only class the catalogs assert,
+    because Braintree's merchant-facing docs show an UPPERCASE example.
+    """
+    body = "$" + "1234567890abcdef1234567890abcdef"
+    for candidate in (
+        _BT + _BT_PROD + "my_merchant_01" + body,
+        _BT + _BT_PROD + "ABCD1234DEFG4567" + body,
+        _BT + _BT_PROD + "merchant-eu-01" + body,
+    ):
+        findings = scan(candidate, min_confidence=0.01)
+        assert len([f for f in findings if f.type == "braintree_oauth_access_token"]) == 1, (
+            "legal merchant id missed: " + candidate[:60]
+        )
+
+    for candidate in (
+        _BT + _BT_PROD + "short12" + body,        # 7 — one short
+        _BT + _BT_PROD + "a" * 41 + body,         # 41 — one over
+        _BT + _BT_PROD + "merch.id.01" + body,    # '.' is outside the charset
+    ):
+        findings = scan(candidate, min_confidence=0.01)
+        assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
+            "illegal merchant id matched: " + candidate[:60]
+        )
+
+
+def test_braintree_oauth_access_token_boundaries_reject_embedded_runs():
+    """The literal anchor must stand alone: a token hanging off a longer
+    identifier is not carved out of it."""
+    for text in (
+        "my_" + _BT_KEY,
+        "x" + _BT_KEY,
+        "refresh-" + _BT_KEY,
+        "9" + _BT_KEY,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
+            "matched inside a longer run: " + text[:50]
+        )
+
+
+def test_braintree_oauth_access_token_trailing_run_extends_rather_than_slices():
+    """The trailing boundary is deliberately NOT a fixed-width cut.
+
+    Because Braintree does not publish the secret width, the body is a {16,64}
+    range. A token followed by more body characters must therefore be reported
+    WHOLE — the alternative would be carving a 32-character prefix out of a
+    longer real token and reporting a truncated span. Past 64 the match drops
+    out entirely rather than yielding a slice.
+    """
+    merchant = "abc123def456ghij"
+    stem = _BT + _BT_PROD + merchant + "$"
+
+    longer = stem + "1234567890abcdef1234567890abcdef9"  # 33-character body
+    findings = scan(longer, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "braintree_oauth_access_token"]
+    assert len(matched) == 1
+    assert longer[matched[0].span_start:matched[0].span_end] == longer, (
+        "reported a truncated slice instead of the whole run"
+    )
+
+    over = stem + "a" * 70  # past the ceiling — no slice may be reported
+    findings = scan(over, min_confidence=0.01)
+    assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
+        "carved a slice out of an over-length run"
+    )
+
+
+def test_braintree_oauth_access_token_known_test_value_is_downscored():
+    """The registered sequential-hex placeholder must land at ~0.15 — docs and
+    tutorials paste it, and it is not a live credential."""
+    findings = scan("BRAINTREE_ACCESS_TOKEN=" + _BT_PLACEHOLDER, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "braintree_oauth_access_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01), (
+        "known test value scored " + str(matched[0].confidence)
+    )
+
+
+def test_braintree_oauth_access_token_span_covers_exactly_the_token():
+    """The reported span is the whole '$'-delimited credential — the leaked
+    artifact is the joined string, since Braintree's parser splits it itself —
+    and never the surrounding variable name or quotes."""
+    line = 'BRAINTREE_ACCESS_TOKEN="' + _BT_KEY_2 + '"'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "braintree_oauth_access_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _BT_KEY_2
+    # 24-character literal anchor + 16 merchant + '$' + 32 body.
+    assert f.span_end - f.span_start == 24 + 16 + 1 + 32
+
+
+def test_braintree_oauth_access_token_no_entropy_penalty_on_a_real_token():
+    """entropy_threshold is deliberately 0.0: the 24-character
+    'access_token$production$' literal carries the precision, and a hex body is
+    low-Shannon by construction. This fails loudly if someone later adds a
+    threshold that would suppress genuine tokens."""
+    findings = scan(_BT_KEY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "braintree_oauth_access_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.95, (
+        "an entropy penalty is suppressing a real token: " + str(matched[0].confidence)
+    )
+
+
+def test_braintree_oauth_access_token_value_preview_masks_the_body():
+    """Never return the full secret — the mask is a hard product rule."""
+    findings = scan("BRAINTREE_ACCESS_TOKEN=" + _BT_KEY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "braintree_oauth_access_token"]
+    assert len(matched) == 1
+    assert _BT_KEY not in matched[0].value_preview
+
+
+def test_braintree_oauth_access_token_does_not_collide():
+    """No other registered pattern may claim a Braintree token, and Braintree's
+    own non-secret OAuth halves — the client id and the '$'-delimited config
+    strings that share the shape — must not be claimed by this one."""
+    findings = scan("BRAINTREE_ACCESS_TOKEN=" + _BT_KEY, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert types == {"braintree_oauth_access_token"}, (
+        "another pattern also claimed the token: " + str(types)
+    )
+
+    for other in (
+        "client_id" + _BT_PROD + "abc123def456ghij" + "$"
+        + "1234567890abcdef1234567890abcdef",
+        "client_secret" + _BT_PROD + "abc123def456ghij" + "$"
+        + "1234567890abcdef1234567890abcdef",
+        "PAYPAL_CLIENT_SECRET=E" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz01234",
+    ):
+        findings = scan(other, min_confidence=0.01)
+        assert [f for f in findings if f.type == "braintree_oauth_access_token"] == [], (
+            "braintree_oauth_access_token claimed a foreign value: " + other[:40]
+        )
