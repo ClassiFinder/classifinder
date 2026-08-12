@@ -3420,6 +3420,40 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.90,
     },
 
+    # ── 2026-08-12 — Rollbar project access token ────────────────────────
+    # Bare 32-char lowercase hex with NO prefix — the Rollbar-qualified label
+    # is the entire pattern. Fixtures assembled by concatenation so no
+    # contiguous token literal exists in source.
+    "rollbar_project_access_token": {
+        "positives": [
+            "ROLLBAR_ACCESS_TOKEN=" + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            "ROLLBAR_POST_SERVER_ITEM_ACCESS_TOKEN=" + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            "rollbar.init({accessToken: '" + "3f8c1a90d24b47e6b5109fca7d3e2b48" + "'})",
+            "post_server_item_access_token=" + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+        ],
+        "negatives": [
+            # Generic OAuth label — deliberately not matched.
+            "access_token = " + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            "oauth access_token: " + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            # Bare 32-hex is an MD5 digest, not a credential.
+            "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            "checksum: " + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            "MD5 (rollbar-2.26.4.tgz) = " + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            # Adafruit IO uses the identical body behind its own label.
+            "X-AIO-Key: " + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            "AIO_KEY=" + "3f8c1a90d24b47e6b5109fca7d3e2b48",
+            # Wrong width — 31, 33, and a longer V2-shaped hex run.
+            "ROLLBAR_ACCESS_TOKEN=" + "3f8c1a90d24b47e6b5109fca7d3e2b48"[:31],
+            "ROLLBAR_ACCESS_TOKEN=" + "3f8c1a90d24b47e6b5109fca7d3e2b48" + "a",
+            # Uppercase hex is a checksum rendering, not a Rollbar token.
+            "ROLLBAR_ACCESS_TOKEN=" + "3f8c1a90d24b47e6b5109fca7d3e2b48".upper(),
+            # Prose and env-var indirection carry no credential.
+            "Set ROLLBAR_ACCESS_TOKEN to your post_server_item token.",
+            "rollbar_access_token = os.environ['ROLLBAR_ACCESS_TOKEN']",
+        ],
+        "min_confidence": 0.55,
+    },
+
     # ── 2026-08-10 — Ghost Admin API key ─────────────────────────────────
     # 24 hex + ':' + 64 hex, exactly 89 characters, with no literal prefix to
     # anchor on — the widths and the boundary guards ARE the pattern. Fixtures
