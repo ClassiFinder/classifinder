@@ -6645,3 +6645,159 @@ def test_rollbar_project_access_token_does_not_collide_with_adafruit_io_key():
         assert "adafruit_io_key" in types, (
             "adafruit_io_key regressed on: " + adafruit[:40]
         )
+
+
+# ═══════════════════════════════════════════════
+# MOLLIE — LIVE / TEST API KEYS (2026-08-13)
+# ═══════════════════════════════════════════════
+#
+# Mollie's own TokenValidator pins /^(live|test)_\w{30,}$/. That shape is NOT
+# unique in this registry: lob_api_key is (live|test)_ + 35 characters and
+# gocardless_access_token is live_ + 40 characters, both inside Mollie's
+# 30..64 window. Every neighbour is label-gated, so Mollie is too. These tests
+# assert the separation in Mollie's direction; pattern_test_cases.py asserts it
+# in the neighbours' direction. Bodies are assembled by concatenation so no
+# contiguous key literal exists in this source file.
+
+_MOLLIE_BODY = "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga"          # 30 chars, synthetic
+_MOLLIE_LIVE = "live_" + _MOLLIE_BODY
+_MOLLIE_TEST = "test_" + _MOLLIE_BODY
+_MOLLIE_README_KEY = "test_" + "dHar4XY7LxsDOtmnkVtjNVWXLSlXsM"  # vendor placeholder
+_LOB_TEST_KEY = "test_" + "qRsTuVwXyZaBcDeFgHiJkLmNoP987654321"  # 35-char body
+_LOB_LIVE_KEY = "live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987654321"
+_GOCARDLESS_ALNUM = "live_" + "a3f19c7e2b8d40516ea9c3d71f284b60ABcdEFgh"  # 40 alnum
+
+
+def test_mollie_live_api_key_detected_in_real_sdk_idioms():
+    """The forms Mollie's own PHP / Python / Node SDK docs write the key in."""
+    for text in (
+        "MOLLIE_API_KEY=" + _MOLLIE_LIVE,
+        "$mollie->setApiKey('" + _MOLLIE_LIVE + "');",
+        "mollie_client.set_api_key('" + _MOLLIE_LIVE + "')",
+        '{"mollieApiKey": "' + _MOLLIE_LIVE + '"}',
+        "'mollie_key' => '" + _MOLLIE_LIVE + "',",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "mollie_live_api_key"]
+        assert len(matched) == 1, "mollie_live_api_key missed: " + text[:60]
+        assert matched[0].provider == "mollie"
+        assert matched[0].severity == "critical"
+        assert matched[0].confidence >= 0.85
+
+
+def test_mollie_test_api_key_is_a_separate_lower_severity_pattern():
+    """Splitting the arms is the point: a test key cannot move money, so it must
+    not inherit the live key's critical rating."""
+    findings = scan("MOLLIE_API_KEY=" + _MOLLIE_TEST, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mollie_test_api_key"]
+    assert len(matched) == 1
+    assert matched[0].severity == "medium"
+    assert [f for f in findings if f.type == "mollie_live_api_key"] == []
+
+
+def test_mollie_api_key_requires_a_mollie_label():
+    """Both arms are context-gated. An unlabelled (live|test)_ run is a Lob key,
+    a GoCardless token, or nothing — never a Mollie finding."""
+    for text in (
+        _MOLLIE_LIVE,
+        _MOLLIE_TEST,
+        "API_KEY=" + _MOLLIE_LIVE,
+        "SECRET=" + _MOLLIE_TEST,
+    ):
+        types = {f.type for f in scan(text, min_confidence=0.01)}
+        assert "mollie_live_api_key" not in types, "ungated live match: " + text[:40]
+        assert "mollie_test_api_key" not in types, "ungated test match: " + text[:40]
+
+
+def test_mollie_does_not_collide_with_lob_or_gocardless():
+    """The collision this pattern was blocked on for three weeks, asserted in
+    BOTH directions. lob_api_key shares the whole prefix set and sits inside
+    Mollie's width window on both arms; gocardless_access_token collides on the
+    live_ arm whenever its 40-character body happens to be pure alphanumeric.
+    The left-edge lookbehind does NOT separate them — the label gate does."""
+    # Neighbour's direction: their labelled value must stay theirs.
+    for text, expected in (
+        ('lob_secret_key = "' + _LOB_TEST_KEY + '"', "lob_api_key"),
+        ("LOB_API_KEY=" + _LOB_LIVE_KEY, "lob_api_key"),
+        ("GOCARDLESS_ACCESS_TOKEN=" + _GOCARDLESS_ALNUM, "gocardless_access_token"),
+    ):
+        types = {f.type for f in scan(text, min_confidence=0.01)}
+        assert expected in types, expected + " regressed on: " + text[:50]
+        assert "mollie_live_api_key" not in types, "mollie claimed: " + text[:50]
+        assert "mollie_test_api_key" not in types, "mollie claimed: " + text[:50]
+
+    # Mollie's direction: a Mollie key at exactly the neighbours' widths (35
+    # like Lob, 40 like GoCardless) must report as Mollie and nothing else.
+    for body_len in (30, 35, 40, 64):
+        body = (_MOLLIE_BODY * 3)[:body_len]
+        types = {f.type for f in scan("MOLLIE_API_KEY=live_" + body, min_confidence=0.01)}
+        assert types == {"mollie_live_api_key"}, (
+            "width " + str(body_len) + " produced " + str(types)
+        )
+
+
+def test_mollie_does_not_collide_with_stripe_or_cal_com():
+    """Stripe is the collision the naive /(live|test)_[A-Za-z0-9]{30}/ would
+    have hit: sk_live_, sk_test_, pk_live_ and rk_live_ all embed the prefix.
+    Those prefixes end in an underscore, which the (?<![A-Za-z0-9_]) guard
+    rejects — verified against modern 51-prefixed ~60-character keys, not the
+    short documentation key that would have passed on width alone."""
+    long_body = "51Hq7xZ2eZvKYlo2CkQrStUvWxYz0123456789AbCdEfGh"
+    for text, expected in (
+        ("STRIPE_SECRET_KEY=sk_live_" + long_body, "stripe_live_secret_key"),
+        ("STRIPE_SECRET_KEY=sk_test_" + long_body, "stripe_test_secret_key"),
+        ("STRIPE_PUBLISHABLE_KEY=pk_live_" + long_body, "stripe_live_publishable_key"),
+        ("STRIPE_RESTRICTED_KEY=rk_live_" + long_body, "stripe_restricted_key"),
+        ("CALCOM_API_KEY=cal_live_a3f19c7e2b8d40516ea9c3d71f284b60", "cal_com_api_key"),
+    ):
+        types = {f.type for f in scan(text, min_confidence=0.01)}
+        assert expected in types, expected + " regressed on: " + text[:50]
+        assert "mollie_live_api_key" not in types, "mollie claimed: " + text[:50]
+        assert "mollie_test_api_key" not in types, "mollie claimed: " + text[:50]
+
+
+def test_mollie_width_bounds_are_enforced():
+    """Mollie's validator sets a >=30 floor and NO ceiling. The 64 ceiling is
+    ours, so an over-long token must miss CLEANLY rather than partially match
+    (the rollbar_project_access_token precedent)."""
+    long_body = (_MOLLIE_BODY * 3)[:65]
+    for text in (
+        "MOLLIE_API_KEY=live_" + _MOLLIE_BODY[:29],
+        "MOLLIE_API_KEY=test_" + _MOLLIE_BODY[:29],
+        "MOLLIE_API_KEY=live_" + long_body,
+        "MOLLIE_API_KEY=test_" + long_body,
+    ):
+        types = {f.type for f in scan(text, min_confidence=0.01)}
+        assert "mollie_live_api_key" not in types, "width leak: " + text[:50]
+        assert "mollie_test_api_key" not in types, "width leak: " + text[:50]
+
+
+def test_mollie_underscore_body_is_a_documented_clean_miss():
+    r"""Mollie's regex says \w, which admits '_'; every published example is
+    pure alphanumeric, so the tighter charset ships. This asserts the resulting
+    recall gap is a clean miss, not a truncated partial match."""
+    with_underscore = "live_" + _MOLLIE_BODY[:20] + "_" + _MOLLIE_BODY[21:]
+    findings = scan("MOLLIE_API_KEY=" + with_underscore, min_confidence=0.01)
+    assert [f for f in findings if f.type == "mollie_live_api_key"] == []
+
+
+def test_mollie_vendor_readme_placeholder_scores_as_a_test_value():
+    """The key printed in Mollie's own PHP / Python / Node READMEs is pasted
+    into tutorials everywhere; it must land at ~0.15, not fire as a leak."""
+    findings = scan("MOLLIE_API_KEY=" + _MOLLIE_README_KEY, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mollie_test_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_mollie_span_covers_exactly_the_key_and_preview_is_masked():
+    """The reported span is the credential — never the label or the quotes —
+    and the full secret is never returned."""
+    line = 'MOLLIE_API_KEY="' + _MOLLIE_LIVE + '"'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "mollie_live_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _MOLLIE_LIVE
+    assert _MOLLIE_LIVE not in f.value_preview

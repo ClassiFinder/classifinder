@@ -3454,6 +3454,78 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.55,
     },
 
+    # ── 2026-08-13 — Mollie API keys (split live / test, both gated) ─────
+    # Mollie ships (live|test)_ + >=30 word chars. Both arms sit inside the
+    # width windows of TWO shipping detectors — lob_api_key ((live|test)_ + 35)
+    # and gocardless_access_token (live_ + 40) — so both arms are gated on a
+    # Mollie key label, exactly as Lob and GoCardless are gated on theirs.
+    # Negatives assert the collision in the neighbours' direction; the
+    # handwritten tests in test_patterns.py assert it in Mollie's direction.
+    # Bodies are assembled by concatenation so no contiguous key literal
+    # exists in this source file.
+    "mollie_test_api_key": {
+        "positives": [
+            "MOLLIE_API_KEY=" + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            "mollie_client.set_api_key('" + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga" + "')",
+            "'mollie_key' => '" + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga" + "',",
+            '{"mollieApiKey": "' + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga" + '"}',
+        ],
+        "negatives": [
+            # Ungated: a bare test_ run is a Lob key, a fixture id, or nothing.
+            "API_KEY=" + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            # Lob's own 35-char body under a Lob label — must stay Lob-only.
+            'lob_secret_key = "' + "test_" + "qRsTuVwXyZaBcDeFgHiJkLmNoP987654321" + '"',
+            # Stripe's test key: the prefix ends in '_', which the guard rejects.
+            "STRIPE_SECRET_KEY=sk_test_51Hq7xZ2eZvKYlo2CkQrStUvWxYz0123456789AbCdEfGh",
+            # Width bounds: 29 is below the vendor floor, 65 is above our ceiling.
+            "MOLLIE_API_KEY=" + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1G",
+            "MOLLIE_API_KEY=" + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga" + "b" * 35,
+            # Underscore body — the documented recall gap, asserted as a miss.
+            "MOLLIE_API_KEY=" + "test_" + "Qp7RmZ3xKv9TbNw2Ld6Ys" + "_" + "4Hc8Fj1Gab",
+            # Prefix embedded in a longer identifier.
+            "MOLLIE_API_KEY=" + "xtest_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            # Prose and env indirection carry no credential.
+            "A Mollie API key must start with test_ or live_ and is >= 30 chars.",
+            "mollie_key = os.environ['MOLLIE_API_KEY']",
+        ],
+        "min_confidence": 0.80,
+    },
+
+    "mollie_live_api_key": {
+        "positives": [
+            "MOLLIE_API_KEY=" + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            "$mollie->setApiKey('" + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga" + "');",
+            '{"mollieApiKey": "' + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga" + '"}',
+            "mollie_api_key: " + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+        ],
+        "negatives": [
+            # Ungated live_ is GoCardless / Lob / nothing, never Mollie.
+            "API_KEY=" + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            # GoCardless's 40-char body, pure alphanumeric — the collision the
+            # context gate exists to resolve.
+            "GOCARDLESS_ACCESS_TOKEN=" + "live_" + "a3f19c7e2b8d40516ea9c3d71f284b60ABcdEFgh",
+            # Lob's 35-char body under a Lob label.
+            "LOB_API_KEY=" + "live_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ987654321",
+            # Every Stripe live prefix ends in '_' and is rejected by the guard.
+            "STRIPE_SECRET_KEY=sk_live_51Hq7xZ2eZvKYlo2CkQrStUvWxYz0123456789AbCdEfGh",
+            "STRIPE_PUBLISHABLE_KEY=pk_live_51Hq7xZ2eZvKYlo2CkQrStUvWxYz0123456789AbCdEfGh",
+            "STRIPE_RESTRICTED_KEY=rk_live_51Hq7xZ2eZvKYlo2CkQrStUvWxYz0123456789AbCdEfGh",
+            # Cal.com's cal_live_ prefix likewise ends in an underscore.
+            "CALCOM_API_KEY=cal_live_a3f19c7e2b8d40516ea9c3d71f284b60",
+            # Width bounds.
+            "MOLLIE_API_KEY=" + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1G",
+            "MOLLIE_API_KEY=" + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga" + "b" * 35,
+            # Underscore body — documented recall gap, asserted as a miss.
+            "MOLLIE_API_KEY=" + "live_" + "Qp7RmZ3xKv9TbNw2Ld6Ys" + "_" + "4Hc8Fj1Gab",
+            "MOLLIE_API_KEY=" + "xlive_" + "Qp7RmZ3xKv9TbNw2Ld6Ys4Hc8Fj1Ga",
+            "A Mollie API key must start with test_ or live_ and is >= 30 chars.",
+            "mollie_key = os.environ['MOLLIE_API_KEY']",
+        ],
+        "min_confidence": 0.85,
+    },
+
     # ── 2026-08-10 — Ghost Admin API key ─────────────────────────────────
     # 24 hex + ':' + 64 hex, exactly 89 characters, with no literal prefix to
     # anchor on — the widths and the boundary guards ARE the pattern. Fixtures
