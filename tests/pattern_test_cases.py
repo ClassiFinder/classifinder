@@ -3668,6 +3668,37 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+    # Honeycomb ingest key — hc<region><keytype>_ + a 58-char lowercase body
+    # (26-char key ID concatenated with the 32-char secret, no separator).
+    # The 58 is load-bearing: `hcxik_` + 26 is the PUBLIC key ID, not a secret.
+    "honeycomb_ingest_key": {
+        "positives": [
+            "HONEYCOMB_API_KEY=hcaik_q7w2e9r4t6y1u3i8o5p0a2s7d4f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e1",
+            "X-Honeycomb-Team: hcxik_m4n8b2v6c9x3z7l1k5j0h4g8f2d6s9a3p7o1i5u9y3t7r1e5w9q3x7c1v5",
+            "hcxlk_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9",
+            "otlp_headers: 'x-honeycomb-team=hcxmk_z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4j3i2h1g0f9e8d7c6b5a4n3m7k1'",
+        ],
+        "negatives": [
+            # The key ID on its own — public identifier, not a credential.
+            "hcxik_q7w2e9r4t6y1u3i8o5p0a2s7d4",
+            # 57-char body (one short) and 59-char body (one over).
+            "hcaik_q7w2e9r4t6y1u3i8o5p0a2s7d4f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e",
+            "hcaik_q7w2e9r4t6y1u3i8o5p0a2s7d4f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e1r",
+            # Uppercase in the body — the vendor regex is lowercase-only.
+            "hcaik_Q7W2E9R4T6Y1U3I8O5P0A2S7D4F9G6H3J1K8L5Z0X2C7V4B9N6M3Q8W5E1",
+            # Uppercase prefix.
+            "HCAIK_q7w2e9r4t6y1u3i8o5p0a2s7d4f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e1",
+            # Digit in the keytype segment.
+            "hca1k_q7w2e9r4t6y1u3i8o5p0a2s7d4f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e1",
+            # Prefix buried inside a longer lowercase-alnum run.
+            "zzhcaik_q7w2e9r4t6y1u3i8o5p0a2s7d4f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e1",
+            # Refinery's other two alternands — deliberately not shipped.
+            "HONEYCOMB_API_KEY=0123456789abcdef0123456789abcdef",
+            # The management key's colon-joined ID:secret form.
+            "hcxmk_q7w2e9r4t6y1u3i8o5p0a2s7d4:f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e1",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on

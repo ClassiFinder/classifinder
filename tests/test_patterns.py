@@ -6944,3 +6944,132 @@ def test_aws_sts_session_token_span_covers_the_token_and_preview_is_masked():
     f = matched[0]
     assert line[f.span_start:f.span_end] == token
     assert token not in f.value_preview
+
+
+# --- Honeycomb ingest key ---------------------------------------------------
+# Honeycomb's own OSS Refinery config validator publishes the format verbatim:
+#   `^([a-f0-9]{32}|[a-zA-Z0-9]{20,23}|hc[a-z][a-z]{2}_[a-z0-9]{58})$`
+# with the comment "hc<1 letter region><2 letter keytype>_<58 alphanumeric
+# characters> (ingest key)". Only the third alternand is anchorable; the other
+# two are unanchorable generics and are deliberately NOT shipped.
+#
+# The 58-character body is load-bearing. A Honeycomb ingest key ID is
+# `hcxik_` + 26 characters and is a PUBLIC identifier, not a secret; the
+# credential is that ID concatenated with a 32-character secret (26 + 32 = 58,
+# no separator) for the X-Honeycomb-Team header. Matching the 32-char key ID
+# alone would report a non-secret.
+
+_HC_ID = "q7w2e9r4t6y1u3i8o5p0a2s7d4"          # 26 chars — the public key ID half
+_HC_SECRET = "f9g6h3j1k8l5z0x2c7v4b9n6m3q8w5e1"  # 32 chars — the secret half
+_HC_BODY = _HC_ID + _HC_SECRET                    # 58 chars — the concatenated body
+
+# Honeycomb's own API reference prints this key verbatim on
+# docs.honeycomb.io/api/key-management/createapikey — 64 characters, 58-char body.
+_HC_DOC_EXAMPLE = "hcxik_" + "12345678901234567890123456" + "12345678901234567890123456789012"
+
+
+def test_honeycomb_ingest_key_detects_documented_keytypes():
+    """Every documented keytype (hcaik_ ingest-classic, hcxik_ ingest,
+    hcxlk_, hcxmk_) fits the vendor's own `hc[a-z]{3}_` shape, so all of them
+    must detect at the prefix-anchored confidence tier."""
+    for prefix in ("hcaik_", "hcxik_", "hcxlk_", "hcxmk_"):
+        key = prefix + _HC_BODY
+        findings = scan("HONEYCOMB_API_KEY=" + key, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "honeycomb_ingest_key"]
+        assert len(matched) == 1, "not detected for keytype " + prefix
+        assert matched[0].confidence >= 0.95
+        assert matched[0].severity == "medium"
+        assert matched[0].span_end - matched[0].span_start == len(key)
+
+
+def test_honeycomb_ingest_key_detects_bare_and_in_header():
+    """The key is carried in the X-Honeycomb-Team header and pasted bare into
+    config files, so neither form may depend on a nearby label."""
+    key = "hcaik_" + _HC_BODY
+    for text in (
+        key,
+        "X-Honeycomb-Team: " + key,
+        'curl -H "X-Honeycomb-Team: ' + key + '" https://api.honeycomb.io/1/events/ds',
+        "api_key: " + key,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "honeycomb_ingest_key"]
+        assert len(matched) == 1, "not detected in: " + text[:60]
+
+
+def test_honeycomb_ingest_key_true_negatives():
+    """The bare key ID is a public identifier, not a credential, and the other
+    two Refinery alternands are unanchorable generics that this pattern must
+    not claim."""
+    negatives = [
+        # The key ID alone — `hcxik_` + 26 chars. PUBLIC, not a secret.
+        "hcxik_" + _HC_ID,
+        # Body one character short of 58.
+        "hcaik_" + _HC_BODY[:-1],
+        # Body one character over 58.
+        "hcaik_" + _HC_BODY + "z",
+        # Uppercase in the body — the vendor regex is lowercase-only.
+        "hcaik_" + _HC_BODY[:-1] + "Z",
+        # Uppercase prefix — `hc` and the region/keytype letters are lowercase.
+        "HCAIK_" + _HC_BODY,
+        # Digit in the keytype segment: `hc[a-z]{3}` admits letters only.
+        "hca1k_" + _HC_BODY,
+        # Two letters between `hc` and the underscore, not three.
+        "hcik_" + _HC_BODY,
+        # Refinery's other two alternands — classic 32-hex and 20-23 alnum.
+        "HONEYCOMB_API_KEY=0123456789abcdef0123456789abcdef",
+        "HONEYCOMB_API_KEY=aBcDeFgHiJkLmNoPqRsT",
+        # The management key's colon-joined ID:secret form, which is a
+        # different credential shape and not this pattern's business.
+        "hcxmk_" + _HC_ID + ":" + _HC_SECRET,
+        # Prefix sitting inside a longer lowercase-alnum run.
+        "zzhcaik_" + _HC_BODY,
+        # Prose naming the prefix with no key attached.
+        "Honeycomb ingest keys begin with hcaik_ or hcxik_.",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "honeycomb_ingest_key"]
+        assert len(matched) == 0, "honeycomb_ingest_key wrongly matched: " + neg[:60]
+
+
+def test_honeycomb_ingest_key_vendor_doc_example_scores_as_test_value():
+    """The key printed in Honeycomb's own API reference is pasted into
+    tutorials and test fixtures; it must land at ~0.15, not fire as a leak."""
+    findings = scan(
+        'X-Honeycomb-Team: ' + _HC_DOC_EXAMPLE,
+        min_confidence=0.01,
+    )
+    matched = [f for f in findings if f.type == "honeycomb_ingest_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_honeycomb_ingest_key_does_not_collide_with_hcaptcha():
+    """`hcaptcha_siteverify_secret_key` is the only other `hc`-adjacent pattern
+    in the registry. Its values are `0x` + 40 hex or `ES_` + 32 hex, so neither
+    pattern can claim the other's credential. Asserted in both directions."""
+    honeycomb = "hcaik_" + _HC_BODY
+    hcaptcha = "hcaptcha secret=0x" + "a1b2c3d4e5" * 4
+
+    hc_findings = scan(honeycomb, min_confidence=0.01)
+    assert [f for f in hc_findings if f.type == "honeycomb_ingest_key"]
+    assert not [f for f in hc_findings if f.type == "hcaptcha_siteverify_secret_key"]
+
+    cap_findings = scan(hcaptcha, min_confidence=0.01)
+    assert [f for f in cap_findings if f.type == "hcaptcha_siteverify_secret_key"]
+    assert not [f for f in cap_findings if f.type == "honeycomb_ingest_key"]
+
+
+def test_honeycomb_ingest_key_span_covers_the_key_and_preview_is_masked():
+    """The reported span is the credential itself — not the header name, not
+    the surrounding quotes — and the full key is never echoed back."""
+    key = "hcxik_" + _HC_BODY
+    line = '{"X-Honeycomb-Team": "' + key + '"}'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "honeycomb_ingest_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == key
+    assert key not in f.value_preview
