@@ -7073,3 +7073,358 @@ def test_honeycomb_ingest_key_span_covers_the_key_and_preview_is_masked():
     f = matched[0]
     assert line[f.span_start:f.span_end] == key
     assert key not in f.value_preview
+
+
+# =====================================================================
+# Azure / Microsoft "identifiable" (annotated) keys — 2026-08-17
+#
+# Nine patterns derived from microsoft/security-utilities (MIT), whose
+# HighConfidenceSecurityModels.json publishes each key's 4-character
+# signature, the fixed offset that signature sits at, and the total
+# length. See ATTRIBUTION.md.
+#
+# NOTE ON known_test_values: Microsoft publishes NO real literals for any
+# of these — its own tests call GenerateTruePositiveExamples() to build
+# fixtures at runtime — so there is no vendor-published dummy to register.
+# There is therefore deliberately no known-test-value test in this block;
+# registering the fixtures below would force them to 0.15 and break their
+# own true-positive tests. `test_azure_identifiable_keys_register_no_test_values`
+# locks that decision in so a future contributor does not "fix" it by
+# inventing one.
+#
+# Fixture literals are split with `+` so the assembled token never appears
+# verbatim in the source tree: these are exactly the shapes GitHub's
+# secret scanner and push protection look for.
+# =====================================================================
+
+_AZ_COSMOS_KEY = (
+    "ErHFQZSRUS57Jk9+MMlIBdLJJKgSIHWNF0Y5zav+kl/SU+sq1RSv7hDQ41zpGbZ3wITpiuTwS"
+    "//z" + "ACDb" + "2wnQXg=="
+)
+_AZ_FUNCTIONS_KEY = (
+    "y7fK3byT9Fr5T-9owOlLVqWH0OhujiIG2-UNB5Yqiyik" + "AzFu" + "kfW1TQ=="
+)
+_AZ_SEARCH_KEY = (
+    "cTVwOJkmDLDrYbhuK4eROT61HRULNeGOSvvuTaxAbg" + "AzSe" + "CQRQsj"
+)
+_AZ_EVENT_HUB_KEY = "1NKIbk5zjE8I49HYySWBHzsTtotW0v1/g" + "+AEh" + "D/OEMz="
+_AZ_SERVICE_BUS_KEY = "K9d3tVc+f2C8ZEoeYWRSJ6ZGeTzWysHnD" + "+ASb" + "IMre1l="
+_AZ_IOT_KEY = "EEW/qIWznJhKyEvpwgKPdy/F6YTxruZ7X" + "AIoT" + "N8r1Xr="
+_AZ_ACR_KEY = (
+    "APXoMA3p17e+J9nucJlkQnuDgDoQx0oQFCyV9PmkrV" + "+ACR" + "AuSNcr"
+)
+_AZ_APIM_KEY = (
+    "3HkqCANOyQKTS0D//jKeRRVm01Dgg00L+kh8gfKrILKoyDul1s6RnzCIMn8rI3M9qPoaga3sm"
+    "oVW" + "APIM" + "UDgVzQ=="
+)
+_MS_CASK_KEY = (
+    "ji1fDhcmyhmiRkFWzg3yH1b4do2cOI45bJL4DNwy5ELmJXCPh3q9" + "JQQJ99"
+    + "GEU0jRPJOjVEmU6epEIOoSHaHV"
+)
+
+# (pattern_id, key, expected_length, expected_severity, carrier text)
+_AZURE_IDENTIFIABLE_CASES = [
+    (
+        "azure_cosmos_db_key",
+        _AZ_COSMOS_KEY,
+        88,
+        "critical",
+        "AccountEndpoint=https://acct.documents.azure.com:443/;AccountKey={};",
+    ),
+    (
+        "azure_functions_key",
+        _AZ_FUNCTIONS_KEY,
+        56,
+        "high",
+        "https://app.azurewebsites.net/api/run?code={}",
+    ),
+    (
+        "azure_search_key",
+        _AZ_SEARCH_KEY,
+        52,
+        "high",
+        "curl -H 'api-key: {}' https://svc.search.windows.net/indexes",
+    ),
+    (
+        "azure_event_hub_key",
+        _AZ_EVENT_HUB_KEY,
+        44,
+        "high",
+        "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=send;"
+        "SharedAccessKey={}",
+    ),
+    (
+        "azure_service_bus_key",
+        _AZ_SERVICE_BUS_KEY,
+        44,
+        "high",
+        "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=root;"
+        "SharedAccessKey={}",
+    ),
+    (
+        "azure_iot_key",
+        _AZ_IOT_KEY,
+        44,
+        "critical",
+        "HostName=hub.azure-devices.net;DeviceId=d1;SharedAccessKey={}",
+    ),
+    (
+        "azure_container_registry_key",
+        _AZ_ACR_KEY,
+        52,
+        "critical",
+        "docker login myreg.azurecr.io -u myreg -p {}",
+    ),
+    (
+        "azure_apim_key",
+        _AZ_APIM_KEY,
+        88,
+        "high",
+        "Ocp-Apim-Subscription-Key: {}",
+    ),
+    (
+        "microsoft_cask_key",
+        _MS_CASK_KEY,
+        84,
+        "high",
+        "AZURE_API_KEY={}",
+    ),
+]
+
+
+def _pattern_by_id(pattern_id):
+    """Look up a registered SecretPattern by its id."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    for pattern in PATTERN_REGISTRY:
+        if pattern.id == pattern_id:
+            return pattern
+    raise AssertionError(f"pattern '{pattern_id}' is not registered")
+
+
+@pytest.mark.parametrize(
+    "pattern_id,key,expected_len,severity,carrier",
+    _AZURE_IDENTIFIABLE_CASES,
+    ids=[c[0] for c in _AZURE_IDENTIFIABLE_CASES],
+)
+def test_azure_identifiable_key_detected(
+    pattern_id, key, expected_len, severity, carrier
+):
+    """Each Microsoft-annotated key carries a fixed 4-character signature at a
+    fixed offset. The verified example must be detected as exactly one finding
+    of the right type, at high confidence, with the span covering the whole
+    credential and nothing else."""
+    assert len(key) == expected_len, (
+        f"{pattern_id}: fixture is {len(key)} chars, expected {expected_len}"
+    )
+    text = carrier.format(key)
+    findings = scan(text, min_confidence=0.01)
+    matched = [f for f in findings if f.type == pattern_id]
+    assert len(matched) == 1, (
+        f"{pattern_id} not detected; got {[f.type for f in findings]}"
+    )
+    f = matched[0]
+    assert f.confidence >= 0.89, f"{pattern_id} scored {f.confidence}"
+    assert f.severity == severity
+    assert text[f.span_start:f.span_end] == key
+    assert key not in f.value_preview
+
+
+@pytest.mark.parametrize(
+    "pattern_id,key,expected_len,severity,carrier",
+    _AZURE_IDENTIFIABLE_CASES,
+    ids=[c[0] for c in _AZURE_IDENTIFIABLE_CASES],
+)
+def test_azure_identifiable_key_true_negatives(
+    pattern_id, key, expected_len, severity, carrier
+):
+    """The signature is only meaningful at its published offset. A key one
+    character short, a key with the signature lowercased, and a signature
+    buried inside a longer blob must all match nothing — otherwise the pattern
+    would be a plain "long base64 string" detector."""
+    sig_start = key.find(
+        {
+            "azure_cosmos_db_key": "ACDb",
+            "azure_functions_key": "AzFu",
+            "azure_search_key": "AzSe",
+            "azure_event_hub_key": "+AEh",
+            "azure_service_bus_key": "+ASb",
+            "azure_iot_key": "AIoT",
+            "azure_container_registry_key": "+ACR",
+            "azure_apim_key": "APIM",
+            "microsoft_cask_key": "JQQJ",
+        }[pattern_id]
+    )
+    sig_len = 4
+    lowered = key[:sig_start] + key[sig_start:sig_start + sig_len].lower() + \
+        key[sig_start + sig_len:]
+    negatives = [
+        # One character short — the offset no longer lines up.
+        key[:-1],
+        # Signature lowercased; base64 and the Microsoft alphabet are both
+        # case-significant.
+        lowered,
+        # Signature shifted one place left by dropping a body character.
+        key[:sig_start - 1] + key[sig_start:],
+        # Sitting inside a longer run of the same alphabet — the left boundary
+        # guard must refuse to carve it out.
+        "Zm9v" + key,
+        # Same on the right.
+        key + "Zm9v",
+        # Prose naming the signature with no credential attached.
+        "Microsoft stamps the signature "
+        + key[sig_start:sig_start + sig_len]
+        + " into these keys.",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == pattern_id]
+        assert len(matched) == 0, (
+            f"{pattern_id} wrongly matched: {neg[:70]}"
+        )
+
+
+def test_azure_cosmos_db_key_beats_azure_storage_key_in_a_connection_string():
+    """Regression for a real mislabel. A Cosmos DB key is 88 base64 characters
+    ending `==`, which is byte-compatible with `azure_storage_key`, and real
+    Cosmos connection strings genuinely use the `AccountKey=` label — so before
+    this pattern existed the engine reported leaked Cosmos keys as Azure
+    Storage keys at 0.92. The specific reading must win dedup."""
+    text = (
+        "AccountEndpoint=https://acct.documents.azure.com:443/;"
+        "AccountKey=" + _AZ_COSMOS_KEY + ";"
+    )
+    findings = scan(text, min_confidence=0.01)
+    types = [f.type for f in findings]
+    assert "azure_cosmos_db_key" in types
+    assert "azure_storage_key" not in types, (
+        "Cosmos key still mis-labelled as azure_storage_key"
+    )
+
+    # And the reverse: a genuine storage key (no ACDb at offset 76) is still
+    # reported as a storage key, not swallowed by the new pattern.
+    storage_key = "XYZ1vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    storage_findings = scan(
+        "AccountKey=" + storage_key + ";", min_confidence=0.01
+    )
+    storage_types = [f.type for f in storage_findings]
+    assert "azure_storage_key" in storage_types
+    assert "azure_cosmos_db_key" not in storage_types
+
+
+def test_azure_apim_key_beats_azure_storage_key_on_the_same_shape():
+    """APIM keys share the 86-base64 + `==` shape with `azure_storage_key`.
+    An APIM key behind an `AccountKey=` label is unlikely in practice, but the
+    dedup outcome is asserted rather than assumed."""
+    findings = scan(
+        "AccountKey=" + _AZ_APIM_KEY + ";", min_confidence=0.01
+    )
+    types = [f.type for f in findings]
+    assert "azure_apim_key" in types
+    assert "azure_storage_key" not in types
+
+
+def test_azure_functions_key_is_base64url_not_standard_base64():
+    """Azure Functions keys use the URL-safe alphabet — `_` and `-` in place of
+    `+` and `/`. A pattern written against the standard alphabet would miss
+    every real key containing either substituted character, and this fixture
+    contains both."""
+    assert "-" in _AZ_FUNCTIONS_KEY
+    findings = scan(
+        "x-functions-key: " + _AZ_FUNCTIONS_KEY, min_confidence=0.01
+    )
+    assert [f for f in findings if f.type == "azure_functions_key"]
+
+    # The same key with `+` and `/` substituted back in is not a valid Azure
+    # Functions key and must not match.
+    std_b64 = _AZ_FUNCTIONS_KEY.replace("-", "+").replace("_", "/")
+    std_findings = scan("x-functions-key: " + std_b64, min_confidence=0.01)
+    assert not [f for f in std_findings if f.type == "azure_functions_key"]
+
+
+def test_azure_messaging_and_iot_keys_are_mutually_exclusive():
+    """Event Hubs, Service Bus and IoT keys are the same 44-character shape and
+    two of them sit on the same *.servicebus.windows.net endpoint. Only the
+    signature separates them, so each must claim exactly its own."""
+    trio = {
+        "azure_event_hub_key": _AZ_EVENT_HUB_KEY,
+        "azure_service_bus_key": _AZ_SERVICE_BUS_KEY,
+        "azure_iot_key": _AZ_IOT_KEY,
+    }
+    for expected, key in trio.items():
+        types = {
+            f.type
+            for f in scan("SharedAccessKey=" + key, min_confidence=0.01)
+        }
+        assert expected in types
+        for other in trio:
+            if other != expected:
+                assert other not in types
+
+
+def test_microsoft_cask_key_matches_both_the_84_and_88_character_forms():
+    """Microsoft publishes CASK keys at 84 characters, or 88 with an optional
+    base64 tail. The optional group is greedy, so the 88-character form must be
+    matched in full rather than truncated to its first 84 characters."""
+    short_findings = scan("KEY=" + _MS_CASK_KEY, min_confidence=0.01)
+    short = [f for f in short_findings if f.type == "microsoft_cask_key"]
+    assert len(short) == 1
+    assert short[0].span_end - short[0].span_start == 84
+
+    long_key = _MS_CASK_KEY + "Ab" + "=="
+    assert len(long_key) == 88
+    long_findings = scan("KEY=" + long_key, min_confidence=0.01)
+    long_match = [f for f in long_findings if f.type == "microsoft_cask_key"]
+    assert len(long_match) == 1
+    assert long_match[0].span_end - long_match[0].span_start == 88
+
+
+def test_azure_search_key_description_discloses_the_public_query_key_risk():
+    """Deliberate, documented false-positive risk. Microsoft ships a
+    byte-identical format for admin keys and query keys, and query keys are
+    public by design — they are legitimately embedded in client-side
+    JavaScript. The pattern ships because missing admin keys entirely is the
+    worse failure, but the ambiguity must be stated to the user rather than
+    hidden, so it is asserted here."""
+    pattern = _pattern_by_id("azure_search_key")
+    assert "query" in pattern.description.lower()
+    assert "admin" in pattern.description.lower()
+    assert "query" in pattern.recommendation.lower()
+
+
+@pytest.mark.parametrize(
+    "pattern_id",
+    [
+        "azure_iot_key",
+        "azure_apim_key",
+        "azure_search_key",
+    ],
+)
+def test_azure_ambiguous_key_names_do_not_overclaim(pattern_id):
+    """Microsoft ships one regex for several distinct credentials — IoT Hub vs
+    device vs device-provisioning, all four APIM key types, and Search admin vs
+    query. These are indistinguishable by format, so the pattern name must stay
+    generic and the description must say the credential may be any subtype."""
+    pattern = _pattern_by_id(pattern_id)
+    assert "Admin Key" not in pattern.name
+    assert "Subscription Key" not in pattern.name
+    assert "Hub Key" not in pattern.name
+    description = pattern.description.lower()
+    assert "may be" in description or "cannot tell" in description, (
+        f"{pattern_id}: description must state that the credential may be any "
+        f"of the indistinguishable subtypes"
+    )
+
+
+def test_azure_identifiable_keys_register_no_test_values():
+    """Microsoft publishes no literal example keys — its own tests generate
+    fixtures at runtime — so there is no vendor-published dummy to register.
+    Registering our own fixtures would force them to 0.15 and defeat their own
+    true-positive tests. This asserts the deliberate absence so a later
+    contributor does not invent one."""
+    for pattern_id, *_ in _AZURE_IDENTIFIABLE_CASES:
+        pattern = _pattern_by_id(pattern_id)
+        assert pattern.known_test_values == set(), (
+            f"{pattern_id} registered a known_test_value; Microsoft publishes "
+            f"no real literals, so any value there would be invented"
+        )
