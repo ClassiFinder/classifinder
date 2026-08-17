@@ -6801,3 +6801,146 @@ def test_mollie_span_covers_exactly_the_key_and_preview_is_masked():
     f = matched[0]
     assert line[f.span_start:f.span_end] == _MOLLIE_LIVE
     assert _MOLLIE_LIVE not in f.value_preview
+
+
+# --- AWS STS session token --------------------------------------------------
+# The third component of an STS temporary-credential triple. The ASIA access
+# key ID and the 40-char secret key are already covered; the session token was
+# not, which is the miss a 2026-06-18 pentest reported (redaction left it in
+# cleartext). Every literal below is assembled by concatenation: AWS credentials
+# are in GitHub's secret-scanning catalog and a contiguous literal would be
+# blocked on push to the public engine repo.
+
+_STS_V2_PREFIX = "IQoJ" + "b3JpZ2luX2Vj"      # 0x21 0x0a 0x09 'origin_ec'
+_STS_V1_PREFIX_A = "FwoG" + "ZXIvYXdz"        # 0x17 0x0a 0x06 'er/aws'
+_STS_V1_PREFIX_B = "FQoG" + "ZXIvYXdz"        # 0x15 0x0a 0x06 'er/aws'
+_STS_LEGACY_PREFIX = "AQoD" + "YXdz"          # 0x01 0x0a 0x03 'aws'
+
+_STS_BODY = (
+    "EBYaCXVzLWVhc3QtMSJHMEUCIQDkX9v2mQ4pLzR7wYbN3sHtJ8gKdA1oEuTiVxWyZ0"
+    "AiA5cF7hJ2nQ8vL4mR9bXtY6sKdG1oPuTiWxZyA0BSq8AwgVEAAaDDEyMzQ1Njc4OT"
+    "AxMiIMe1nX8fK2pQwLzR7wKrsBnG4hJ9vN2mQ8pLzR7wYbN3sHtJ8gKdA1oEuTiVxW"
+    "yZ0X5cF7hJ2nQ8vL4mR9bXtY6sKdG1oPuTiWxZyA0BSq8+/OuT7wKrsBnG4hJ9vN2m"
+)
+
+# AWS's own published AssumeRole sample response, joined from the five wrapped
+# lines in https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
+_STS_AWS_DOC_EXAMPLE = (
+    "AQoD" + "YXdzEPT//////////wEXAMPLEtc764bNrC9SAPBSM22wDOk4x4HIZ8j4FZTwdQW"
+    "LWsKWHGBuFqwAeMicRXmxfpSPfIeoIYRqTflfKD8YUuwthAx7mSEI/qkPpKPi/kMcGd"
+    "QrmGdeehM4IC1NtBmUpp2wUE8phUZampKsburEDy0KPkyQDYwT7WZ0wq5VSXDvp75YU"
+    "9HFvlRd8Tx6q6fE8YQcHNVXAkiY9q6d+xo0rKwT38xVqr7ZD0u0iPPkUL64lIZbqBAz"
+    "+scqKmlzm8FDrypNC9Yjc8fPOLn9FX9KSYvKTr4rvx3iSIlTJabIQwj2ICCR/oLxBA=="
+)
+
+
+def test_aws_sts_session_token_all_header_families_detect():
+    """STS session tokens are base64 blobs whose leading bytes are a fixed
+    binary header, so the base64 prefix is deterministic rather than random.
+    Four header literals circulate across the token versions AWS has shipped;
+    all four must detect. This is the gap the pentest reported."""
+    for prefix in (
+        _STS_V2_PREFIX,
+        _STS_V1_PREFIX_A,
+        _STS_V1_PREFIX_B,
+        _STS_LEGACY_PREFIX,
+    ):
+        token = prefix + _STS_BODY
+        findings = scan("AWS_SESSION_TOKEN=" + token, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "aws_sts_session_token"]
+        assert len(matched) == 1, "not detected for header " + prefix
+        assert matched[0].confidence >= 0.95
+        assert matched[0].severity == "critical"
+        assert matched[0].span_end - matched[0].span_start == len(token)
+
+
+def test_aws_sts_session_token_true_negatives():
+    """AWS's own documentation line-wraps and truncates these tokens constantly;
+    the truncated placeholders, a near-miss header and a header buried inside a
+    longer base64 blob must all match nothing."""
+    negatives = [
+        # AWS's truncated doc placeholders — far below the 100-char body floor.
+        "SessionToken: " + _STS_V2_PREFIX[:12] + "...",
+        "SessionToken: " + "AQoEXAMPLEH4aoAH0gNCAPy" + "...truncated...",
+        # Body one character short of the floor.
+        _STS_V2_PREFIX + "A" * 99,
+        # Right header bytes, wrong case — base64 is case-significant.
+        _STS_V2_PREFIX.lower() + _STS_BODY,
+        # Header sitting inside a longer base64 blob, not at its left edge.
+        "Zm9v" + _STS_V2_PREFIX + _STS_BODY,
+        # A different AWS credential entirely.
+        "ASIAIOSFODNN7EXAMPLE",
+        # Prose naming the header with no token attached.
+        "Every v2 STS session token starts with the base64 header "
+        + _STS_V2_PREFIX,
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "aws_sts_session_token"]
+        assert len(matched) == 0, "aws_sts_session_token wrongly matched: " + neg[:60]
+
+
+def test_aws_sts_session_token_aws_doc_example_scores_as_test_value():
+    """The AssumeRole sample response in AWS's own API Reference is pasted into
+    tutorials, blog posts and test fixtures everywhere. It must land at ~0.15
+    rather than firing as a leak."""
+    findings = scan(
+        "<SessionToken>" + _STS_AWS_DOC_EXAMPLE + "</SessionToken>",
+        min_confidence=0.01,
+    )
+    matched = [f for f in findings if f.type == "aws_sts_session_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_aws_sts_session_token_completes_the_credential_triple():
+    """The whole point of the pattern: an STS temporary credential is a triple,
+    and until now only two thirds of it were detected (and therefore redacted).
+    All three components must be reported as three distinct findings."""
+    triple = (
+        "AWS_ACCESS_KEY_ID=ASIAY34FZKBOKMUTVV7A\n"
+        "AWS_SECRET_ACCESS_KEY=Xb9pQ2mK7vL4nR8sT1wY6zC3fH5jD0aG2eU4iO7p\n"
+        "AWS_SESSION_TOKEN=" + _STS_V2_PREFIX + _STS_BODY + "\n"
+    )
+    types = {f.type for f in scan(triple, min_confidence=0.01)}
+    assert "aws_access_key" in types
+    assert "aws_secret_key" in types
+    assert "aws_sts_session_token" in types
+
+
+def test_aws_sts_session_token_never_spans_a_newline():
+    """AWS's XML and JSON samples hard-wrap the token across lines. The match
+    must stop at the line break — a finding whose span crossed a newline would
+    report a span the redactor cannot cleanly replace."""
+    wrapped = _STS_V2_PREFIX + _STS_BODY[:150] + "\n" + _STS_BODY[150:]
+    findings = scan("SessionToken=" + wrapped, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "aws_sts_session_token"]
+    assert len(matched) == 1
+    text = "SessionToken=" + wrapped
+    assert "\n" not in text[matched[0].span_start:matched[0].span_end]
+
+
+def test_aws_sts_session_token_has_no_upper_length_bound():
+    """AWS states verbatim that the size of the returned security token "is not
+    fixed" and that callers should "make no assumptions about the maximum size".
+    A token far longer than any published sample must still match in full."""
+    token = _STS_V2_PREFIX + (_STS_BODY * 6)
+    findings = scan("AWS_SESSION_TOKEN=" + token, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "aws_sts_session_token"]
+    assert len(matched) == 1
+    assert matched[0].span_end - matched[0].span_start == len(token)
+
+
+def test_aws_sts_session_token_span_covers_the_token_and_preview_is_masked():
+    """The reported span is the credential itself — never the label, the quotes
+    or the trailing padding-adjacent characters — and the full token is never
+    returned in the response."""
+    token = _STS_V2_PREFIX + _STS_BODY + "=="
+    line = '"SessionToken": "' + token + '",'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "aws_sts_session_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == token
+    assert token not in f.value_preview

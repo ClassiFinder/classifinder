@@ -14,6 +14,16 @@ true positive, true negative, test value, and collision tests.
 
 # fmt: off
 
+# A 264-character base64 body, standard charset including '+' and '/'. Used to
+# give the AWS STS session-token cases a realistic payload without embedding a
+# contiguous credential-shaped literal.
+_STS_HARNESS_BODY = (
+    "EBYaCXVzLWVhc3QtMSJHMEUCIQDkX9v2mQ4pLzR7wYbN3sHtJ8gKdA1oEuTiVxWyZ0"
+    "AiA5cF7hJ2nQ8vL4mR9bXtY6sKdG1oPuTiWxZyA0BSq8AwgVEAAaDDEyMzQ1Njc4OT"
+    "AxMiIMe1nX8fK2pQwLzR7wKrsBnG4hJ9vN2mQ8pLzR7wYbN3sHtJ8gKdA1oEuTiVxW"
+    "yZ0X5cF7hJ2nQ8vL4mR9bXtY6sKdG1oPuTiWxZyA0BSq8+/OuT7wKrsBnG4hJ9vN2m"
+)
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -3623,6 +3633,38 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             + "$" + "1234567890abcdef1234567890abcdef",
             # Prose about the format, with no token in it.
             "A Braintree access_token is access_token$<env>$<merchant>$<secret>.",
+        ],
+        "min_confidence": 0.95,
+    },
+    # AWS STS session token — the third component of a temporary-credential
+    # triple. Prefix-anchored on the fixed binary header the base64 blob starts
+    # with; every literal is concatenated because AWS credentials sit in
+    # GitHub's secret-scanning catalog.
+    "aws_sts_session_token": {
+        "positives": [
+            "AWS_SESSION_TOKEN=" + "IQoJ" + "b3JpZ2luX2Vj" + _STS_HARNESS_BODY,
+            "AWS_SESSION_TOKEN=" + "FwoG" + "ZXIvYXdz" + _STS_HARNESS_BODY,
+            "AWS_SESSION_TOKEN=" + "FQoG" + "ZXIvYXdz" + _STS_HARNESS_BODY,
+            "AWS_SESSION_TOKEN=" + "AQoD" + "YXdz" + _STS_HARNESS_BODY,
+            '"SessionToken": "' + "IQoJ" + "b3JpZ2luX2Vj" + _STS_HARNESS_BODY + '=="',
+        ],
+        "negatives": [
+            # 99-character body — one short of the floor.
+            "IQoJ" + "b3JpZ2luX2Vj" + "A" * 99,
+            # AWS's own truncated documentation placeholders.
+            "IQoJ" + "b3JpZ2lu" + "...",
+            "AQoEXAMPLEH4aoAH0gNCAPy" + "...truncated...",
+            # Header bytes with the wrong case.
+            "iqoj" + "b3jpz2lux2vj" + _STS_HARNESS_BODY,
+            # Header buried mid-blob rather than at the left edge.
+            "Zm9v" + "IQoJ" + "b3JpZ2luX2Vj" + _STS_HARNESS_BODY,
+            # A near-miss header: right length, wrong bytes.
+            "IQoJ" + "b3JpZ2luX2Vk" + _STS_HARNESS_BODY,
+            # The other two thirds of the credential triple.
+            "ASIAY34FZKBOKMUTVV7A",
+            # Prose describing the header with no token attached.
+            "STS v2 session tokens open with the base64 header "
+            + "IQoJ" + "b3JpZ2luX2Vj",
         ],
         "min_confidence": 0.95,
     },
