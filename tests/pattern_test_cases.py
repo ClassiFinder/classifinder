@@ -3699,6 +3699,38 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+    # Baidu Qianfan BCE API key — bce-v3/ALTAK-<21 alnum>/<lowercase hex>.
+    # Segment 1's exactly-21 width is the anchor; the tail is tolerant ({32,64})
+    # because only one unmasked public sample was measurable (it read 40).
+    # Literals are concatenated: these tokens are plausibly matched by
+    # secret-scanning partner rules, so no whole token is written as one string.
+    "baidu_qianfan_bce_api_key": {
+        "positives": [
+            "QIANFAN_BEARER_TOKEN=bce-v3/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw1" + "/" + "9f3c1a7b5e2d840692c4fb08d13e7a56cd90b2f4",
+            "Authorization: Bearer bce-v3/ALTAK-" + "Zq4Wr8Ty2Ui6Op0As3Df5" + "/" + "1b8e42fa07c96d35ae10b7cf248d63905af1ce72",
+            "bce-v3/ALTAK-" + "Mn7Bv5Cx3Zl9Kj1Hg6Fd4" + "/" + "7d21ce90b4af6538102e7cbd94f0a31e65d8b2c4",
+        ],
+        "negatives": [
+            # Key ID one short of 21 and one over.
+            "bce-v3/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw" + "/" + "9f3c1a7b5e2d840692c4fb08d13e7a56cd90b2f4",
+            "bce-v3/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw12" + "/" + "9f3c1a7b5e2d840692c4fb08d13e7a56cd90b2f4",
+            # Uppercase tail — the secret segment is lowercase hex.
+            "bce-v3/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw1" + "/" + "9F3C1A7B5E2D840692C4FB08D13E7A56CD90B2F4",
+            # Tail below the 32-character lower bound.
+            "bce-v3/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw1" + "/" + "9f3c1a7b5e2d840692c4fb08d1",
+            # Baidu's own masked documentation value.
+            "bce-v3/ALTAK-KZke********/f1d6ee***",
+            # Author-redacted x/X run in the tail.
+            "bce-v3/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw1" + "/" + "f560e5dc3XXXXXXX059XXXXXXXXXxxxxxxxxxxxx",
+            # Wrong version segment.
+            "bce-v2/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw1" + "/" + "9f3c1a7b5e2d840692c4fb08d13e7a56cd90b2f4",
+            # Prefix buried inside a longer run.
+            "xbce-v3/ALTAK-" + "a7Kd93Lm2Qp8Xr4Ts6Vw1" + "/" + "9f3c1a7b5e2d840692c4fb08d13e7a56cd90b2f4",
+            # Prose naming the format with no credential attached.
+            "Qianfan bearer tokens are shaped bce-v3/ALTAK-<id>/<secret>.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
