@@ -3731,6 +3731,196 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+    # -- Azure / Microsoft "identifiable" (annotated) keys, 2026-08-17 --
+    # A fixed 4-character signature at a fixed offset, derived from
+    # microsoft/security-utilities (MIT). Bodies here are deliberately
+    # transparently-synthetic alphabet sequences: structurally valid for each
+    # regex, but low-entropy enough to stay invisible to third-party secret
+    # scanners. Microsoft publishes no real literals -- its own tests generate
+    # fixtures at runtime -- so none of these has a vendor-published dummy to
+    # register as a known_test_value.
+    # Azure Cosmos DB account key -- 'ACDb' at offset 76, 88 characters total.
+    "azure_cosmos_db_key": {
+        "positives": [
+            "COSMOS_KEY=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdACDbdEfGhQ==",
+            "AccountEndpoint=https://x.documents.azure.com:443/;AccountKey=hIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKACDbKlMnOQ==;",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdACDbdEfGh==",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdacdbdEfGhQ==",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdACDbdEfGhQ==",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdACDbdEfGhQ==",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdACDbdEfGhQ==Zm9v",
+        ],
+        "min_confidence": 0.93,
+    },
+    # Azure Functions access key -- 'AzFu' at offset 44, base64URL, 56 characters.
+    "azure_functions_key": {
+        "positives": [
+            "https://app.azurewebsites.net/api/run?code=Ab-dEfGhIjK_MnOpQrStUvWxYz0123456789Ab-dEfGhAzFudEfGhA==",
+            "x-functions-key: hIjK_MnOpQrStUvWxYz0123456789Ab-dEfGhIjK_MnOAzFuK_MnOA==",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "Ab-dEfGhIjK_MnOpQrStUvWxYz0123456789Ab-dEfGhAzFudEfGh==",
+            # Signature lowercased; the alphabet is case-significant.
+            "Ab-dEfGhIjK_MnOpQrStUvWxYz0123456789Ab-dEfGhazfudEfGhA==",
+            # Body one shorter, so the signature sits one place too early.
+            "b-dEfGhIjK_MnOpQrStUvWxYz0123456789Ab-dEfGhAzFudEfGhA==",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAb-dEfGhIjK_MnOpQrStUvWxYz0123456789Ab-dEfGhAzFudEfGhA==",
+            # Same on the right (right guard).
+            "Ab-dEfGhIjK_MnOpQrStUvWxYz0123456789Ab-dEfGhAzFudEfGhA==Zm9v",
+            # Standard base64 alphabet -- Functions keys are base64URL.
+            "Ab+dEfGhIjK/MnOpQrStUvWxYz0123456789Ab+dEfGhAzFudEfGhA==",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Azure AI Search key -- 'AzSe' at offset 42, 52 alphanumerics.
+    "azure_search_key": {
+        "positives": [
+            "SEARCH_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfAzSeBdEfGh",
+            "api-key: hIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMAzSeBKlMnO",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfAzSeBdEfG",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfazseBdEfGh",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfAzSeBdEfGh",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfAzSeBdEfGh",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfAzSeBdEfGhZm9v",
+        ],
+        "min_confidence": 0.88,
+    },
+    # Azure Event Hubs SAS key -- '+AEh' at offset 33, 44 characters.
+    "azure_event_hub_key": {
+        "positives": [
+            "Endpoint=sb://n.servicebus.windows.net/;SharedAccessKeyName=send;SharedAccessKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456+AEhCdEfGh=",
+            "EVENTHUB_KEY=hIjKlMnOpQrStUvWxYz0123456789AbCd+AEhCKlMnO=",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456+AEhCdEfGh",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456+aehCdEfGh=",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456+AEhCdEfGh=",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456+AEhCdEfGh=",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456+AEhCdEfGh=Zm9v",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Azure Service Bus SAS key -- '+ASb' at offset 33, 44 characters.
+    "azure_service_bus_key": {
+        "positives": [
+            "Endpoint=sb://n.servicebus.windows.net/;SharedAccessKeyName=root;SharedAccessKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456+ASbDdEfGh=",
+            "SERVICEBUS_KEY=hIjKlMnOpQrStUvWxYz0123456789AbCd+ASbDKlMnO=",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456+ASbDdEfGh",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456+asbDdEfGh=",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456+ASbDdEfGh=",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456+ASbDdEfGh=",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456+ASbDdEfGh=Zm9v",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Azure IoT key -- 'AIoT' at offset 33, 44 characters (hub / device / DPS).
+    "azure_iot_key": {
+        "positives": [
+            "HostName=h.azure-devices.net;DeviceId=d1;SharedAccessKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456AIoTEdEfGh=",
+            "IOTHUB_KEY=hIjKlMnOpQrStUvWxYz0123456789AbCdAIoTEKlMnO=",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456AIoTEdEfGh",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456aiotEdEfGh=",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456AIoTEdEfGh=",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456AIoTEdEfGh=",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456AIoTEdEfGh=Zm9v",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Azure Container Registry key -- '+ACR' at offset 42, 52 characters.
+    "azure_container_registry_key": {
+        "positives": [
+            "docker login r.azurecr.io -u r -p AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf+ACRAdEfGh",
+            "REGISTRY_PASSWORD=hIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlM+ACRAKlMnO",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf+ACRAdEfG",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf+acrAdEfGh",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf+ACRAdEfGh",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf+ACRAdEfGh",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf+ACRAdEfGhZm9v",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Azure API Management key -- 'APIM' at offset 76, 88 characters.
+    "azure_apim_key": {
+        "positives": [
+            "Ocp-Apim-Subscription-Key: AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdAPIMdEfGhg==",
+            "APIM_KEY=hIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKAPIMKlMnOg==",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdAPIMdEfGh==",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdapimdEfGhg==",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdAPIMdEfGhg==",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdAPIMdEfGhg==",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdAPIMdEfGhg==Zm9v",
+        ],
+        "min_confidence": 0.91,
+    },
+    # Microsoft CASK -- 'JQQJ' at offset 52, 84 chars (88 with the optional tail).
+    "microsoft_cask_key": {
+        "positives": [
+            "AZURE_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpJQQJ99AFfGhIjKlMnOpQrStUKjKlMnOp",
+            "apikey: hIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWJQQJ9DBGMnOpQrStUvWxYz01LQrStUvW",
+        ],
+        "negatives": [
+            # One character short -- the signature offset no longer lines up.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpJQQJ99AFfGhIjKlMnOpQrStUKjKlMnO",
+            # Signature lowercased; the alphabet is case-significant.
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpjqqj99AFfGhIjKlMnOpQrStUKjKlMnOp",
+            # Body one shorter, so the signature sits one place too early.
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpJQQJ99AFfGhIjKlMnOpQrStUKjKlMnOp",
+            # Buried inside a longer run of the same alphabet (left guard).
+            "Zm9vAbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpJQQJ99AFfGhIjKlMnOpQrStUKjKlMnOp",
+            # Same on the right (right guard).
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpJQQJ99AFfGhIjKlMnOpQrStUKjKlMnOpZm9v",
+        ],
+        "min_confidence": 0.91,
+    },
 }
 
 # fmt: on
