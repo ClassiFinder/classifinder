@@ -7075,6 +7075,119 @@ def test_honeycomb_ingest_key_span_covers_the_key_and_preview_is_masked():
     assert key not in f.value_preview
 
 
+# --- Baidu Qianfan BCE API key ----------------------------------------------
+# Format from Baidu's own SDK test fixture:
+#   baidubce/bce-qianfan-sdk, python/qianfan/tests/chat_completion_v2_test.py
+#   bce-v3/ALTAK-<21 alphanumerics>/<lowercase hex>, 75 characters observed.
+# Every literal below is assembled by concatenation. `bce-v3/ALTAK-` tokens are
+# widely deployed and are plausibly matched by secret-scanning partner rules, so
+# no whole token is ever written as a single string in this repository.
+_BCE_PREFIX = "bce-v3/ALTAK-"
+_BCE_ID = "a7Kd93Lm2Qp8Xr4Ts6Vw1"           # 21 alphanumerics
+_BCE_HEX = "9f3c1a7b5e2d840692c4fb08d13e7a56cd90b2f4"   # 40 lowercase hex
+_BCE_KEY = _BCE_PREFIX + _BCE_ID + "/" + _BCE_HEX
+# Baidu's own SDK test fixture — registered as a known_test_value.
+_BCE_VENDOR_FIXTURE = (
+    _BCE_PREFIX + "JZasis7GfnokSLLXykKHj" + "/"
+    + "054c2e64c06db4d6019f0dbfc964e90aa3fc3ddd"
+)
+
+
+def test_baidu_qianfan_bce_api_key_true_positives():
+    """The vendor's three-segment bearer token is detected bare, in an env
+    assignment, in an Authorization header and inside JSON."""
+    for text in (
+        _BCE_KEY,
+        "QIANFAN_BEARER_TOKEN=" + _BCE_KEY,
+        "Authorization: Bearer " + _BCE_KEY,
+        '{"apiKey": "' + _BCE_KEY + '"}',
+        "APPBUILDER_TOKEN=" + _BCE_KEY,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "baidu_qianfan_bce_api_key"]
+        assert len(matched) == 1, "not detected in: " + text[:60]
+        assert matched[0].severity == "high"
+
+
+def test_baidu_qianfan_bce_api_key_segment_widths_are_enforced():
+    """Segment 1 is exactly 21 characters — the width that makes this a
+    near-zero-FP anchor — and the tail must be lowercase hex within [32, 64]."""
+    negatives = [
+        # Key ID one character short and one character over.
+        _BCE_PREFIX + _BCE_ID[:-1] + "/" + _BCE_HEX,
+        _BCE_PREFIX + _BCE_ID + "z" + "/" + _BCE_HEX,
+        # Tail below the lower bound (31 hex) and above the upper bound (65).
+        _BCE_PREFIX + _BCE_ID + "/" + _BCE_HEX[:31],
+        _BCE_PREFIX + _BCE_ID + "/" + ("a1b2c3d4e5" * 6) + "abcde",
+        # Uppercase tail — the observed secret segment is lowercase hex only.
+        _BCE_PREFIX + _BCE_ID + "/" + _BCE_HEX.upper(),
+        # Non-hex characters in the tail.
+        _BCE_PREFIX + _BCE_ID + "/" + "z" + _BCE_HEX[1:],
+        # Wrong version segment and wrong sub-prefix.
+        "bce-v2/ALTAK-" + _BCE_ID + "/" + _BCE_HEX,
+        "bce-v3/ALTAB-" + _BCE_ID + "/" + _BCE_HEX,
+        # Separator missing between the two segments.
+        _BCE_PREFIX + _BCE_ID + _BCE_HEX,
+        # Prefix buried inside a longer token run.
+        "x" + _BCE_KEY,
+        # Prose naming the format with no credential attached.
+        "Qianfan bearer tokens are shaped bce-v3/ALTAK-<id>/<secret>.",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "baidu_qianfan_bce_api_key"]
+        assert len(matched) == 0, "baidu_qianfan_bce_api_key wrongly matched: " + neg[:60]
+
+
+def test_baidu_qianfan_bce_api_key_ignores_masked_values():
+    """The values that dominate the public corpus are author-redacted. Baidu's
+    docs print `bce-v3/ALTAK-KZke********/f1d6ee***`, and third-party commits
+    print x/X runs in the tail. None of them are credentials, and the
+    exactly-21 width plus the lowercase-hex tail excludes all of them."""
+    masked = [
+        "bce-v3/ALTAK-KZke********/f1d6ee***",
+        _BCE_PREFIX + _BCE_ID + "/" + "f560e5dc3XXXXXXX059XXXXXXXXXxxxxxxxxxxxx",
+        _BCE_PREFIX + "c248" + "x" * 24 + "/" + _BCE_HEX,
+        "bce-v3/ALTAK-.../...",
+    ]
+    for text in masked:
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "baidu_qianfan_bce_api_key"]
+        assert len(matched) == 0, "masked value wrongly matched: " + text[:60]
+
+
+def test_baidu_qianfan_bce_api_key_vendor_fixture_scores_as_test_value():
+    """The token in Baidu's own SDK test file is copied into downstream
+    fixtures and tutorials; it must land at ~0.15, not fire as a leak."""
+    findings = scan(
+        "QIANFAN_BEARER_TOKEN=" + _BCE_VENDOR_FIXTURE, min_confidence=0.01
+    )
+    matched = [f for f in findings if f.type == "baidu_qianfan_bce_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_baidu_qianfan_bce_api_key_is_the_only_claimant():
+    """The token carries a 40-character hex run and a 21-character alphanumeric
+    run, either of which a generic pattern could try to carve out. Dedup must
+    leave exactly one finding, attributed to Baidu."""
+    findings = scan(_BCE_KEY, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "baidu_qianfan_bce_api_key"
+    assert findings[0].confidence >= 0.95
+
+
+def test_baidu_qianfan_bce_api_key_span_covers_the_token_and_preview_is_masked():
+    """The reported span is the credential itself — not the header name, not
+    the surrounding quotes — and the full token is never echoed back."""
+    line = '{"Authorization": "Bearer ' + _BCE_KEY + '"}'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "baidu_qianfan_bce_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _BCE_KEY
+    assert _BCE_KEY not in f.value_preview
 # =====================================================================
 # Azure / Microsoft "identifiable" (annotated) keys — 2026-08-17
 #
