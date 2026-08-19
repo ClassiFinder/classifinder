@@ -3921,6 +3921,38 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.91,
     },
+    # Block Protocol Hub API key — b10ck5.<32 lowercase hex>.<canonical UUID>.
+    # The whole three-part structure is anchored: the vendor documents the
+    # 32-hex middle segment as the deliberately non-secret public portion, so
+    # the trailing UUID is what makes the value a credential. Literals are
+    # concatenated rather than written whole.
+    "block_protocol_api_key": {
+        "positives": [
+            "api-key=b10ck5." + "9faa5da6664f7229999439d5433d4ac2" + "." + "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3ae",
+            "BLOCK_PROTOCOL_API_KEY=b10ck5." + "1e4a7c09bd6f23851ac0e97fb4d5620a" + "." + "7f2c8d41-9b6e-4a03-8c5d-1e73b90af482",
+            "b10ck5." + "0a3f96d21c7b48e5f0d9a26c8b415e73" + "." + "2d90fa61-5c48-4e7b-b031-9ae6c247f5d8",
+        ],
+        "negatives": [
+            # Public segment one short and one over 32.
+            "b10ck5." + "9faa5da6664f7229999439d5433d4ac" + "." + "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3ae",
+            "b10ck5." + "9faa5da6664f7229999439d5433d4ac2a" + "." + "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3ae",
+            # Uppercase hex — the vendor's charset is lowercase.
+            "b10ck5." + "9FAA5DA6664F7229999439D5433D4AC2" + "." + "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3ae",
+            # Private segment is not a canonical hyphenated UUID.
+            "b10ck5." + "9faa5da6664f7229999439d5433d4ac2" + "." + "c549e92a3f4b4c1d9a7e2b6f0d81c3ae",
+            # Public portion alone — a non-secret identifier, not a leak.
+            "b10ck5." + "9faa5da6664f7229999439d5433d4ac2",
+            # The vendor's own truncated WordPress placeholder.
+            "e.g. b10ck5." + "9faa5da6664f7229999439d5433d4ac2" + ".c549e92...",
+            # Near-miss protocol identifiers.
+            "b1ock5." + "9faa5da6664f7229999439d5433d4ac2" + "." + "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3ae",
+            # Identifier buried inside a longer token run.
+            "xb10ck5." + "9faa5da6664f7229999439d5433d4ac2" + "." + "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3ae",
+            # Prose naming the format with no credential attached.
+            "Block Protocol keys are shaped b10ck5.<public>.<private>.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
