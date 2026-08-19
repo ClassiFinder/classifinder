@@ -7541,3 +7541,124 @@ def test_azure_identifiable_keys_register_no_test_values():
             f"{pattern_id} registered a known_test_value; Microsoft publishes "
             f"no real literals, so any value there would be invented"
         )
+
+
+# --- Block Protocol API key --------------------------------------------------
+# Format from the vendor's own CLI and WordPress plugin:
+#   blockprotocol/blockprotocol, libs/blockprotocol/cli/commands/publish/
+#   find-api-key.js — the config template literal
+#   `api-key=b10ck5.<32 zeros>.<zero UUID>` (shape, exactly 32 + a canonical
+#   hyphenated UUID), corroborated by libs/wordpress-plugin/plugin/trunk/
+#   server/activate.php, whose input placeholder carries the real charset
+#   `e.g. b10ck5.9faa5da6664f7229999439d5433d4ac2.c549e92...`.
+# 6 + 1 + 32 + 1 + 36 = 76 characters. Literals are assembled by concatenation
+# so no whole key-shaped string is written as a single literal.
+_BP_PREFIX = "b10ck5."
+_BP_PUBLIC = "9faa5da6664f7229999439d5433d4ac2"        # 32 lowercase hex
+_BP_PRIVATE = "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3ae"    # canonical UUID
+_BP_KEY = _BP_PREFIX + _BP_PUBLIC + "." + _BP_PRIVATE
+# The all-zeros template the CLI writes into every new `.blockprotocolrc`.
+_BP_CLI_TEMPLATE = _BP_PREFIX + "0" * 32 + "." + "00000000-0000-0000-0000-000000000000"
+
+
+def test_block_protocol_api_key_true_positives():
+    """The three-segment Hub key is detected bare, in the CLI's own rc-file
+    assignment, in an env assignment, in a header and inside JSON."""
+    for text in (
+        _BP_KEY,
+        "api-key=" + _BP_KEY,
+        "BLOCK_PROTOCOL_API_KEY=" + _BP_KEY,
+        "X-Api-Key: " + _BP_KEY,
+        '{"blockprotocolApiKey": "' + _BP_KEY + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "block_protocol_api_key"]
+        assert len(matched) == 1, "not detected in: " + text[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "block_protocol"
+
+
+def test_block_protocol_api_key_full_structure_is_required():
+    """The vendor documents the 32-hex middle segment as the deliberately
+    non-secret public portion; only the trailing UUID makes the value a
+    credential. Every segment width, the separators and the lowercase-hex
+    charset are therefore enforced."""
+    negatives = [
+        # Public segment one short and one over 32.
+        _BP_PREFIX + _BP_PUBLIC[:-1] + "." + _BP_PRIVATE,
+        _BP_PREFIX + _BP_PUBLIC + "a" + "." + _BP_PRIVATE,
+        # Uppercase hex in either segment — the vendor's charset is lowercase.
+        _BP_PREFIX + _BP_PUBLIC.upper() + "." + _BP_PRIVATE,
+        _BP_PREFIX + _BP_PUBLIC + "." + _BP_PRIVATE.upper(),
+        # Non-hex character in the public segment.
+        _BP_PREFIX + "z" + _BP_PUBLIC[1:] + "." + _BP_PRIVATE,
+        # Private segment is not a canonical hyphenated UUID.
+        _BP_PREFIX + _BP_PUBLIC + "." + _BP_PRIVATE.replace("-", ""),
+        _BP_PREFIX + _BP_PUBLIC + "." + "c549e92a-3f4b-4c1d-9a7e-2b6f0d81c3a",
+        # Public portion alone — a non-secret identifier, not a leak.
+        _BP_PREFIX + _BP_PUBLIC,
+        # Wrong protocol identifier (the docs call `b10ck5` the same for all
+        # keys, so a near-miss spelling is not a Block Protocol key).
+        "b1ock5." + _BP_PUBLIC + "." + _BP_PRIVATE,
+        "block5." + _BP_PUBLIC + "." + _BP_PRIVATE,
+        "b10ck6." + _BP_PUBLIC + "." + _BP_PRIVATE,
+        # Identifier buried inside a longer token run.
+        "x" + _BP_KEY,
+        # Trailing hex character — the UUID's last group is exactly 12.
+        _BP_KEY + "f",
+        # Prose naming the format with no credential attached.
+        "Block Protocol keys are shaped b10ck5.<public>.<private>.",
+    ]
+    for neg in negatives:
+        findings = scan(neg, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "block_protocol_api_key"]
+        assert len(matched) == 0, "block_protocol_api_key wrongly matched: " + neg[:70]
+
+
+def test_block_protocol_api_key_ignores_truncated_and_masked_values():
+    """The values that dominate public samples are hand-truncated or masked.
+    The vendor's own WordPress placeholder cuts the UUID short, and redacted
+    commits print X runs; neither is a credential."""
+    masked = [
+        "e.g. " + _BP_PREFIX + _BP_PUBLIC + ".c549e92...",
+        _BP_PREFIX + _BP_PUBLIC + "." + "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+        _BP_PREFIX + "x" * 32 + "." + _BP_PRIVATE,
+        "b10ck5.<32 hex>.<uuid>",
+    ]
+    for text in masked:
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "block_protocol_api_key"]
+        assert len(matched) == 0, "masked value wrongly matched: " + text[:70]
+
+
+def test_block_protocol_api_key_cli_template_scores_as_test_value():
+    """The `blockprotocol` CLI writes this all-zeros template into every new
+    `.blockprotocolrc`, so it is the value most likely to reach a public
+    repository. It must land at ~0.15, not fire as a leak."""
+    findings = scan("api-key=" + _BP_CLI_TEMPLATE, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "block_protocol_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_block_protocol_api_key_is_the_only_claimant():
+    """The key carries a 32-character hex run and a UUID, either of which a
+    generic pattern could try to carve out. Dedup must leave exactly one
+    finding, attributed to Block Protocol."""
+    findings = scan(_BP_KEY, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "block_protocol_api_key"
+    assert findings[0].confidence >= 0.95
+
+
+def test_block_protocol_api_key_span_covers_the_key_and_preview_is_masked():
+    """The reported span is the credential itself — not the config key name,
+    not the surrounding quotes — and the full key is never echoed back."""
+    line = '{"blockprotocolApiKey": "' + _BP_KEY + '"}'
+    findings = scan(line, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "block_protocol_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start:f.span_end] == _BP_KEY
+    assert _BP_KEY not in f.value_preview
