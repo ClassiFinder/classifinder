@@ -3987,6 +3987,42 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+    # Tableau Personal Access Token secret — a prefixless fixed-width
+    # composite: 22 chars of [A-Za-z0-9+/] + '==' + ':' + 32 mixed-case
+    # alphanumerics, 57 characters total. The '==:' joint plus both fixed
+    # widths is the whole anchor. All literals are SYNTHETIC (locally
+    # generated random 16 bytes, base64'd, paired with a locally generated
+    # mixed-case tail) and assembled by concatenation.
+    "tableau_personal_access_token_secret": {
+        "positives": [
+            "7/hD1MsGUqMPFC81TeWOHQ" + "==:" + "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJ",
+            'personalAccessTokenSecret="' + "qqTomx/mRxFjl3+xWD40xA" + "==:" + "PQ1NOpDLGB55IVbmpsCWXljWZLLv1WsG" + '"',
+            "TABLEAU_PAT_SECRET=" + "8MuCTz11YlIaCxpPeSku9w" + "==:" + "3ampXQsymgRGJeQdaRijlaiNN0x7hkyd",
+        ],
+        "negatives": [
+            # Either half alone.
+            "7/hD1MsGUqMPFC81TeWOHQ" + "==",
+            "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJ",
+            # Joint incomplete: colon without padding, padding without colon.
+            "7/hD1MsGUqMPFC81TeWOHQ" + ":" + "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJ",
+            "7/hD1MsGUqMPFC81TeWOHQ" + "==" + "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJ",
+            # Widths off by one on either side.
+            "7/hD1MsGUqMPFC81TeWOH" + "==:" + "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJ",
+            "7/hD1MsGUqMPFC81TeWOHQ" + "==:" + "d3HlPAIO255XcyPzFrdbLQqHbTU43VY",
+            # Head is a tail-slice of a longer base64 blob.
+            "ZZZZ7/hD1MsGUqMPFC81TeWOHQ" + "==:" + "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJ",
+            # Tail is the leading run of a longer token.
+            "7/hD1MsGUqMPFC81TeWOHQ" + "==:" + "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJx",
+            # '<base64 md5>==:<hex md5>' checksum manifest pair — the FP surface.
+            "7/hD1MsGUqMPFC81TeWOHQ" + "==:" + "d41d8cd98f00b204e9800998ecf8427e",
+            "7/hD1MsGUqMPFC81TeWOHQ" + "==:" + "D41D8CD98F00B204E9800998ECF8427E",
+            # X-masked placeholder.
+            "XXXXXXXXXXXXXXXXXXXXXX" + "==:" + "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            # Prose naming the format with no credential attached.
+            "personalAccessTokenSecret is <22 base64 chars>==:<32 alphanumerics>.",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

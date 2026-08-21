@@ -7821,3 +7821,243 @@ def test_gc_notify_api_key_span_covers_the_key_and_preview_is_masked():
     f = matched[0]
     assert line[f.span_start : f.span_end] == _GCN_KEY
     assert _GCN_KEY not in f.value_preview
+
+
+# --- Tableau Personal Access Token secret ------------------------------------
+# Format from the vendor's own REST API authentication reference:
+#   https://help.tableau.com/current/api/rest_api/en-us/REST/
+#   rest_api_ref_authentication.htm — Tableau publishes a concrete
+#   personalAccessTokenSecret example, and the shape is a prefixless
+#   fixed-width composite: 22 characters of [A-Za-z0-9+/], the '==' padding,
+#   a ':' joint, then exactly 32 mixed-case alphanumerics. 57 characters
+#   total. The head is standard base64 decoding to exactly 16 bytes (a
+#   128-bit id), which is why the '==:' joint is structurally guaranteed and
+#   safe to anchor a prefixless pattern on.
+#
+# Every literal below is SYNTHETIC — a locally generated random 16 bytes,
+# base64-encoded, paired with a locally generated 32-character mixed-case
+# alphanumeric tail. No real-world harvested credential appears anywhere.
+# Literals are assembled by concatenation so no contiguous full-shape string
+# is written into this repository.
+_TAB_HEAD = "7/hD1MsGUqMPFC81TeWOHQ"
+_TAB_TAIL = "d3HlPAIO255XcyPzFrdbLQqHbTU43VYJ"
+_TAB_SECRET = _TAB_HEAD + "==:" + _TAB_TAIL
+# The exact literal Tableau prints in its own REST API reference.
+_TAB_VENDOR_EXAMPLE = "vFel4qtGTZ2+Po0ZWT7YWg" + "==:" + "nMmSHnQ5kJBP17ZtsBgPtuVWdYJFAbBG"
+
+
+def test_tableau_pat_secret_true_positives():
+    """The secret is detected bare, in Tableau's own tsRequest XML attribute,
+    in JSON, in an env assignment and in a YAML value."""
+    for text in (
+        _TAB_SECRET,
+        '<credentials personalAccessTokenName="ci-runner"'
+        ' personalAccessTokenSecret="' + _TAB_SECRET + '" />',
+        '{"personalAccessTokenSecret": "' + _TAB_SECRET + '"}',
+        "TABLEAU_PAT_SECRET=" + _TAB_SECRET,
+        "pat_secret: " + _TAB_SECRET,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "tableau_personal_access_token_secret"]
+        assert len(matched) == 1, "not detected in: " + text[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "tableau"
+
+
+def test_tableau_pat_secret_env_assignment_is_not_blocked_by_the_left_guard():
+    """`TABLEAU_PAT_SECRET=<secret>` is a primary carrier for this credential,
+    so '=' must NOT appear in the left boundary guard even though the head is
+    base64 and '=' is base64 padding."""
+    for prefix in ("TABLEAU_PAT_SECRET=", "export TABLEAU_PAT_SECRET=", "?patSecret="):
+        text = prefix + _TAB_SECRET
+        matched = [
+            f
+            for f in scan(text, min_confidence=0.01)
+            if f.type == "tableau_personal_access_token_secret"
+        ]
+        assert len(matched) == 1, "env/query form not matched: " + prefix
+        assert text[matched[0].span_start : matched[0].span_end] == _TAB_SECRET
+
+
+def test_tableau_pat_secret_requires_the_full_composite_joint():
+    """The '==:' joint is the entire anchor for this prefixless pattern.
+    Either half alone, a single '=' of padding, or a missing colon is not a
+    credential."""
+    negatives = [
+        # Head alone (a bare 24-character base64 blob).
+        _TAB_HEAD + "==",
+        # Tail alone (a bare 32-character alphanumeric run).
+        _TAB_TAIL,
+        # Colon present, padding missing.
+        _TAB_HEAD + ":" + _TAB_TAIL,
+        # One '=' instead of two.
+        _TAB_HEAD + "A" + "=:" + _TAB_TAIL,
+        # Padding present, colon missing.
+        _TAB_HEAD + "==" + _TAB_TAIL,
+        # Joint order reversed.
+        _TAB_HEAD + ":==" + _TAB_TAIL,
+        # Halves swapped.
+        _TAB_TAIL[:22] + "==:" + _TAB_HEAD + "AAAAAAAAAA",
+    ]
+    for neg in negatives:
+        matched = [
+            f
+            for f in scan(neg, min_confidence=0.01)
+            if f.type == "tableau_personal_access_token_secret"
+        ]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_tableau_pat_secret_widths_are_pinned():
+    """Ten independent samples all measured 22 + '==' + ':' + 32. Both widths
+    are fixed, so a character either way is not this credential."""
+    negatives = [
+        # Head 21 / 23 characters.
+        _TAB_HEAD[:-1] + "==:" + _TAB_TAIL,
+        _TAB_HEAD + "Q" + "==:" + _TAB_TAIL,
+        # Tail 31 / 33 characters.
+        _TAB_HEAD + "==:" + _TAB_TAIL[:-1],
+        _TAB_HEAD + "==:" + _TAB_TAIL + "x",
+    ]
+    for neg in negatives:
+        matched = [
+            f
+            for f in scan(neg, min_confidence=0.01)
+            if f.type == "tableau_personal_access_token_secret"
+        ]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_tableau_pat_secret_boundary_guards_reject_embedded_shapes():
+    """A prefixless pattern lives or dies on its boundaries: the head must not
+    be a tail-slice of a longer base64 blob, and the tail must not be the
+    leading run of a longer token."""
+    negatives = [
+        # Head is the last 22 characters of a longer base64 body.
+        "ZZZZ" + _TAB_SECRET,
+        "aGVsbG8" + _TAB_SECRET,
+        # Head preceded by base64's own '+' and '/' body characters.
+        "+" + _TAB_SECRET,
+        "/" + _TAB_SECRET,
+        # Tail is the leading run of a longer alphanumeric token.
+        _TAB_SECRET + "x",
+        _TAB_SECRET + "0",
+        # Tail followed by base64 padding — the whole thing is a longer blob.
+        _TAB_SECRET + "==",
+    ]
+    for neg in negatives:
+        matched = [
+            f
+            for f in scan(neg, min_confidence=0.01)
+            if f.type == "tableau_personal_access_token_secret"
+        ]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_tableau_pat_secret_ignores_checksum_manifest_pairs():
+    """The realistic false-positive surface. base64(16 bytes) is exactly the
+    wire form of an MD5 digest, and a 32-character hex digest also satisfies
+    [A-Za-z0-9]{32} — so '<base64 md5>==:<hex md5>' manifest lines would be
+    matched by a naive shape. Requiring the tail to carry BOTH an uppercase
+    and a lowercase character rejects every hex digest (hex is single-case)
+    while costing a real 32-character mixed-case tail p ~ 3e-8."""
+    negatives = [
+        # Lowercase MD5 hex — the canonical form.
+        _TAB_HEAD + "==:" + "d41d8cd98f00b204e9800998ecf8427e",
+        # Uppercase MD5 hex.
+        _TAB_HEAD + "==:" + "D41D8CD98F00B204E9800998ECF8427E",
+        # A realistic manifest line.
+        "artifact.tar.gz  " + _TAB_HEAD + "==:" + "5d41402abc4b2a76b9719d911017c592",
+        # All-lowercase and all-uppercase alphanumeric tails.
+        _TAB_HEAD + "==:" + "abcdefghij0123456789klmnopqrstuv",
+        _TAB_HEAD + "==:" + "ABCDEFGHIJ0123456789KLMNOPQRSTUV",
+        # All-digit tail.
+        _TAB_HEAD + "==:" + "01234567890123456789012345678901",
+    ]
+    for neg in negatives:
+        matched = [
+            f
+            for f in scan(neg, min_confidence=0.01)
+            if f.type == "tableau_personal_access_token_secret"
+        ]
+        assert len(matched) == 0, "checksum pair wrongly matched: " + neg[:70]
+
+
+def test_tableau_pat_secret_ignores_masked_and_placeholder_values():
+    """Hand-redacted and documentation-placeholder values are not
+    credentials."""
+    masked = [
+        'personalAccessTokenSecret="<personal access token secret>"',
+        'personalAccessTokenSecret="XXXXXXXXXXXXXXXXXXXXXX==:'
+        'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"',
+        "The secret is shaped <22 base64 chars>==:<32 alphanumerics>.",
+        "TABLEAU_PAT_SECRET=" + _TAB_HEAD + "==:" + "*" * 32,
+    ]
+    for text in masked:
+        matched = [
+            f
+            for f in scan(text, min_confidence=0.01)
+            if f.type == "tableau_personal_access_token_secret"
+        ]
+        assert len(matched) == 0, "masked value wrongly matched: " + text[:70]
+
+
+def test_tableau_pat_secret_vendor_example_scores_as_test_value():
+    """Tableau prints this exact literal in its own REST API authentication
+    reference, so it is the single most-copied value of this shape. It must
+    land at ~0.15 rather than as a live credential."""
+    findings = scan(
+        'personalAccessTokenSecret="' + _TAB_VENDOR_EXAMPLE + '"', min_confidence=0.01
+    )
+    matched = [f for f in findings if f.type == "tableau_personal_access_token_secret"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_tableau_pat_secret_survives_the_fp_wordlist_floor():
+    """confidence_base 0.90 is load-bearing. Below 0.85 the FP wordlist docks
+    -0.40, which would silently sink real secrets that merely sit in a
+    *test* / *demo* / *staging* context — and Tableau PATs are routinely
+    issued per-environment."""
+    for context in (
+        "tableau_test_pat_secret=",
+        "TABLEAU_DEMO_PAT_SECRET=",
+        "staging_pat_secret: ",
+        "sandbox personalAccessTokenSecret=",
+    ):
+        matched = [
+            f
+            for f in scan(context + _TAB_SECRET, min_confidence=0.01)
+            if f.type == "tableau_personal_access_token_secret"
+        ]
+        assert len(matched) == 1, "real secret sunk by the FP wordlist: " + context
+        assert matched[0].confidence >= 0.85, (context, matched[0].confidence)
+        assert matched[0].is_likely_test_value is False
+
+
+def test_tableau_pat_secret_is_the_only_claimant():
+    """The composite contains a 24-character base64 blob and a 32-character
+    alphanumeric run, either of which a generic pattern could try to carve
+    out. Dedup must leave exactly one finding, attributed to Tableau."""
+    findings = scan(_TAB_SECRET, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "tableau_personal_access_token_secret"
+    assert findings[0].confidence >= 0.90
+
+
+def test_tableau_pat_secret_span_covers_the_composite_and_preview_is_masked():
+    """The reported span is the whole composite — Tableau's own reference
+    shows the entire string is the secret, so a pattern that reported only the
+    32-character tail would under-report the credential — and the full secret
+    is never echoed back."""
+    line = '<credentials personalAccessTokenSecret="' + _TAB_SECRET + '" />'
+    matched = [
+        f
+        for f in scan(line, min_confidence=0.01)
+        if f.type == "tableau_personal_access_token_secret"
+    ]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _TAB_SECRET
+    assert _TAB_SECRET not in f.value_preview
