@@ -3953,6 +3953,40 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+    # GC Notify (Government of Canada Notification service) API key —
+    # gcntfy-<key name>-<service id UUID>-<secret UUID>. Anchored on the
+    # `gcntfy-` prefix AND both trailing canonical UUIDs, because the
+    # user-chosen name segment may itself contain hyphens. Literals are
+    # concatenated rather than written whole.
+    "gc_notify_api_key": {
+        "positives": [
+            "gcntfy-" + "prod_alerts" + "-26785a09-ab16-4eb0-8407-a37497a57506" + "-3d844edf-8d35-48ac-975b-e847b4f122b0",
+            "GC_NOTIFY_API_KEY=gcntfy-" + "notifications" + "-1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d" + "-9f8e7d6c-5b4a-4392-8172-6f5e4d3c2b1a",
+            "Authorization: ApiKey-v1 gcntfy-" + "cra-benefits-prod" + "-7c1e9d02-4b38-4f6a-9e15-3a8d6c04b7f2" + "-2e5b8a11-9c04-4d73-8f26-1b7e93a5c0d4",
+        ],
+        "negatives": [
+            # Only one trailing UUID — a greedy name segment plus a single
+            # UUID is the vendor sanitizer's looser shape, not a whole key.
+            "gcntfy-" + "prod_alerts" + "-26785a09-ab16-4eb0-8407-a37497a57506",
+            # Wrong prefix — the bare UK GOV.UK Notify shape is unanchorable
+            # and deliberately out of scope.
+            "prod_alerts" + "-26785a09-ab16-4eb0-8407-a37497a57506" + "-3d844edf-8d35-48ac-975b-e847b4f122b0",
+            # Near-miss prefixes.
+            "gcnotify-" + "prod_alerts" + "-26785a09-ab16-4eb0-8407-a37497a57506" + "-3d844edf-8d35-48ac-975b-e847b4f122b0",
+            "gcntfy_" + "prod_alerts" + "-26785a09-ab16-4eb0-8407-a37497a57506" + "-3d844edf-8d35-48ac-975b-e847b4f122b0",
+            # Prefix buried inside a longer token run.
+            "xgcntfy-" + "prod_alerts" + "-26785a09-ab16-4eb0-8407-a37497a57506" + "-3d844edf-8d35-48ac-975b-e847b4f122b0",
+            # Non-canonical UUID grouping in the secret half.
+            "gcntfy-" + "prod_alerts" + "-26785a09-ab16-4eb0-8407-a37497a57506" + "-3d844edf8d3548ac975be847b4f122b0",
+            # Missing the key-name segment entirely.
+            "gcntfy-26785a09-ab16-4eb0-8407-a37497a57506" + "-3d844edf-8d35-48ac-975b-e847b4f122b0",
+            # X-masked placeholder — not hex.
+            "gcntfy-" + "prod_alerts" + "-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" + "-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+            # Prose naming the format with no credential attached.
+            "GC Notify keys are shaped gcntfy-<key name>-<iss uuid>-<secret uuid>.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on

@@ -7662,3 +7662,162 @@ def test_block_protocol_api_key_span_covers_the_key_and_preview_is_masked():
     f = matched[0]
     assert line[f.span_start:f.span_end] == _BP_KEY
     assert _BP_KEY not in f.value_preview
+
+
+# --- GC Notify API key -------------------------------------------------------
+# Format from the vendor's own documentation:
+#   https://documentation.notification.canada.ca/en/start.html — GC Notify's
+#   "Get started" page documents the key as
+#   "{prefix}-{key_name}-{iss-uuid}-{secret-key-uuid}" and prints the header
+#   example `ApiKey-v1 gcntfy-my_test_key-26785a09-...-3d844edf-...`.
+#   The key-name charset is corroborated by the vendor's own PII sanitizer,
+#   cds-snc/sanitize-pii src/patterns.ts, detector `api_key_gc_notify`.
+# The fixed tail is two canonical hyphenated UUIDs joined by a hyphen:
+# 36 + 1 + 36 = 73 characters. Literals are assembled by concatenation so no
+# whole key-shaped string is written as a single literal.
+_GCN_ISS = "-26785a09-ab16-4eb0-8407-a37497a57506"
+_GCN_SECRET = "-3d844edf-8d35-48ac-975b-e847b4f122b0"
+_GCN_TAIL = _GCN_ISS + _GCN_SECRET
+_GCN_KEY = "gcntfy-" + "prod_alerts" + _GCN_TAIL
+# The exact literal GC Notify prints on its own Get-started page.
+_GCN_VENDOR_EXAMPLE = "gcntfy-" + "my_test_key" + _GCN_TAIL
+
+
+def test_gc_notify_api_key_true_positives():
+    """The key is detected bare, in the vendor's own Authorization header, in
+    an env assignment, in a YAML value and inside JSON."""
+    for text in (
+        _GCN_KEY,
+        "Authorization: ApiKey-v1 " + _GCN_KEY,
+        "GC_NOTIFY_API_KEY=" + _GCN_KEY,
+        "notify_api_key: " + _GCN_KEY,
+        '{"apiKey": "' + _GCN_KEY + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "gc_notify_api_key"]
+        assert len(matched) == 1, "not detected in: " + text[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "gc_notify"
+
+
+def test_gc_notify_api_key_accepts_hyphenated_key_names():
+    """The key name is user-chosen and may itself contain hyphens — which is
+    exactly why the pattern anchors on BOTH trailing UUIDs rather than letting
+    a greedy name segment swallow the service_id."""
+    for name in ("prod-alerts-eu", "cra-benefits-prod", "a", "a" * 64):
+        text = "gcntfy-" + name + _GCN_TAIL
+        matched = [f for f in scan(text, min_confidence=0.01) if f.type == "gc_notify_api_key"]
+        assert len(matched) == 1, "hyphenated/edge name not matched: " + name[:20]
+        assert text[matched[0].span_start : matched[0].span_end] == text
+
+
+def test_gc_notify_api_key_requires_both_trailing_uuids():
+    """One trailing UUID is the vendor sanitizer's looser shape: `gcntfy-`
+    plus a greedy name can swallow the service_id, so `gcntfy-<anything>-<uuid>`
+    would match. The credential is the service_id AND the secret; both are
+    required here."""
+    negatives = [
+        # Service_id only — no secret half.
+        "gcntfy-" + "prod_alerts" + _GCN_ISS,
+        # Secret half only.
+        "gcntfy-" + "prod_alerts" + _GCN_SECRET,
+        # No key-name segment at all.
+        "gcntfy" + _GCN_ISS + _GCN_SECRET,
+        # Second UUID truncated by one character.
+        _GCN_KEY[:-1],
+        # Second UUID one character too long.
+        _GCN_KEY + "f",
+    ]
+    for neg in negatives:
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "gc_notify_api_key"]
+        assert len(matched) == 0, "gc_notify_api_key wrongly matched: " + neg[:70]
+
+
+def test_gc_notify_api_key_requires_the_gcntfy_prefix():
+    """The Canadian `gcntfy-` prefix is the whole reason this format is
+    shippable. The upstream UK GOV.UK Notify key is a bare
+    `<name>-<uuid>-<uuid>` with no prefix — unanchorable, and deliberately out
+    of scope, so it must not match."""
+    negatives = [
+        # UK GOV.UK Notify shape: no prefix.
+        "prod_alerts" + _GCN_TAIL,
+        # Near-miss prefixes.
+        "gcnotify-" + "prod_alerts" + _GCN_TAIL,
+        "gcntify-" + "prod_alerts" + _GCN_TAIL,
+        "gcntfy_" + "prod_alerts" + _GCN_TAIL,
+        # Prefix buried inside a longer token run (left guard).
+        "xgcntfy-" + "prod_alerts" + _GCN_TAIL,
+        "0gcntfy-" + "prod_alerts" + _GCN_TAIL,
+    ]
+    for neg in negatives:
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "gc_notify_api_key"]
+        assert len(matched) == 0, "gc_notify_api_key wrongly matched: " + neg[:70]
+
+
+def test_gc_notify_api_key_ignores_masked_and_malformed_values():
+    """Hand-redacted and doc-placeholder values are not credentials."""
+    masked = [
+        "gcntfy-" + "prod_alerts" + "-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+        "-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+        "gcntfy-<key name>-<iss uuid>-<secret key uuid>",
+        "GC Notify keys look like gcntfy-your_key_name-...",
+        # Non-canonical UUID grouping (hyphens stripped from the secret half).
+        "gcntfy-" + "prod_alerts" + _GCN_ISS + "-3d844edf8d3548ac975be847b4f122b0",
+    ]
+    for text in masked:
+        matched = [f for f in scan(text, min_confidence=0.01) if f.type == "gc_notify_api_key"]
+        assert len(matched) == 0, "masked value wrongly matched: " + text[:70]
+
+
+def test_gc_notify_api_key_vendor_example_scores_as_test_value():
+    """GC Notify prints this exact literal on its own Get-started page, so it
+    is the single most-copied GC-Notify-shaped value. It must land at ~0.15."""
+    findings = scan("Authorization: ApiKey-v1 " + _GCN_VENDOR_EXAMPLE, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "gc_notify_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_gc_notify_api_key_survives_the_fp_wordlist_floor():
+    """The vendor names its own example `my_test_key`, so real operators name
+    real keys `*test*` / `*demo*` / `*staging*` too. The FP wordlist docks
+    -0.40 only below confidence_base 0.85; this pattern sits at 0.95 precisely
+    so those real keys still surface as high-confidence findings rather than
+    silently sinking below min_confidence."""
+    for name in ("my_test_key", "demo_sender", "staging_alerts", "sandbox_test"):
+        # A DIFFERENT UUID pair from the vendor's published example, so this is
+        # a real key that merely happens to be named like a test one.
+        key = (
+            "gcntfy-" + name
+            + "-1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+            + "-9f8e7d6c-5b4a-4392-8172-6f5e4d3c2b1a"
+        )
+        matched = [
+            f for f in scan("api_key=" + key, min_confidence=0.01)
+            if f.type == "gc_notify_api_key"
+        ]
+        assert len(matched) == 1, "real key sunk by the FP wordlist: " + name
+        assert matched[0].confidence >= 0.9, (name, matched[0].confidence)
+        assert matched[0].is_likely_test_value is False
+
+
+def test_gc_notify_api_key_is_the_only_claimant():
+    """The key carries two UUIDs and a long hyphenated run, either of which a
+    generic pattern could try to carve out. Dedup must leave exactly one
+    finding, attributed to GC Notify."""
+    findings = scan(_GCN_KEY, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "gc_notify_api_key"
+    assert findings[0].confidence >= 0.95
+
+
+def test_gc_notify_api_key_span_covers_the_key_and_preview_is_masked():
+    """The reported span is the credential itself — not the `ApiKey-v1` header
+    scheme, not the surrounding quotes — and the full key is never echoed."""
+    line = 'Authorization: ApiKey-v1 ' + _GCN_KEY
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "gc_notify_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _GCN_KEY
+    assert _GCN_KEY not in f.value_preview
