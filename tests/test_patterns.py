@@ -8061,3 +8061,199 @@ def test_tableau_pat_secret_span_covers_the_composite_and_preview_is_masked():
     f = matched[0]
     assert line[f.span_start : f.span_end] == _TAB_SECRET
     assert _TAB_SECRET not in f.value_preview
+
+
+# --- Ably API key ------------------------------------------------------------
+# Format from the vendor's own auth documentation:
+#   https://ably.com/docs/auth — Ably states the format verbatim, "An Ably API
+#   key string has the following format: [public app ID].[public key ID]:[API
+#   key secret]", and renders a concrete labelled example. The whole composite
+#   is the credential: it is passed as `key` to Ably.Realtime / Ably.Rest and
+#   as HTTP basic auth, so reporting only the secret half would under-report
+#   the leak.
+#
+# The 43-character secret is the anchor and is a DERIVED constant, not a width
+# read off one sample: the secret is unpadded base64url and decodes to exactly
+# 32 bytes, and 43 is the unique unpadded-base64url length for a 256-bit key
+# (31 bytes -> 42, 33 bytes -> 44). The two public segments are attested only
+# at n=1, so they stay deliberately loose {4,10} and nothing is invented.
+#
+# Every credential literal below is SYNTHETIC — locally generated random 32
+# bytes, base64url-encoded unpadded, paired with locally generated 6-character
+# segments — and assembled by concatenation, so no contiguous full-shape
+# literal is written into this repository.
+_ABLY_PUB = "BVGYGp.pAYwva"
+_ABLY_SECRET_SEG = "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpA"
+_ABLY_KEY = _ABLY_PUB + ":" + _ABLY_SECRET_SEG
+# The single key literal Ably publishes in its own auth documentation.
+_ABLY_VENDOR_EXAMPLE = (
+    "I2E_JQ" + "." + "OqUdfg" + ":" + "EVKVTCBlzLBPYJiCZTsIW_pqylJ9WVRB5K9P19Ap1y0"
+)
+
+
+def test_ably_api_key_true_positives():
+    """The key is detected bare, in an env assignment, in the JS client's key
+    option, in YAML and in a basic-auth URL."""
+    for text in (
+        _ABLY_KEY,
+        "ABLY_API_KEY=" + _ABLY_KEY,
+        'const client = new Ably.Realtime({ key: "' + _ABLY_KEY + '" });',
+        "ably:\n  key: " + _ABLY_KEY,
+        "https://" + _ABLY_KEY + "@rest.ably.io/channels/alerts/messages",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "ably_api_key"]
+        assert len(matched) == 1, "not detected in: " + text[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "ably"
+
+
+def test_ably_api_key_secret_width_is_pinned_at_43():
+    """43 is the unique unpadded-base64url length for a 256-bit key, so it is
+    the whole anchor for this prefixless shape. One character either way is
+    not an Ably secret."""
+    for neg in (
+        _ABLY_PUB + ":" + _ABLY_SECRET_SEG[:-1],
+        _ABLY_PUB + ":" + _ABLY_SECRET_SEG[:-2],
+        _ABLY_PUB + ":" + _ABLY_SECRET_SEG + "X",
+        _ABLY_PUB + ":" + _ABLY_SECRET_SEG + "Xy",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "ably_api_key"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_ably_api_key_requires_both_joints():
+    """The dot and the colon are both structural. Either half alone, or a
+    composite missing one joint, is not a credential."""
+    for neg in (
+        _ABLY_SECRET_SEG,
+        _ABLY_PUB,
+        "BVGYGppAYwva" + ":" + _ABLY_SECRET_SEG,
+        _ABLY_PUB + _ABLY_SECRET_SEG,
+        _ABLY_PUB + "." + _ABLY_SECRET_SEG,
+        "BVGYGp" + ":" + "pAYwva" + "." + _ABLY_SECRET_SEG,
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "ably_api_key"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_ably_api_key_left_guard_rejects_longer_dotted_paths():
+    """The left guard carries '.' as well as the key charset. Without it the
+    pattern would bite the trailing two segments of any dotted path that
+    happens to be followed by a 43-character base64url value — a Gradle
+    coordinate, a namespaced config key, a Java package. A real key has
+    exactly one dot."""
+    for neg in (
+        "com.example.myapp.service" + ":" + _ABLY_SECRET_SEG,
+        "org.springframework.boot.starter" + ":" + _ABLY_SECRET_SEG,
+        "logging.level.root.handler" + ":" + _ABLY_SECRET_SEG,
+        "a." + _ABLY_KEY,
+        "prefix" + _ABLY_KEY,
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "ably_api_key"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_ably_api_key_right_guard_rejects_longer_runs_and_padded_base64():
+    """The right guard carries '=': a 43-character base64url run FOLLOWED by
+    '=' is PADDED base64 of 32 bytes — a digest — whereas an Ably secret is
+    always unpadded."""
+    for neg in (
+        _ABLY_KEY + "=",
+        _ABLY_KEY + "==",
+        _ABLY_KEY + "x",
+        _ABLY_KEY + "_",
+        _ABLY_KEY + "-",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "ably_api_key"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_ably_api_key_ignores_the_dotted_colon_strings_a_loose_shape_collided_on():
+    """These are real strings from the test corpus and from Ably's own
+    dependency manifests. A loose `x.y:z` with no width anchor matched all of
+    them; the {43} anchor is what makes this pattern shippable."""
+    for neg in (
+        "ably.chat:chat-extensions-compose",
+        "google.firebase:firebase-messaging-ktx",
+        "Format.msgpack:i.Format.json",
+        "this.data:d.isBuffer",
+        "io.ably:ably-java:1.2.0",
+        "androidx.compose.ui:ui-tooling-preview",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "ably_api_key"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_ably_api_key_ignores_masked_and_placeholder_values():
+    """confidence_base 0.90 sits ABOVE the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices masked values down — the
+    mixed-case lookaheads have to do it. A random 43-character base64url
+    string lacks lowercase (or uppercase) with probability ~2e-10, so this
+    costs essentially no recall."""
+    for neg in (
+        _ABLY_PUB + ":" + "X" * 43,
+        _ABLY_PUB + ":" + "x" * 43,
+        _ABLY_PUB + ":" + "0" * 43,
+        _ABLY_PUB + ":" + "_" * 43,
+        # A lowercase-hex digest padded out to 43 characters.
+        _ABLY_PUB + ":" + "d41d8cd98f00b204e9800998ecf8427e" + "0123456789a",
+        'ABLY_API_KEY="<your app id>.<your key id>:<your secret>"',
+        "An Ably API key looks like [app ID].[key ID]:[secret].",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "ably_api_key"]
+        assert len(matched) == 0, "placeholder wrongly matched: " + neg[:70]
+
+
+def test_ably_api_key_vendor_example_scores_as_test_value():
+    """Ably prints this exact literal in its own auth documentation, so it is
+    the single most-copied value of this shape. It must land at ~0.15 rather
+    than as a live credential."""
+    findings = scan('key: "' + _ABLY_VENDOR_EXAMPLE + '"', min_confidence=0.01)
+    matched = [f for f in findings if f.type == "ably_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_ably_api_key_survives_the_fp_wordlist_floor():
+    """confidence_base 0.90 is a floor, not a preference. Below 0.85 the FP
+    wordlist docks -0.40, which would silently sink real keys that merely sit
+    in a *test* / *demo* / *staging* context — and Ably keys are routinely
+    issued per-environment (an app has separate dev and prod keys)."""
+    for context in (
+        "ABLY_TEST_API_KEY=",
+        "ably_demo_key: ",
+        "staging_ably_key=",
+        "sandbox ably key ",
+    ):
+        matched = [
+            f for f in scan(context + _ABLY_KEY, min_confidence=0.01) if f.type == "ably_api_key"
+        ]
+        assert len(matched) == 1, "real key sunk by the FP wordlist: " + context
+        assert matched[0].confidence >= 0.85, (context, matched[0].confidence)
+        assert matched[0].is_likely_test_value is False
+
+
+def test_ably_api_key_is_the_only_claimant():
+    """The composite contains a 43-character high-entropy run that a generic
+    pattern could try to carve out. Dedup must leave exactly one finding,
+    attributed to Ably."""
+    findings = scan(_ABLY_KEY, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "ably_api_key"
+    assert findings[0].confidence >= 0.90
+
+
+def test_ably_api_key_span_covers_the_whole_composite_and_preview_is_masked():
+    """Ably's docs show the whole `appID.keyID:secret` string is the key, and
+    it is what the client library and basic auth consume — so a pattern that
+    reported only the secret half would under-report the credential. The full
+    key is never echoed back."""
+    line = 'const ably = new Ably.Rest({ key: "' + _ABLY_KEY + '" });'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "ably_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _ABLY_KEY
+    assert _ABLY_KEY not in f.value_preview
+    assert _ABLY_SECRET_SEG not in f.value_preview

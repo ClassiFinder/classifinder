@@ -4023,6 +4023,51 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Ably API key — a prefixless three-part composite:
+    # [public app ID].[public key ID]:[43-character unpadded base64url secret].
+    # The 43 is derived, not measured from one sample: the secret decodes to
+    # exactly 32 bytes, and 43 is the unique unpadded-base64url length for a
+    # 256-bit key. The two public segments are deliberately loose {4,10}.
+    # All literals here are SYNTHETIC (locally generated random 32 bytes,
+    # base64url-encoded, paired with locally generated 6-character segments)
+    # and assembled by concatenation.
+    "ably_api_key": {
+        "positives": [
+            "BVGYGp.pAYwva" + ":" + "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpA",
+            "ABLY_API_KEY=" + "Uk7ORB.LAz2w9" + ":" + "9rRmUARX4wQ1hLKpSQ8OBv8iySvqjupkS7ZvG_q_M_Y",
+            'new Ably.Realtime({ key: "' + "6boq3p.2M7rAm" + ":" + "8CfKVUuLlxbT9dUZeT_Q8pLVqzDRxxFgBT8_IDL_sn4" + '" })',
+            # HTTP basic auth carrier: appID.keyID as user, secret as password.
+            "https://" + "F7Xgry.dYBqmG" + ":" + "Oh0W8SN11Rig6MuzX7K0Zwuath8bK1ewc-IY-eTYyKQ" + "@rest.ably.io/time",
+        ],
+        "negatives": [
+            # Secret alone, and the public halves alone.
+            "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpA",
+            "BVGYGp.pAYwva",
+            # Secret one character short / one character long.
+            "BVGYGp.pAYwva" + ":" + "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHp",
+            "BVGYGp.pAYwva" + ":" + "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpAX",
+            # Padded base64 of 32 bytes — a digest, not an Ably secret.
+            "BVGYGp.pAYwva" + ":" + "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpA" + "=",
+            # Trailing segments of a longer dotted path — the FP surface a
+            # loose x.y:z would fire on.
+            "com.example.myapp.service" + ":" + "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpA",
+            # Real strings a loose x.y:z collided on in the corpus.
+            "ably.chat:chat-extensions-compose",
+            "google.firebase:firebase-messaging-ktx",
+            "Format.msgpack:i.Format.json",
+            "this.data:d.isBuffer",
+            # Masked placeholders: all-upper and all-lower fail the mixed-case
+            # lookaheads.
+            "BVGYGp.pAYwva" + ":" + "X" * 43,
+            "BVGYGp.pAYwva" + ":" + "x" * 43,
+            # Missing the dot joint, and missing the colon joint.
+            "BVGYGppAYwva" + ":" + "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpA",
+            "BVGYGp.pAYwva" + "oiRIqYMUS62nhXEPMgFSGVoMh0efB2PHhiGopYgkHpA",
+            # Prose naming the format with no credential attached.
+            "An Ably API key looks like [app ID].[key ID]:[secret].",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
