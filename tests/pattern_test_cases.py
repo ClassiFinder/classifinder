@@ -4110,6 +4110,227 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+
+    # ── 2026-08-24 batch ─────────────────────────────────────────────────
+    #
+    # Every credential-shaped literal below is assembled by concatenation.
+    # age, Scalingo, OpenShift and Docker Swarm tokens are all in GitHub's
+    # secret-scanning catalog, and a contiguous literal here would trip push
+    # protection on the public engine repository.
+
+    # age secret key — Bech32: 'AGE-SECRET-KEY-1' + 58 data characters
+    # (52 for the 256-bit X25519 scalar at 5 bits/char, + 6 checksum). The
+    # charset is the Bech32 alphabet uppercased, which excludes 1/B/I/O.
+    "age_secret_key": {
+        "positives": [
+            "AGE-SECRET-KEY-" + "1A5ZEXU7PTMADR5AUAT3M09C9AVW5H7CEMSLDC2GQ2P399N7HSXSYJ8GNDA",
+            "AGE_SECRET_KEY=" + "AGE-SECRET-KEY-" + "1TVTZ8SEDGN5F9CN0Q76HXE2P4A3RMW5UJKD3G7VYSCH2LP69ZTQSW0MQKQ",
+            'sops --decrypt --age "' + "AGE-SECRET-KEY-" + "1H4E2ZQ6XKD9NM7VYT3RGWU5PC0AJFS8LH2DVQ9XZ4M7KGNE5TYQSD6WPAQ" + '"',
+        ],
+        "negatives": [
+            # Post-quantum variant: HRP 'AGE-SECRET-KEY-PQ-' with a 60-character
+            # data part. Anchoring on 'AGE-SECRET-KEY-1' makes it unmatchable —
+            # a prefix-only anchor would report a truncated, wrong span.
+            "AGE-SECRET-KEY-PQ-" + "1A5ZEXU7PTMADR5AUAT3M09C9AVW5H7CEMSLDC2GQ2P399N7HSXSYJ8GNDAQZ",
+            # The PUBLIC recipient half — not a credential.
+            "age1" + "ql3z7hjy9kd4tw5exmnvu2r0gs6cf8a3pjq4z0mdxv7ye9nl2ktqsr5w8h",
+            # One data character short / one long.
+            "AGE-SECRET-KEY-" + "1A5ZEXU7PTMADR5AUAT3M09C9AVW5H7CEMSLDC2GQ2P399N7HSXSYJ8GND",
+            "AGE-SECRET-KEY-" + "1A5ZEXU7PTMADR5AUAT3M09C9AVW5H7CEMSLDC2GQ2P399N7HSXSYJ8GNDAQ",
+            # Bech32 excludes B, I, O and 1 — a body carrying them is not a key.
+            "AGE-SECRET-KEY-" + "1BIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBIOBI",
+            # Prose about the format with no key attached.
+            "Run age-keygen and it prints AGE-SECRET-KEY-1... to stdout.",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # OpenShift OAuth access token — 'sha256~' + 43 base64url characters.
+    # 43 is the unique unpadded-base64url length for a 32-byte SHA-256 digest.
+    "openshift_oauth_access_token": {
+        "positives": [
+            "sha256~" + "4-T0dEdcxScfZ3cUTBAnF8MDJPbxxDGKUPqSF_wwvyG",
+            "oc login https://api.ocp.example.com:6443 --token=" + "sha256~" + "Kf2mQ8vL4mR9bXtY6sKdG1oPuTiWxZyA0BSq8w-cF7h",
+            "Authorization: Bearer " + "sha256~" + "gH9jXtY6sKdG1oPuTiWxZyA0BSq8w-cF7hJ2nQ8vL4m",
+        ],
+        "negatives": [
+            # 42 and 44 characters — neither is a 32-byte digest.
+            "sha256~" + "4-T0dEdcxScfZ3cUTBAnF8MDJPbxxDGKUPqSF_wwvy",
+            "sha256~" + "4-T0dEdcxScfZ3cUTBAnF8MDJPbxxDGKUPqSF_wwvyGX",
+            # A hex SHA-256 checksum line — 'sha256' with no '~'.
+            "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            # The body alone, unprefixed.
+            "4-T0dEdcxScfZ3cUTBAnF8MDJPbxxDGKUPqSF_wwvyG",
+            # Prose.
+            "OpenShift tokens are of the form sha256~<43 characters>.",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # Scalingo API token — 'tk-us-' + 48 base64url characters. Infinite
+    # lifetime unless revoked, hence critical.
+    "scalingo_api_token": {
+        "positives": [
+            "tk-us-" + "d9W95GIPASOT4DeUr1EU5PHBEbBSri7Lqh9LhFv-LAvG2Feo",
+            "SCALINGO_API_TOKEN=" + "tk-us-" + "Zq7NmR4xKd2Wv9Bt6Yc1Ls8Ph3Ej5Gu0Ao-FiXr_TnQwSyMz",
+            'scalingo login --api-token "' + "tk-us-" + "Mv3Kp8Ln2Qr7Ts5Wx1Zy9Bd4Fg6Hj0Ac-EiUo_RmNbYlPqAb" + '"',
+        ],
+        "negatives": [
+            # 47 and 49 characters.
+            "tk-us-" + "d9W95GIPASOT4DeUr1EU5PHBEbBSri7Lqh9LhFv-LAvG2Fe",
+            "tk-us-" + "d9W95GIPASOT4DeUr1EU5PHBEbBSri7Lqh9LhFv-LAvG2FeoX",
+            # A different region prefix is not the shipped, verified variant.
+            "tk-eu-" + "d9W95GIPASOT4DeUr1EU5PHBEbBSri7Lqh9LhFv-LAvG2Feo",
+            # Prefix buried inside a longer identifier — the left guard.
+            "Xtk-us-" + "d9W95GIPASOT4DeUr1EU5PHBEbBSri7Lqh9LhFv-LAvG2Feo",
+            "Scalingo tokens start with tk-us- and never expire.",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # SettleMint personal access token — 'sm_pat_' + 16 or more alphanumerics.
+    # Body charset is strictly [0-9a-zA-Z] per the vendor SDK masking regex.
+    "settlemint_personal_access_token": {
+        "positives": [
+            "sm_pat_" + "ecjgB6yqzvXbFSad",
+            "SETTLEMINT_ACCESS_TOKEN=" + "sm_pat_" + "Kq7Rm2Xt9Vb4Ln6Pz8Ay3Cw",
+        ],
+        "negatives": [
+            # Fifteen characters — below the vendor's rendered floor.
+            "sm_pat_" + "ecjgB6yqzvXbFSa",
+            # The sibling families are separate credentials with different
+            # blast radii; sm_aat_ has its own pattern and sm_sat_ is not
+            # shipped, so neither may resolve to the personal-token type.
+            "sm_aat_" + "hvOh0ZvbkmhfCsI8",
+            "sm_sat_" + "ecjgB6yqzvXbFSad",
+            # Hyphen and underscore are outside the body charset.
+            "sm_pat_" + "ecjgB6yq-zvXbFSad",
+            "A SettleMint personal access token is prefixed sm_pat_.",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # SettleMint application access token — 'sm_aat_' + 16 or more alphanumerics.
+    "settlemint_application_access_token": {
+        "positives": [
+            "sm_aat_" + "hvOh0ZvbkmhfCsI8",
+            "SETTLEMINT_ACCESS_TOKEN=" + "sm_aat_" + "Tz4Nq8Wd2Vy6Jm1Bx5Rk7Lp",
+        ],
+        "negatives": [
+            "sm_aat_" + "hvOh0ZvbkmhfCsI",
+            "sm_pat_" + "ecjgB6yqzvXbFSad",
+            "sm_sat_" + "hvOh0ZvbkmhfCsI8",
+            "Application access tokens carry the sm_aat_ prefix.",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # 42 Intra OAuth client secret — 's-s4t2ud-' / 's-s4t2af-' + 64 lowercase
+    # hex. The leading 's-' is the ONLY thing separating it from the public
+    # 'u-s4t2ud-' application UID.
+    "intra42_client_secret": {
+        "positives": [
+            "s-s4t2ud-" + "84a682a2ec6848a2b72bc7c6508ea7f7648d6cd7f08841a86ed9ca91e5788c00",
+            "EXPO_PUBLIC_API_42_SECRET=" + "s-s4t2ud-" + "3f7b21c9d0e845a6b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f607182",
+            "s-s4t2af-" + "9c1d2e3f405162738495a6b7c8d9e0f10213243546576879a0b1c2d3e4f50617",
+        ],
+        "negatives": [
+            # THE application UID. It is PUBLIC, ships in front-end code by
+            # design, and differs only in the leading character. Reporting it
+            # would be reporting a non-credential as a leak.
+            "u-s4t2ud-" + "84a682a2ec6848a2b72bc7c6508ea7f7648d6cd7f08841a86ed9ca91e5788c00",
+            "EXPO_PUBLIC_API_42_UID=" + "u-s4t2ud-" + "84a682a2ec6848a2b72bc7c6508ea7f7648d6cd7f08841a86ed9ca91e5788c00",
+            # 63 and 65 hex characters.
+            "s-s4t2ud-" + "84a682a2ec6848a2b72bc7c6508ea7f7648d6cd7f08841a86ed9ca91e5788c0",
+            "s-s4t2ud-" + "84a682a2ec6848a2b72bc7c6508ea7f7648d6cd7f08841a86ed9ca91e5788c001",
+            # Uppercase hex — 42's values are lowercase, and the narrow class
+            # is what rejects masked lookalikes.
+            "s-s4t2ud-" + "84A682A2EC6848A2B72BC7C6508EA7F7648D6CD7F08841A86ED9CA91E5788C00",
+            # The prefix as the tail of something longer — the left guard.
+            "Xs-s4t2ud-" + "84a682a2ec6848a2b72bc7c6508ea7f7648d6cd7f08841a86ed9ca91e5788c00",
+            "The 42 client secret is prefixed s-s4t2ud- and the UID u-s4t2ud-.",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # Docker Swarm join token — 'SWMTKN-1-' (or the FIPS 'SWMTKN-2-[01]-')
+    # + 50 base-36 characters (root CA SHA-256 digest, zero-left-padded)
+    # + '-' + 25 base-36 characters (a 16-byte secret, likewise padded).
+    "docker_swarm_join_token": {
+        "positives": [
+            "SWMTKN-1-" + "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh1" + "-" + "s4ck6i77oj7v75vk60dq0x3lr",
+            "docker swarm join --token " + "SWMTKN-1-" + "2b8dq0w4zf6hj1n5rt9xc3vk7lp2mg8sy0ae6ud4ib3oq5wnz7" + "-" + "0hj4mv8rq2ts6yc1xn5ge" + "9wb0",
+            # FIPS v2 form: one extra [01] flag segment, same two widths.
+            "SWMTKN-2-1-" + "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh1" + "-" + "s4ck6i77oj7v75vk60dq0x3lr",
+            "SWMTKN-2-0-" + "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh1" + "-" + "s4ck6i77oj7v75vk60dq0x3lr",
+        ],
+        "negatives": [
+            # 49 / 51 digest characters and a 24-character secret.
+            "SWMTKN-1-" + "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh" + "-" + "s4ck6i77oj7v75vk60dq0x3lr",
+            "SWMTKN-1-" + "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh12" + "-" + "s4ck6i77oj7v75vk60dq0x3lr",
+            "SWMTKN-1-" + "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh1" + "-" + "s4ck6i77oj7v75vk60dq0x3l",
+            # Base 36 is lowercase-only — uppercase is a masked lookalike.
+            "SWMTKN-1-" + "19RUXKW7J5P9I32G516SLWGASA6AD1PV05G83PAGIGEVA5NBH1" + "-" + "S4CK6I77OJ7V75VK60DQ0X3LR",
+            # An unknown version flag.
+            "SWMTKN-3-" + "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh1" + "-" + "s4ck6i77oj7v75vk60dq0x3lr",
+            "Rotate with: docker swarm join-token --rotate manager",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # HashiCorp Vault batch token — 'hvb.' + at least 24 alphanumerics.
+    # Sibling of the existing vault_token ('hvs.'), which must keep its own
+    # attribution.
+    "vault_batch_token": {
+        "positives": [
+            "hvb." + "pFpAFg4DTVsQavsPwsJN3zDLUKsY",
+            "VAULT_TOKEN=" + "hvb." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        ],
+        "negatives": [
+            # A service token — must stay attributed to vault_token.
+            "hvs." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+            # A recovery token — not shipped.
+            "hvr." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+            # 23 characters — below the vendor's documented floor.
+            "hvb." + "AbCdEfGhIjKlMnOpQrStUvW",
+            # '.' and '-' are outside the body charset.
+            "hvb." + "AbCdEfGhIjKl-MnOpQrStUvWxYz",
+            "Batch tokens are prefixed hvb. and are not renewable.",
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # Yandex Passport OAuth token — 'y', a digit 0-3, '_', then 55 base64url
+    # characters. The long-lived credential exchanged for Yandex Cloud IAM
+    # tokens, so far more dangerous than the ~12h yandex_cloud_iam_token.
+    "yandex_passport_oauth_token": {
+        "positives": [
+            "y0_" + "7FeyVSPNwmZlMMmJkKWr3x2i9V1zLmyH-RQwLR1WmdrTgazXoATAURG",
+            "YANDEX_OAUTH_TOKEN=" + "y3_" + "Kd4Wv9Bt6Yc1Ls8Ph3Ej5Gu0AoFiXrTnQwSyMzRp2Nb7Jm-VkHd_UeA",
+            'Authorization: OAuth ' + "y1_" + "Mv3Kp8Ln2Qr7Ts5Wx1Zy9Bd4Fg6Hj0AcEiUoRmNbYlPq-Sd7Vt_Ge2A",
+        ],
+        "negatives": [
+            # Digit outside the vendor's documented 0-3 range.
+            "y4_" + "7FeyVSPNwmZlMMmJkKWr3x2i9V1zLmyH-RQwLR1WmdrTgazXoATAURG",
+            "y9_" + "7FeyVSPNwmZlMMmJkKWr3x2i9V1zLmyH-RQwLR1WmdrTgazXoATAURG",
+            # 54 and 56 body characters.
+            "y0_" + "7FeyVSPNwmZlMMmJkKWr3x2i9V1zLmyH-RQwLR1WmdrTgazXoATAUR",
+            "y0_" + "7FeyVSPNwmZlMMmJkKWr3x2i9V1zLmyH-RQwLR1WmdrTgazXoATAURGX",
+            # Masked placeholders: single-case bodies fail the mixed-case
+            # lookaheads, which is the whole placeholder defence for a
+            # three-character anchor.
+            "y0_" + "x" * 55,
+            "y0_" + "X" * 55,
+            "y0_" + "0" * 55,
+            # Inside a longer base64url run — the left guard means the pattern
+            # can never fire inside a JWT payload or a base64 blob.
+            "Zy0_" + "7FeyVSPNwmZlMMmJkKWr3x2i9V1zLmyH-RQwLR1WmdrTgazXoATAURG",
+            # A Yandex Cloud IAM token is a different credential ('t1.').
+            "t1.9euelZqTk5aSlpuVjceZm5CVj5uXme3rnpWaks-Sy5nJnJmXjpiXlJPHnJvl",
+            "Yandex OAuth tokens start with y, a digit 0-3 and an underscore.",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
