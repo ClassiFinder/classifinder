@@ -8257,3 +8257,207 @@ def test_ably_api_key_span_covers_the_whole_composite_and_preview_is_masked():
     assert line[f.span_start : f.span_end] == _ABLY_KEY
     assert _ABLY_KEY not in f.value_preview
     assert _ABLY_SECRET_SEG not in f.value_preview
+
+
+# --- Logfire write token -----------------------------------------------------
+# Format from the vendor's OWN parsing regex, not from samples:
+#   https://github.com/pydantic/logfire/blob/main/logfire/_internal/auth.py
+#   PYDANTIC_LOGFIRE_TOKEN_PATTERN, compiled from
+#   ^(?P<safe_part>pylf_v(?P<version>[0-9]+)_(?P<region>[a-z]+)_
+#   (?:(?P<organization_id>[0-9a-f]{8}-...-[0-9a-f]{12})_)?)
+#   (?P<token>[a-zA-Z0-9]+)$
+# The vendor also classifies the string as secret-bearing itself —
+# logfire/_internal/scrubbing.py lists r'pylf_v\d+_' in DEFAULT_PATTERNS.
+#
+# The 44-character body is EMPIRICAL, not vendor-attested: the vendor leaves
+# the body unbounded. Every realistic full-length token in the vendor repo is
+# exactly 44 characters across two distinct bodies and five region/version
+# combinations, and the width is what excludes the repo's own toy stubs
+# ('pylf_v1_us_token1', 'pylf_v1_us_test_token'), which are pinned below.
+#
+# Every credential literal here is SYNTHETIC — locally generated 44-character
+# base62 runs — and assembled by concatenation, so no contiguous full-shape
+# literal is written into this repository.
+_LOGFIRE_BODY = "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5O"
+_LOGFIRE_BODY_2 = "Zgy4hGLUq6BCbe9o5SVaRr9Via2fuqOfo5i1fsIZjVsi"
+_LOGFIRE_ORG_UUID = "edcaf33d-3589-9929-9b36-6d62acd45096"
+_LOGFIRE_TOKEN = "pylf_" + "v1_us_" + _LOGFIRE_BODY
+_LOGFIRE_TOKEN_ORG = "pylf_" + "v2_stagingeu_" + _LOGFIRE_ORG_UUID + "_" + _LOGFIRE_BODY_2
+# The body pydantic/logfire ships in its own test fixtures.
+_LOGFIRE_VENDOR_FIXTURE = "pylf_" + "v1_us_" + "0kYhc414Ys2FNDRdt5vFB05xFx5NjVcbcBMy4Kp6PH0W"
+
+
+def test_logfire_write_token_true_positives():
+    """Detected bare, in both env-var carriers, in the SDK's configure call, in
+    YAML and in a query string."""
+    for text in (
+        _LOGFIRE_TOKEN,
+        "LOGFIRE_TOKEN=" + _LOGFIRE_TOKEN,
+        "PYDANTIC_LOGFIRE_TOKEN=" + _LOGFIRE_TOKEN,
+        'logfire.configure(token="' + _LOGFIRE_TOKEN + '")',
+        "logfire:\n  token: " + _LOGFIRE_TOKEN,
+        "https://logfire-api.pydantic.dev/v1/traces?token=" + _LOGFIRE_TOKEN,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "logfire_write_token"]
+        assert len(matched) == 1, "not detected in: " + text[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "logfire"
+
+
+def test_logfire_write_token_optional_organization_uuid_branch():
+    """The v2 org-scoped form inserts a lowercase-hex UUID plus '_' between the
+    region and the body. The vendor's regex makes that segment optional, so
+    both forms must be detected and the UUID must be part of the reported
+    credential rather than a separate finding."""
+    line = 'LOGFIRE_TOKEN="' + _LOGFIRE_TOKEN_ORG + '"'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "logfire_write_token"]
+    assert len(matched) == 1
+    assert line[matched[0].span_start : matched[0].span_end] == _LOGFIRE_TOKEN_ORG
+
+
+def test_logfire_write_token_region_is_not_pinned_to_us_and_eu():
+    """The REGIONS dict ships only 'us' and 'eu', but the vendor's own fixtures
+    carry 'local', 'stagingeu' and 'unknownregion'. Pinning the two production
+    regions would blind the pattern to real tokens, so the region stays
+    [a-z]{2,20}."""
+    for region in ("us", "eu", "local", "stagingeu", "unknownregion"):
+        token = "pylf_" + "v1_" + region + "_" + _LOGFIRE_BODY
+        matched = [f for f in scan(token, min_confidence=0.01) if f.type == "logfire_write_token"]
+        assert len(matched) == 1, "region rejected: " + region
+        assert matched[0].confidence >= 0.95
+
+
+def test_logfire_write_token_body_width_is_pinned_at_44():
+    """The vendor leaves the body unbounded, so {44} is this pattern's own
+    empirical constraint — and it is the constraint that keeps the vendor's
+    toy stubs out. One character either way is not a token."""
+    for neg in (
+        "pylf_" + "v1_us_" + _LOGFIRE_BODY[:-1],
+        "pylf_" + "v1_us_" + _LOGFIRE_BODY[:-4],
+        "pylf_" + "v1_us_" + _LOGFIRE_BODY + "z",
+        "pylf_" + "v1_us_" + _LOGFIRE_BODY + "zQ",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "logfire_write_token"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_logfire_write_token_ignores_the_vendor_repos_toy_stubs():
+    """pydantic/logfire's test suite is full of short placeholder tokens. An
+    unbounded body would report every one of them as a live credential; these
+    are the self-inflicted false positives {44} exists to prevent."""
+    for neg in (
+        "pylf_v1_us_token1",
+        "pylf_v1_us_token2",
+        "pylf_v1_eu_token3",
+        "pylf_v1_us_test_token",
+        "pylf_v1_us_foobar",
+        "pylf_v1_us_123456",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "logfire_write_token"]
+        assert len(matched) == 0, "toy stub wrongly matched: " + neg
+
+
+def test_logfire_write_token_requires_the_full_vendor_prefix_shape():
+    """Every element of `pylf_v<digits>_<lowercase region>_` is structural. A
+    missing version, an uppercase region, a hyphen for an underscore, or a
+    read-token-style truncation is not the credential."""
+    for neg in (
+        "pylf_us_" + _LOGFIRE_BODY,
+        "pylf_v1_US_" + _LOGFIRE_BODY,
+        "pylf_v1_us-" + _LOGFIRE_BODY,
+        "pylfv1_us_" + _LOGFIRE_BODY,
+        "pylf_vx_us_" + _LOGFIRE_BODY,
+        # Truncated doc example — logfire's own db_api.py writes read_token like this.
+        "read_token='pylf_v1_us_...'",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "logfire_write_token"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_logfire_write_token_boundary_guards():
+    """Left guard: `pylf_v` must not be the tail of a longer identifier. Right
+    guard carries exactly the body charset, so a 44-character run that is
+    really the head of a longer body is not reported as a whole token."""
+    for neg in (
+        "x" + _LOGFIRE_TOKEN,
+        "my" + _LOGFIRE_TOKEN,
+        "_" + _LOGFIRE_TOKEN,
+        "-" + _LOGFIRE_TOKEN,
+        _LOGFIRE_TOKEN + "9",
+        _LOGFIRE_TOKEN + "Qz",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "logfire_write_token"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_logfire_write_token_ignores_masked_and_placeholder_values():
+    """confidence_base 0.95 sits far above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices masked values down — the
+    mixed-case lookaheads have to. A random base62 body lacks lowercase (or
+    uppercase) with probability ~4e-11, so this costs essentially no recall."""
+    for neg in (
+        "pylf_" + "v1_us_" + "x" * 44,
+        "pylf_" + "v1_us_" + "X" * 44,
+        "pylf_" + "v1_us_" + "0" * 44,
+        # A lowercase hex digest padded out to 44 characters.
+        "pylf_" + "v1_us_" + "d41d8cd98f00b204e9800998ecf8427e" + "0123456789ab",
+        'LOGFIRE_TOKEN="<your-logfire-write-token>"',
+        "Logfire write tokens look like pylf_v1_us_<44 characters>.",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "logfire_write_token"]
+        assert len(matched) == 0, "placeholder wrongly matched: " + neg[:70]
+
+
+def test_logfire_write_token_vendor_fixture_scores_as_test_value():
+    """pydantic/logfire ships this exact token in tests/conftest.py, so it is
+    the most-copied value of this shape. It must land at ~0.15 rather than as
+    a live credential."""
+    findings = scan('token="' + _LOGFIRE_VENDOR_FIXTURE + '"', min_confidence=0.01)
+    matched = [f for f in findings if f.type == "logfire_write_token"]
+    assert len(matched) == 1
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+def test_logfire_write_token_survives_the_fp_wordlist_floor():
+    """confidence_base 0.95 is a floor, not a preference. Below 0.85 the FP
+    wordlist docks -0.40, which would silently sink real tokens sitting in a
+    *test* / *demo* / *staging* context — and Logfire itself ships 'stagingeu'
+    and 'local' regions, so those contexts are normal for real tokens."""
+    for context in (
+        "LOGFIRE_TEST_TOKEN=",
+        "logfire_demo_token: ",
+        "staging_logfire_token=",
+        "sandbox logfire token ",
+    ):
+        matched = [
+            f
+            for f in scan(context + _LOGFIRE_TOKEN, min_confidence=0.01)
+            if f.type == "logfire_write_token"
+        ]
+        assert len(matched) == 1, "real token sunk by the FP wordlist: " + context
+        assert matched[0].confidence >= 0.85, (context, matched[0].confidence)
+        assert matched[0].is_likely_test_value is False
+
+
+def test_logfire_write_token_is_the_only_claimant():
+    """The body is a 44-character high-entropy run that a generic pattern could
+    try to carve out. Dedup must leave exactly one finding, attributed to
+    Logfire."""
+    findings = scan("LOGFIRE_TOKEN=" + _LOGFIRE_TOKEN, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "logfire_write_token"
+    assert findings[0].confidence >= 0.95
+
+
+def test_logfire_write_token_span_covers_the_whole_token_and_preview_is_masked():
+    """The prefix is part of the credential the SDK sends, so the reported span
+    is the whole `pylf_...` string. The body is never echoed back."""
+    line = 'logfire.configure(service_name="api", token="' + _LOGFIRE_TOKEN + '")'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "logfire_write_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _LOGFIRE_TOKEN
+    assert _LOGFIRE_TOKEN not in f.value_preview
+    assert _LOGFIRE_BODY not in f.value_preview
