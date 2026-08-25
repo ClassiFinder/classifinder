@@ -4068,6 +4068,48 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Logfire write token — structure from the vendor's own parsing regex
+    # (pydantic/logfire, logfire/_internal/auth.py): pylf_v<version>_<region>_
+    # + an OPTIONAL lowercase-hex organization UUID + '_' + the body. The
+    # 44-character body is empirical rather than vendor-attested — the vendor
+    # leaves it unbounded — and it is what excludes the vendor repo's own toy
+    # stubs ('pylf_v1_us_token1', 'pylf_v1_us_test_token').
+    # All credential literals here are SYNTHETIC (locally generated 44-character
+    # base62 runs) and assembled by concatenation.
+    "logfire_write_token": {
+        "positives": [
+            "pylf_" + "v1_us_" + "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5O",
+            "LOGFIRE_TOKEN=" + "pylf_" + "v1_eu_" + "Zgy4hGLUq6BCbe9o5SVaRr9Via2fuqOfo5i1fsIZjVsi",
+            'logfire.configure(token="' + "pylf_" + "v2_local_" + "oVpkCvRf74U2Ip3JW4q1Bjr6FNk6ld2xiJyxPpRDQM3l" + '")',
+            # v2 org-scoped form: the optional lowercase-hex UUID branch.
+            "PYDANTIC_LOGFIRE_TOKEN=" + "pylf_" + "v2_stagingeu_" + "edcaf33d-3589-9929-9b36-6d62acd45096_" + "6C1gBrQQK29oGUQUiO6HwCC8NyOwb7IdOdFwMRWpmM0E",
+        ],
+        "negatives": [
+            # The vendor repo's own toy stubs — the FPs {44} exists to prevent.
+            "pylf_v1_us_token1",
+            "pylf_v1_eu_token3",
+            "pylf_v1_us_test_token",
+            "pylf_v1_us_foobar",
+            # Body one character short / one character long.
+            "pylf_" + "v1_us_" + "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5",
+            "pylf_" + "v1_us_" + "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5Oz",
+            # Structural pieces of the prefix missing or wrong-cased.
+            "pylf_us_" + "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5O",
+            "pylf_v1_US_" + "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5O",
+            "pylfv1_us_" + "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5O",
+            # The body alone, with no prefix.
+            "mFZ4e9te54KzpLWR86CxzngC4HZGrEJ5M2JgdSKJVX5O",
+            # Masked placeholders: all-upper and all-lower fail the mixed-case
+            # lookaheads.
+            "pylf_" + "v1_us_" + "x" * 44,
+            "pylf_" + "v1_us_" + "X" * 44,
+            # The vendor's own truncated docs example.
+            "read_token='pylf_v1_us_...'",
+            # Prose naming the format with no credential attached.
+            "A Logfire write token starts with pylf_v1_us_ and ends in 44 characters.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
