@@ -8461,3 +8461,261 @@ def test_logfire_write_token_span_covers_the_whole_token_and_preview_is_masked()
     assert line[f.span_start : f.span_end] == _LOGFIRE_TOKEN
     assert _LOGFIRE_TOKEN not in f.value_preview
     assert _LOGFIRE_BODY not in f.value_preview
+# ═══════════════════════════════════════════════
+# 2026-08-24 BATCH — age, OpenShift, Scalingo, SettleMint x2,
+# 42 Intra, Docker Swarm, Vault batch, Yandex Passport
+#
+# Every credential-shaped literal in this section is assembled by string
+# concatenation. age, Scalingo, OpenShift and Docker Swarm token formats are
+# all carried by GitHub's secret-scanning catalog, and a contiguous literal
+# would trip push protection on the public engine repository.
+# ═══════════════════════════════════════════════
+
+_AGE_KEY = "AGE-SECRET-KEY-" + "1A5ZEXU7PTMADR5AUAT3M09C9AVW5H7CEMSLDC2GQ2P399N7HSXSYJ8GNDA"
+_AGE_SPEC_EXAMPLE = (
+    "AGE-SECRET-KEY-" + "1GFPYYSJZGFPYYSJZGFPYYSJZGFPYYSJZGFPYYSJZGFPYYSJZGFPQ4EGAEX"
+)
+_OPENSHIFT_TOKEN = "sha256~" + "4-T0dEdcxScfZ3cUTBAnF8MDJPbxxDGKUPqSF_wwvyG"
+_SCALINGO_TOKEN = "tk-us-" + "d9W95GIPASOT4DeUr1EU5PHBEbBSri7Lqh9LhFv-LAvG2Feo"
+_SETTLEMINT_PAT = "sm_pat_" + "ecjgB6yqzvXbFSad"
+_SETTLEMINT_AAT = "sm_aat_" + "hvOh0ZvbkmhfCsI8"
+_INTRA42_HEX = "84a682a2ec6848a2b72bc7c6508ea7f7648d6cd7f08841a86ed9ca91e5788c00"
+_INTRA42_SECRET = "s-s4t2ud-" + _INTRA42_HEX
+_INTRA42_PUBLIC_UID = "u-s4t2ud-" + _INTRA42_HEX
+_SWARM_DIGEST = "19ruxkw7j5p9i32g516slwgasa6ad1pv05g83pagigeva5nbh1"
+_SWARM_SECRET = "s4ck6i77oj7v75vk60dq0x3lr"
+_SWARM_TOKEN = "SWMTKN-1-" + _SWARM_DIGEST + "-" + _SWARM_SECRET
+_VAULT_BATCH = "hvb." + "pFpAFg4DTVsQavsPwsJN3zDLUKsY"
+_VAULT_SERVICE = "hvs." + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+_YANDEX_OAUTH = "y0_" + "7FeyVSPNwmZlMMmJkKWr3x2i9V1zLmyH-RQwLR1WmdrTgazXoATAURG"
+
+_BATCH_2026_08_24 = (
+    ("age_secret_key", _AGE_KEY),
+    ("openshift_oauth_access_token", _OPENSHIFT_TOKEN),
+    ("scalingo_api_token", _SCALINGO_TOKEN),
+    ("settlemint_personal_access_token", _SETTLEMINT_PAT),
+    ("settlemint_application_access_token", _SETTLEMINT_AAT),
+    ("intra42_client_secret", _INTRA42_SECRET),
+    ("docker_swarm_join_token", _SWARM_TOKEN),
+    ("vault_batch_token", _VAULT_BATCH),
+    ("yandex_passport_oauth_token", _YANDEX_OAUTH),
+)
+
+# The masked / vendor-published placeholder registered as a known_test_value on
+# each pattern. Each must score ~0.15 rather than surfacing as a live secret.
+_BATCH_2026_08_24_TEST_VALUES = (
+    ("age_secret_key", _AGE_SPEC_EXAMPLE),
+    ("openshift_oauth_access_token", "sha256~" + "A" * 43),
+    ("scalingo_api_token", "tk-us-" + "BQ3LRmLGc35pMjdgwjX6kI1IWh7MAYk2uqquYwLDxCd4fhSm"),
+    ("scalingo_api_token", "tk-us-" + "X" * 48),
+    ("settlemint_personal_access_token", "sm_pat_" + "x" * 16),
+    ("settlemint_application_access_token", "sm_aat_" + "x" * 16),
+    ("intra42_client_secret", "s-s4t2ud-" + "0" * 64),
+    ("docker_swarm_join_token", "SWMTKN-1-" + "0" * 50 + "-" + "0" * 25),
+    ("vault_batch_token", "hvb." + "X" * 28),
+    (
+        "yandex_passport_oauth_token",
+        "y0_" + ("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" * 2)[:55],
+    ),
+)
+
+
+@pytest.mark.parametrize("pattern_id,credential", _BATCH_2026_08_24)
+def test_batch_2026_08_24_true_positive(pattern_id, credential):
+    """Each verified credential is detected, attributed to its own pattern, and
+    the reported span covers the whole credential — prefix included, since the
+    prefix is part of what an attacker replays."""
+    findings = scan(credential, min_confidence=0.01)
+    matched = [f for f in findings if f.type == pattern_id]
+    assert len(matched) == 1, [f.type for f in findings]
+    f = matched[0]
+    assert credential[f.span_start : f.span_end] == credential
+    assert f.confidence >= 0.90
+    assert f.is_likely_test_value is False
+
+
+@pytest.mark.parametrize("pattern_id,credential", _BATCH_2026_08_24)
+def test_batch_2026_08_24_is_sole_claimant(pattern_id, credential):
+    """Each of these is a prefix-anchored, fixed-width value that a generic
+    catch-all could also carve out. Dedup must leave exactly one finding,
+    carrying provider attribution."""
+    findings = scan(credential, min_confidence=0.01)
+    assert len(findings) == 1, [(f.type, f.confidence) for f in findings]
+    assert findings[0].type == pattern_id
+
+
+@pytest.mark.parametrize("pattern_id,credential", _BATCH_2026_08_24)
+def test_batch_2026_08_24_value_is_never_echoed(pattern_id, credential):
+    """value_preview is masked — the engine must never hand the secret back."""
+    matched = [f for f in scan(credential, min_confidence=0.01) if f.type == pattern_id]
+    assert len(matched) == 1
+    assert credential not in matched[0].value_preview
+
+
+@pytest.mark.parametrize("pattern_id,placeholder", _BATCH_2026_08_24_TEST_VALUES)
+def test_batch_2026_08_24_known_test_values_score_low(pattern_id, placeholder):
+    """The registered placeholder / vendor-published example must land at ~0.15
+    and be flagged as a test value, so the docs and tutorials that carry it do
+    not generate noise."""
+    findings = scan(placeholder, min_confidence=0.01)
+    matched = [f for f in findings if f.type == pattern_id]
+    assert len(matched) == 1, [f.type for f in findings]
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+    assert matched[0].is_likely_test_value is True
+
+
+@pytest.mark.parametrize("pattern_id,credential", _BATCH_2026_08_24)
+def test_batch_2026_08_24_survives_the_fp_wordlist_floor(pattern_id, credential):
+    """Every pattern in this batch is priced at 0.85 or above deliberately.
+    Below 0.85 the FP-wordlist penalty (-0.40, scanner.py) docks any value
+    sitting near words like *test* / *demo* / *staging* — which would silently
+    sink real credentials, since all nine of these are routinely issued
+    per-environment."""
+    for context in (
+        "TEST_TOKEN=",
+        "demo_credential: ",
+        "# staging value -> ",
+        "sandbox key is ",
+    ):
+        matched = [
+            f
+            for f in scan(context + credential, min_confidence=0.01)
+            if f.type == pattern_id
+        ]
+        assert len(matched) == 1, "sunk by the FP wordlist: " + context + pattern_id
+        assert matched[0].confidence >= 0.85, (context, matched[0].confidence)
+
+
+def test_age_secret_key_does_not_half_match_the_post_quantum_form():
+    """The post-quantum variant uses the HRP 'AGE-SECRET-KEY-PQ-' with a
+    60-character data part. Anchoring on 'AGE-SECRET-KEY-1' plus exactly 58
+    data characters is what makes it unmatchable — a prefix-only anchor would
+    report a truncated, wrong span and mislabel a PQ key as a classic one."""
+    pq = "AGE-SECRET-KEY-PQ-" + "1A5ZEXU7PTMADR5AUAT3M09C9AVW5H7CEMSLDC2GQ2P399N7HSXSYJ8GNDAQZ"
+    matched = [f for f in scan(pq, min_confidence=0.01) if f.type == "age_secret_key"]
+    assert matched == []
+
+
+def test_age_public_recipient_is_not_reported():
+    """'age1...' is the PUBLIC recipient. Reporting it would be reporting a
+    public key as a leak."""
+    recipient = "age1" + "ql3z7hjy9kd4tw5exmnvu2r0gs6cf8a3pjq4z0mdxv7ye9nl2ktqsr5w8h"
+    matched = [f for f in scan(recipient, min_confidence=0.01) if f.type == "age_secret_key"]
+    assert matched == []
+
+
+def test_intra42_public_application_uid_is_never_reported():
+    """THE collision this pattern exists to avoid. 42 Intra's application UID
+    and client secret are the same shape apart from the leading character:
+    'u-s4t2ud-<64 hex>' is PUBLIC and ships in front-end code by design, while
+    's-s4t2ud-<64 hex>' is the secret. A detector anchored on 's4t2ud-' alone
+    would report every published UID as a leak."""
+    for carrier in (
+        _INTRA42_PUBLIC_UID,
+        "EXPO_PUBLIC_API_42_UID=" + _INTRA42_PUBLIC_UID,
+        "clientId: '" + _INTRA42_PUBLIC_UID + "'",
+    ):
+        matched = [
+            f for f in scan(carrier, min_confidence=0.01) if f.type == "intra42_client_secret"
+        ]
+        assert matched == [], "public UID reported as a secret: " + carrier[:60]
+
+    # ...while the secret half, in the same carrier shapes, is caught.
+    matched = [
+        f
+        for f in scan("EXPO_PUBLIC_API_42_SECRET=" + _INTRA42_SECRET, min_confidence=0.01)
+        if f.type == "intra42_client_secret"
+    ]
+    assert len(matched) == 1
+
+
+def test_vault_service_token_still_resolves_to_vault_token():
+    """'hvb.' and 'hvs.' are siblings. Adding the batch-token pattern must not
+    steal, shadow or duplicate the existing service-token attribution."""
+    findings = scan(_VAULT_SERVICE, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "vault_token"
+
+    findings = scan(_VAULT_BATCH, min_confidence=0.01)
+    assert len(findings) == 1, [f.type for f in findings]
+    assert findings[0].type == "vault_batch_token"
+
+    # Both in one document: two findings, correctly attributed, distinct spans.
+    doc = "VAULT_TOKEN=" + _VAULT_SERVICE + "\nBATCH=" + _VAULT_BATCH
+    types = sorted(f.type for f in scan(doc, min_confidence=0.01))
+    assert types == ["vault_batch_token", "vault_token"]
+
+
+def test_openshift_token_wins_over_the_generic_high_entropy_patterns():
+    """The 43-character body is a high-entropy base64url run that the generic
+    catch-alls can also match. Dedup prefers a non-generic provider at any
+    overlapping span, so the finding must carry OpenShift attribution rather
+    than degrading to generic_high_entropy / generic_api_key_env."""
+    for carrier in (
+        _OPENSHIFT_TOKEN,
+        "OCP_TOKEN=" + _OPENSHIFT_TOKEN,
+        "oc login https://api.ocp.example.com:6443 --token=" + _OPENSHIFT_TOKEN,
+        "Authorization: Bearer " + _OPENSHIFT_TOKEN,
+    ):
+        findings = scan(carrier, min_confidence=0.01)
+        assert any(f.type == "openshift_oauth_access_token" for f in findings), carrier[:60]
+        assert not any(f.provider == "generic" for f in findings), [
+            (f.type, f.provider) for f in findings
+        ]
+
+
+def test_docker_swarm_covers_the_fips_v2_token_form():
+    """swarmkit emits a v2 form under FIPS — one extra [01] flag segment, both
+    segment widths unchanged. Both versions must be caught."""
+    for token in (
+        "SWMTKN-2-0-" + _SWARM_DIGEST + "-" + _SWARM_SECRET,
+        "SWMTKN-2-1-" + _SWARM_DIGEST + "-" + _SWARM_SECRET,
+    ):
+        matched = [
+            f for f in scan(token, min_confidence=0.01) if f.type == "docker_swarm_join_token"
+        ]
+        assert len(matched) == 1, token[:30]
+        assert token[matched[0].span_start : matched[0].span_end] == token
+
+
+def test_yandex_passport_token_is_distinct_from_the_cloud_iam_token():
+    """Two different Yandex credentials with very different blast radii: the
+    IAM token ('t1.') is a ~12-hour derived credential, the Passport OAuth
+    token is the long-lived one you exchange FOR IAM tokens. Neither pattern
+    may claim the other's value."""
+    matched = [
+        f for f in scan(_YANDEX_OAUTH, min_confidence=0.01) if f.type == "yandex_cloud_iam_token"
+    ]
+    assert matched == []
+
+    iam = "t1." + "A" * 40 + "." + "B" * 86
+    matched = [
+        f
+        for f in scan(iam, min_confidence=0.01)
+        if f.type == "yandex_passport_oauth_token"
+    ]
+    assert matched == []
+
+
+def test_yandex_passport_token_rejects_single_case_masks_and_embedded_runs():
+    """A three-character prefix is a weak anchor, so the mixed-case lookaheads
+    and the boundary guards are the precision. Single-case masks fail the
+    lookaheads outright; the left guard means the pattern can never fire inside
+    a longer base64url run such as a JWT payload or a base64 blob."""
+    for negative in (
+        "y0_" + "x" * 55,
+        "y0_" + "X" * 55,
+        "y0_" + "0" * 55,
+        "y0_" + "_" * 55,
+        # Embedded in a longer base64url run.
+        "Q" + _YANDEX_OAUTH,
+        _YANDEX_OAUTH + "Q",
+        # Digit outside the vendor's documented 0-3 range.
+        "y4_" + _YANDEX_OAUTH[3:],
+    ):
+        matched = [
+            f
+            for f in scan(negative, min_confidence=0.01)
+            if f.type == "yandex_passport_oauth_token"
+        ]
+        assert matched == [], "wrongly matched: " + negative[:50]
