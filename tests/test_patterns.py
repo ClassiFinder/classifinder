@@ -8719,3 +8719,146 @@ def test_yandex_passport_token_rejects_single_case_masks_and_embedded_runs():
             if f.type == "yandex_passport_oauth_token"
         ]
         assert matched == [], "wrongly matched: " + negative[:50]
+
+
+# --- Dub API key -------------------------------------------------------------
+# Format read off the vendor's own generator, not from samples:
+#   https://github.com/dubinc/dub/blob/main/apps/web/app/api/tokens/route.ts
+#   POST /api/tokens: `const token = `dub_${nanoid(24)}`;`
+# and packages/utils/src/functions/nanoid.ts, which defines the imported nanoid
+# as customAlphabet("0123456789A-Za-z", chars || 7) — an exact 62-character
+# alphanumeric alphabet with NO underscore and NO hyphen, unlike stock nanoid.
+# apps/web/lib/auth/workspace.ts gates restricted tokens on
+# `apiKey?.startsWith("dub_")`.
+#
+# Dub ships four other `dub_`-prefixed strings, none of which is this
+# credential: dub_pk_ (publishable, public), dub_app_ (OAuth client id, public),
+# dub_app_secret_, dub_access_token_ and dub_embed_. Every one of them carries
+# an underscore inside the first 24 body characters, so the exact {24}
+# alphanumeric body excludes all of them without a single explicit exception.
+#
+# Every credential literal below is SYNTHETIC — locally generated 24-character
+# base62 runs — and is assembled by concatenation so no contiguous full-shape
+# literal is written into this repository.
+_DUB_BODY = "Ht4qDhpvugOdXvLamwd3bvhx"
+_DUB_BODY_2 = "jko0ANmeUpRXjn4KVzNqOW01"
+_DUB_KEY = "dub_" + _DUB_BODY
+_DUB_KEY_2 = "dub_" + _DUB_BODY_2
+
+
+def test_dub_api_key_true_positives():
+    """Detected bare, in the documented env-var carrier, in an Authorization
+    header, in JSON, and in the SDK constructor."""
+    for text in (
+        _DUB_KEY,
+        "DUB_API_KEY=" + _DUB_KEY,
+        "Authorization: Bearer " + _DUB_KEY,
+        '{"token": "' + _DUB_KEY + '"}',
+        'new Dub({ token: "' + _DUB_KEY_2 + '" })',
+        "curl https://api.dub.co/links -H 'Authorization: Bearer " + _DUB_KEY + "'",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "dub_api_key"]
+        assert len(matched) == 1, "not detected in: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "dub"
+        assert matched[0].confidence >= 0.95
+
+
+def test_dub_api_key_span_covers_the_whole_token():
+    """The reported span must be the credential itself — prefix included, the
+    surrounding carrier excluded — and the preview must not leak the body."""
+    line = 'DUB_API_KEY="' + _DUB_KEY + '"'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "dub_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _DUB_KEY
+    assert _DUB_BODY not in f.value_preview
+
+
+def test_dub_api_key_body_width_is_pinned_at_24():
+    """nanoid(24) is the generator's literal argument, so the body width is
+    exact rather than a range. One character either way is not a token."""
+    for neg in (
+        "dub_" + _DUB_BODY[:-1],
+        "dub_" + _DUB_BODY[:-6],
+        "dub_" + _DUB_BODY + "z",
+        "dub_" + _DUB_BODY + "zQ9",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "dub_api_key"]
+        assert len(matched) == 0, "wrongly matched: " + neg[:70]
+
+
+def test_dub_api_key_does_not_claim_dubs_other_prefixed_strings():
+    """dub_pk_ and dub_app_ are PUBLIC identifiers, and dub_app_secret_,
+    dub_access_token_ and dub_embed_ are separate credentials with their own
+    formats. Reporting any of them as a restricted API key would be wrong;
+    the exact {24} alphanumeric body is what keeps them out, because each
+    carries an underscore inside the first 24 body characters."""
+    for neg in (
+        "dub_pk_" + "b6f9c2a1d3e4f5061728394a5b6c7d8e",
+        "dub_app_" + "5c1a2b3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071",
+        "dub_app_secret_" + "9" * 60,
+        "dub_access_token_" + "a" * 80,
+        "dub_embed_" + "c4d5e6f708192a3b4c5d6e7f80912a3b",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "dub_api_key"]
+        assert matched == [], "wrongly matched sibling string: " + neg[:40]
+
+
+def test_dub_api_key_charset_excludes_underscore_and_hyphen():
+    """The vendor's nanoid is a customAlphabet call over 62 alphanumerics —
+    stock nanoid's '_' and '-' are NOT in it. A 24-character body containing
+    either is not a Dub token."""
+    for neg in (
+        "dub_" + "Ht4qDhpvugOd_vLamwd3bvhx",
+        "dub_" + "Ht4qDhpvugOd-vLamwd3bvhx",
+        "dub_" + "Ht4qDhpvug.dXvLamwd3bvhx",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "dub_api_key"]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_dub_api_key_boundary_guards():
+    """Left guard: `dub_` must not be the tail of a longer identifier such as
+    `github_dub_...` or `mydub_...`. Right guard carries the body charset, so a
+    24-character run that is really the head of a longer body is never reported
+    as a whole token."""
+    for neg in (
+        "x" + _DUB_KEY,
+        "my" + _DUB_KEY,
+        "_" + _DUB_KEY,
+        "github_" + _DUB_KEY,
+        _DUB_KEY + "9",
+        _DUB_KEY + "Qz",
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "dub_api_key"]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_dub_api_key_requires_the_exact_prefix():
+    """`dub_` is the whole prefix anchor — no casing variants, no separator
+    substitutions, and prose naming the format is not a credential."""
+    for neg in (
+        "DUB_" + _DUB_BODY,
+        "Dub_" + _DUB_BODY,
+        "dub-" + _DUB_BODY,
+        "dub" + _DUB_BODY,
+        "Dub API keys look like dub_<24 alphanumeric characters>.",
+        'DUB_API_KEY="<your-dub-api-key>"',
+    ):
+        matched = [f for f in scan(neg, min_confidence=0.01) if f.type == "dub_api_key"]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_dub_api_key_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices masked values down. The
+    all-same-character masks that documentation and redacted logs use are
+    registered as known test values instead, landing at ~0.15."""
+    for mask in ("dub_" + "x" * 24, "dub_" + "X" * 24, "dub_" + "0" * 24):
+        findings = scan('DUB_API_KEY="' + mask + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "dub_api_key"]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)

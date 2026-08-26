@@ -4331,6 +4331,44 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # Dub API key — the restricted workspace token minted by POST /api/tokens
+    # as `dub_${nanoid(24)}`, where the imported nanoid is a customAlphabet
+    # call over exactly 62 alphanumerics (no '_' and no '-'). Prefix plus an
+    # exact 24-character body is the whole anchor; it is also what excludes
+    # Dub's other dub_*-prefixed strings (dub_pk_, dub_app_, dub_app_secret_,
+    # dub_access_token_, dub_embed_), each of which carries an underscore
+    # inside the first 24 body characters. All literals here are SYNTHETIC,
+    # locally generated base62 runs, assembled by concatenation.
+    "dub_api_key": {
+        "positives": [
+            "dub_" + "UkbzQK7KifuKLRNSxxlseEqx",
+            "DUB_API_KEY=" + "dub_" + "0fgHxdqhMjmaCjlcJHvMlMXF",
+            'Authorization: Bearer ' + "dub_" + "jSaYZypXMvRpVze7Db9lZjRL",
+        ],
+        "negatives": [
+            # Body width off by one either way — nanoid(24) is exact.
+            "dub_" + "UkbzQK7KifuKLRNSxxlseEq",
+            "dub_" + "UkbzQK7KifuKLRNSxxlseEqxA",
+            # Dub's other dub_-prefixed strings: two public identifiers and
+            # three separate credentials, none of them this key.
+            "dub_pk_" + "b6f9c2a1d3e4f5061728394a5b6c7d8e",
+            "dub_app_" + "5c1a2b3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071",
+            "dub_app_secret_" + "9" * 60,
+            "dub_access_token_" + "a" * 80,
+            "dub_embed_" + "c4d5e6f708192a3b4c5d6e7f80912a3b",
+            # Charset: stock nanoid's '_' and '-' are not in Dub's alphabet.
+            "dub_" + "UkbzQK7KifuKLR_SxxlseEqx",
+            "dub_" + "UkbzQK7KifuKLR-SxxlseEqx",
+            # Prefix must be exact and word-anchored.
+            "DUB_" + "UkbzQK7KifuKLRNSxxlseEqx",
+            "dub-" + "UkbzQK7KifuKLRNSxxlseEqx",
+            "github_" + "dub_" + "UkbzQK7KifuKLRNSxxlseEqx",
+            # Prose describing the format carries no credential.
+            "Dub API keys look like dub_<24 alphanumeric characters>.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
