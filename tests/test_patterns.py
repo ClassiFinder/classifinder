@@ -8862,3 +8862,190 @@ def test_dub_api_key_masked_placeholders_score_as_test_values():
         assert len(matched) == 1, "not detected: " + mask
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Outline API key ---------------------------------------------------------
+# Format read off the vendor's own generator AND its own validator, not from
+# samples:
+#   https://github.com/outline/outline/blob/main/server/models/ApiKey.ts
+#     static prefix = "ol_api_";
+#     @BeforeValidate generateSecret: `${ApiKey.prefix}${randomString(38)}`
+#     static match(text): text.replace(ApiKey.prefix, "").match(/^[\w]{38}$/)
+# The 38 is therefore pinned twice — once by the generator's literal argument
+# and once by the vendor's own width check.
+#
+# The charset is base62, not \w. shared/random.ts is called here with a NUMBER
+# argument, which defaults charset to "alphanumeric" and capitalization to
+# "mixed" — lowercase + uppercase + numeric, no '_' and no '-'. The [\w] in
+# match() is a looser input-sniffing superset, not the generated alphabet, so
+# a body containing '_' is not a key Outline ever minted.
+#
+# LEGACY KEYS ARE DELIBERATELY NOT MATCHED. match() carries the comment
+# "cannot guarantee prefix here as older keys do not include it" — pre-prefix
+# Outline keys are bare 38-character alphanumeric strings. An unprefixed
+# variant would fire on every 38-character base62 run in every document, so
+# the legacy form is knowingly left undetected rather than traded for an FP
+# factory. test_outline_api_key_does_not_match_the_prefixless_legacy_form
+# pins that decision so it cannot be silently reversed.
+#
+# Every credential literal below is SYNTHETIC — locally generated 38-character
+# base62 runs — and is assembled by concatenation so no contiguous full-shape
+# literal is written into this repository.
+_OUTLINE_BODY = "SYCFMCbDiYR8p1VJ8q3HZZ7nMarUKn9vBTDoou"
+_OUTLINE_BODY_2 = "BfkQJQOZMwrkxZkaKvwJOXyAqO1Mmdrs2JZICZ"
+_OUTLINE_KEY = "ol_api_" + _OUTLINE_BODY
+_OUTLINE_KEY_2 = "ol_api_" + _OUTLINE_BODY_2
+
+
+def test_outline_api_key_true_positives():
+    """Detected bare, in the env-var carrier, in an Authorization header, in
+    JSON, and in a curl invocation against the vendor's own API host."""
+    for text in (
+        _OUTLINE_KEY,
+        "OUTLINE_API_KEY=" + _OUTLINE_KEY,
+        "Authorization: Bearer " + _OUTLINE_KEY,
+        '{"token": "' + _OUTLINE_KEY + '"}',
+        "curl https://app.getoutline.com/api/documents.list "
+        "-H 'Authorization: Bearer " + _OUTLINE_KEY_2 + "'",
+        "outline_api_key: " + _OUTLINE_KEY_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "outline_api_key"]
+        assert len(matched) == 1, "not detected in: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "outline"
+        assert matched[0].confidence >= 0.95
+
+
+def test_outline_api_key_span_covers_the_whole_token():
+    """The reported span must be the credential itself — the `ol_api_` prefix
+    included, the surrounding carrier excluded — and the preview must not leak
+    the body."""
+    line = 'OUTLINE_API_KEY="' + _OUTLINE_KEY + '"'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "outline_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _OUTLINE_KEY
+    assert _OUTLINE_BODY not in f.value_preview
+
+
+def test_outline_api_key_body_width_is_pinned_at_38():
+    """randomString(38) is the generator's literal argument and /^[\\w]{38}$/ is
+    the vendor's own validator, so the body width is exact rather than a range.
+    One character either way is not a token."""
+    for neg in (
+        "ol_api_" + _OUTLINE_BODY[:-1],
+        "ol_api_" + _OUTLINE_BODY[:-8],
+        "ol_api_" + _OUTLINE_BODY + "z",
+        "ol_api_" + _OUTLINE_BODY + "zQ9",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "outline_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_outline_api_key_does_not_match_the_prefixless_legacy_form():
+    """Outline's own match() says "cannot guarantee prefix here as older keys do
+    not include it" — legacy keys are bare 38-character alphanumeric strings.
+    Registering that shape would fire on every 38-character base62 run in every
+    document, so it is knowingly left undetected. This test exists to keep the
+    decision explicit: if someone adds an unprefixed variant, it fails."""
+    for neg in (
+        _OUTLINE_BODY,
+        "OUTLINE_API_KEY=" + _OUTLINE_BODY,
+        "Authorization: Bearer " + _OUTLINE_BODY_2,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "outline_api_key"
+        ]
+        assert matched == [], "matched the legacy prefixless form: " + neg[:70]
+
+
+def test_outline_api_key_charset_excludes_underscore_and_hyphen():
+    """randomString called with a number defaults to charset "alphanumeric" and
+    capitalization "mixed" — base62, with no '_' and no '-'. The `[\\w]` in the
+    vendor's match() is a looser input-sniffing superset, not the alphabet the
+    generator draws from, so an underscore in the body means the value was
+    never minted by Outline."""
+    for neg in (
+        "ol_api_" + "SYCFMCbDiYR8p1VJ8q_HZZ7nMarUKn9vBTDoou",
+        "ol_api_" + "SYCFMCbDiYR8p1VJ8q-HZZ7nMarUKn9vBTDoou",
+        "ol_api_" + "SYCFMCbDiYR8p1VJ8q.HZZ7nMarUKn9vBTDoou",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "outline_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_outline_api_key_boundary_guards():
+    """Left guard: `ol_api_` must not be the tail of a longer identifier. Right
+    guard carries the body charset, so a 38-character run that is really the
+    head of a longer body is never reported as a whole token."""
+    for neg in (
+        "x" + _OUTLINE_KEY,
+        "my" + _OUTLINE_KEY,
+        "_" + _OUTLINE_KEY,
+        "protocol_api_" + _OUTLINE_BODY,
+        _OUTLINE_KEY + "9",
+        _OUTLINE_KEY + "Qz",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "outline_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_outline_api_key_requires_the_exact_prefix():
+    """`ol_api_` is the whole prefix anchor — no casing variants, no separator
+    substitutions, and prose naming the format is not a credential."""
+    for neg in (
+        "OL_API_" + _OUTLINE_BODY,
+        "Ol_Api_" + _OUTLINE_BODY,
+        "ol-api-" + _OUTLINE_BODY,
+        "ol_api" + _OUTLINE_BODY,
+        "Outline API keys look like ol_api_<38 alphanumeric characters>.",
+        'OUTLINE_API_KEY="<your-outline-api-key>"',
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "outline_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_outline_api_key_does_not_collide_with_block_protocol():
+    """`BLOCK_PROTOCOL_API_KEY` contains the literal substring `OL_API_` (from
+    "protocOL_API_key"). The prefix is lowercase-exact and the left guard
+    rejects a preceding word character, so neither the env-var name nor a real
+    Block Protocol key can be claimed as an Outline key — and the Block
+    Protocol key must still resolve to its own type."""
+    bp_key = "b10ck5." + "0" * 32 + ".1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+    line = "BLOCK_PROTOCOL_API_KEY=" + bp_key
+    findings = scan(line, min_confidence=0.01)
+    assert [f for f in findings if f.type == "outline_api_key"] == []
+    assert any(f.type == "block_protocol_api_key" for f in findings)
+
+
+def test_outline_api_key_wins_dedup_over_generic_patterns():
+    """The 38-character base62 body is also a high-entropy run the generic
+    catch-alls match. `_dedup_overlapping_findings` prefers a non-generic
+    provider at any overlapping span, so the credential must be attributed to
+    Outline rather than reported as a generic high-entropy string."""
+    findings = scan("OUTLINE_API_KEY=" + _OUTLINE_KEY, min_confidence=0.5)
+    types = {f.type for f in findings}
+    assert "outline_api_key" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_outline_api_key_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices masked values down. The
+    all-same-character masks that documentation and redacted logs use are
+    registered as known test values instead, landing at ~0.15."""
+    for mask in ("ol_api_" + "x" * 38, "ol_api_" + "X" * 38, "ol_api_" + "0" * 38):
+        findings = scan('OUTLINE_API_KEY="' + mask + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "outline_api_key"]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
