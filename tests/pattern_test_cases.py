@@ -4369,6 +4369,44 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+
+    # Outline API key — the personal key minted in server/models/ApiKey.ts as
+    # `${ApiKey.prefix}${randomString(38)}` where prefix is "ol_api_". The 38
+    # is pinned twice: by the generator's literal argument and by the vendor's
+    # own match() check, /^[\w]{38}$/. The charset is base62 (shared/random.ts
+    # defaults a numeric argument to charset "alphanumeric", capitalization
+    # "mixed"), so '_' and '-' are not in the alphabet the generator draws
+    # from. The prefixless LEGACY form (bare 38 alphanumerics, per match()'s
+    # own comment) is deliberately not matched — it would be an FP factory —
+    # and is pinned here as a negative. All literals are SYNTHETIC, locally
+    # generated base62 runs assembled by concatenation.
+    "outline_api_key": {
+        "positives": [
+            "ol_api_" + "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZeK",
+            "OUTLINE_API_KEY=" + "ol_api_" + "DIRV4gNKX7xo1YeJraLkIQ3ZTFIdQFqKpoqJWz",
+            'Authorization: Bearer ' + "ol_api_" + "SYCFMCbDiYR8p1VJ8q3HZZ7nMarUKn9vBTDoou",
+        ],
+        "negatives": [
+            # Body width off by one either way — randomString(38) is exact and
+            # the vendor's match() pins the same 38.
+            "ol_api_" + "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZe",
+            "ol_api_" + "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZeKA",
+            # The prefixless legacy form: knowingly left undetected.
+            "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZeK",
+            "OUTLINE_API_KEY=" + "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZeK",
+            # Charset: base62 only, no '_' and no '-' in the body.
+            "ol_api_" + "zYCGdtN3tAxjeZ5QU_10xxe25j5qq9EMlbeZeK",
+            "ol_api_" + "zYCGdtN3tAxjeZ5QU-10xxe25j5qq9EMlbeZeK",
+            # Prefix must be exact, lowercase and word-anchored. The third
+            # entry is the BLOCK_PROTOCOL_API_KEY substring collision.
+            "OL_API_" + "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZeK",
+            "ol-api-" + "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZeK",
+            "protocol_api_" + "zYCGdtN3tAxjeZ5QUV10xxe25j5qq9EMlbeZeK",
+            # Prose describing the format carries no credential.
+            "Outline API keys look like ol_api_<38 alphanumeric characters>.",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
