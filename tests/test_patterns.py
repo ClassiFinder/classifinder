@@ -9049,3 +9049,222 @@ def test_outline_api_key_masked_placeholders_score_as_test_values():
         assert len(matched) == 1, "not detected: " + mask
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Metabase API key --------------------------------------------------------
+# Format read off the vendor's own generator, not from samples:
+#   https://github.com/metabase/metabase/blob/master/src/metabase/api_keys/models/api_key.clj
+#     (mu/defn generate-key   ; "a random base64 string prefixed with `mb_`"
+#       (u.secret/secret
+#         (str "mb_" (u.random/secure-base64
+#                      api-keys.schema/generated-bytes-key-length))))
+#   https://github.com/metabase/metabase/blob/master/src/metabase/api_keys/schema.clj
+#     generated-bytes-key-length  = 32
+#     prefix-length               = 7   ("the length of `mb_1234`")
+#     generated-string-key-length = 47, computed independently by the vendor
+#   https://github.com/metabase/metabase/blob/master/src/metabase/util/random.cljc
+#     (defn secure-base64 [size] (Base64/encodeBase64String (secure-random-bytes size)))
+#
+# The body width is DETERMINISTIC rather than a measured range: 32 bytes is
+# 3*10 + 2, so the base64 encoding is always 43 data characters plus exactly
+# one '=' pad — a 44-character body, 47 characters in total, which is the
+# vendor's own independently-derived constant. The alphabet is STANDARD base64
+# ([A-Za-z0-9+/] with '=' padding) because Apache Commons Codec's
+# encodeBase64String is the standard encoder, not the base64url one.
+#
+# THE PERMISSIVE USER-SUPPLIED FORM IS DELIBERATELY NOT MATCHED. The same
+# schema admits `key.raw` = [:string {:min 12, :max 254}] with only a
+# "must start with 'mb_'" predicate (enterprise config files may set their own
+# key). Matching that would report any 12-character string beginning 'mb_' as
+# a credential, so only the generated shape is registered, and
+# test_metabase_api_key_ignores_the_permissive_user_supplied_form pins that
+# decision so it cannot be silently reversed.
+#
+# Every credential literal below is SYNTHETIC — locally generated base64
+# encodings of random bytes — and the prefix is joined by concatenation so no
+# contiguous full-shape literal is written into this repository.
+_MB_BODY = "vz4pZ59rBG+ZXoGVMCAMpBw3FcKl/0TgVkttYGym0TA="
+_MB_BODY_2 = "mZXuLRDd+Jbp02CQNO18upd1V/+gbyw2GhSkYEMqlfM="
+_MB_KEY = "mb_" + _MB_BODY
+_MB_KEY_2 = "mb_" + _MB_BODY_2
+
+
+def test_metabase_api_key_true_positives():
+    """Detected bare, in the env-var carrier, in the vendor's own x-api-key
+    header, in JSON, in a curl invocation, and in a YAML value."""
+    for text in (
+        _MB_KEY,
+        "METABASE_API_KEY=" + _MB_KEY,
+        "x-api-key: " + _MB_KEY,
+        '{"api_key": "' + _MB_KEY + '"}',
+        "curl -H 'x-api-key: " + _MB_KEY_2 + "' "
+        "https://metabase.example.com/api/card",
+        "metabase_api_key: " + _MB_KEY_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "metabase_api_key"]
+        assert len(matched) == 1, "not detected in: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "metabase"
+        assert matched[0].confidence >= 0.90
+
+
+def test_metabase_api_key_span_covers_the_whole_token():
+    """The reported span must be the credential itself — the `mb_` prefix and
+    the trailing '=' pad included, the surrounding carrier excluded — and the
+    preview must not leak the body."""
+    line = 'METABASE_API_KEY="' + _MB_KEY + '"'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "metabase_api_key"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _MB_KEY
+    assert len(line[f.span_start : f.span_end]) == 47  # the vendor's own constant
+    assert _MB_BODY not in f.value_preview
+
+
+def test_metabase_api_key_body_width_is_deterministic():
+    """32 bytes of randomness encode to exactly 43 base64 data characters plus
+    one pad, so the 44-character body is exact rather than a range. One
+    character either way is not a key."""
+    for neg in (
+        "mb_" + _MB_BODY[:-2] + "=",
+        "mb_" + _MB_BODY[:-9] + "=",
+        "mb_" + _MB_BODY[:-1] + "Az=",
+        "mb_" + _MB_BODY[:-1] + "A=",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "metabase_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_metabase_api_key_requires_exactly_one_base64_pad():
+    """43 data characters leave exactly one '=' of padding. An unpadded body is
+    not what the generator emits, and a doubly-padded one is not a canonical
+    encoding of 32 bytes — both are rejected."""
+    for neg in (
+        "mb_" + _MB_BODY[:-1],
+        "mb_" + _MB_BODY + "=",
+        "mb_" + _MB_BODY.replace("=", "A"),
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "metabase_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_metabase_api_key_charset_is_standard_base64_not_base64url():
+    """Apache Commons Codec's encodeBase64String is the STANDARD encoder, so the
+    body alphabet is [A-Za-z0-9+/]. A '-' or '_' in the body means the value is
+    base64url — something Metabase never minted."""
+    for neg in (
+        "mb_" + _MB_BODY.replace("+", "-"),
+        "mb_" + _MB_BODY.replace("/", "_"),
+        "mb_" + _MB_BODY.replace("+", "."),
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "metabase_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_metabase_api_key_ignores_the_permissive_user_supplied_form():
+    """api_keys/schema.clj's `key.raw` accepts any 12-254 character string that
+    starts with 'mb_' (enterprise config files may supply their own). Matching
+    that shape would report every short 'mb_'-prefixed identifier as a
+    credential, so only the generated 47-character form is registered. This
+    test exists to keep the decision explicit."""
+    for neg in (
+        "mb_secretkey1",
+        "mb_" + "a" * 12,
+        "mb_" + "a" * 100,
+        "MB_API_KEY=mb_my-own-configured-key-value",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "metabase_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_metabase_api_key_boundary_guards():
+    """Left guard: 'mb_' must not be the tail of a longer identifier, and it
+    excludes '-' as well as word characters because base64url — the one
+    alphabet in which 'mb_' can appear inside a random-looking run — uses '-'
+    and '_'. Right guard carries the body charset and '=', so a run that is
+    really the head of a longer base64 payload is never reported as a key."""
+    for neg in (
+        "x" + _MB_KEY,
+        "thumb_" + _MB_BODY,
+        "_" + _MB_KEY,
+        "9" + _MB_KEY,
+        "Zk-" + _MB_KEY,
+        _MB_KEY + "A",
+        _MB_KEY + "=",
+        _MB_KEY + "/9",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "metabase_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_metabase_api_key_requires_the_exact_prefix():
+    """`mb_` is the anchor — lowercase, underscore-separated, exact. Prose
+    naming the format is not a credential."""
+    for neg in (
+        "MB_" + _MB_BODY,
+        "Mb_" + _MB_BODY,
+        "mb-" + _MB_BODY,
+        "mb" + _MB_BODY,
+        "A Metabase API key looks like mb_<43 base64 characters and one '='>.",
+        'METABASE_API_KEY="<your-metabase-api-key>"',
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "metabase_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_metabase_api_key_does_not_collide_with_mb_substring_identifiers():
+    """The literal 'mb_' sits inside ordinary identifiers — honeycomb_,
+    thumb_, comb_ — which is exactly why the left guard is mandatory. Neither
+    the identifier nor the credential that follows it may be claimed, and a
+    real Honeycomb ingest key must still resolve to its own type."""
+    hc_line = "honeycomb_ingest_key=" + "hcaik_" + _HC_BODY
+    findings = scan(hc_line, min_confidence=0.01)
+    assert [f for f in findings if f.type == "metabase_api_key"] == []
+    assert any(f.type == "honeycomb_ingest_key" for f in findings)
+
+    for neg in (
+        "honeycomb_" + _MB_BODY,
+        "comb_" + _MB_BODY,
+        "thumb_" + _MB_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "metabase_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_metabase_api_key_wins_dedup_over_generic_patterns():
+    """The 44-character base64 body is also a high-entropy run the generic
+    catch-alls can match. `_dedup_overlapping_findings` prefers a non-generic
+    provider at any overlapping span, so the credential must be attributed to
+    Metabase rather than reported as a generic high-entropy string."""
+    findings = scan("METABASE_API_KEY=" + _MB_KEY, min_confidence=0.5)
+    types = {f.type for f in findings}
+    assert "metabase_api_key" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_metabase_api_key_masked_placeholders_score_as_test_values():
+    """confidence_base 0.90 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices masked values down. The
+    all-same-character masks that documentation and redacted logs use are
+    registered as known test values instead, landing at ~0.15."""
+    for mask in ("mb_" + "x" * 43 + "=", "mb_" + "X" * 43 + "=", "mb_" + "0" * 43 + "="):
+        findings = scan('METABASE_API_KEY="' + mask + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "metabase_api_key"]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)

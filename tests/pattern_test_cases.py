@@ -4407,6 +4407,46 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+    # Metabase API key — the credential minted in
+    # src/metabase/api_keys/models/api_key.clj as
+    # `(str "mb_" (u.random/secure-base64 generated-bytes-key-length))` with
+    # generated-bytes-key-length = 32. 32 bytes is 3*10 + 2, so the standard
+    # base64 encoding (Apache Commons Codec) is always 43 data characters plus
+    # exactly one '=' pad — a 44-character body, 47 characters in total, which
+    # is the same figure api_keys/schema.clj derives independently as
+    # generated-string-key-length. The schema's permissive user-supplied form
+    # (any 12-254 character string starting with 'mb_') is deliberately NOT
+    # matched and is pinned here as a negative. All literals are SYNTHETIC,
+    # locally generated base64 encodings of random bytes.
+    "metabase_api_key": {
+        "positives": [
+            "mb_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYicE=",
+            "METABASE_API_KEY=" + "mb_" + "gtizZnzRhCG9lyXqWtLgdW6zvCo1SmjZLsQUGvyGJ8I=",
+            "x-api-key: " + "mb_" + "vQkvMqiWrML7yeSKQYMlBN2EsHagNha3PkBQrhdOBZQ=",
+        ],
+        "negatives": [
+            # Body width is deterministic — 43 data characters plus one pad.
+            "mb_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYic=",
+            "mb_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYicEA=",
+            # Padding: never absent, never doubled.
+            "mb_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYicE",
+            "mb_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYicE==",
+            # Standard base64, not base64url: no '-' and no '_' in the body.
+            "mb_" + "2cFQAeLIMkzDNa8S_7r5HP1/ILYpzW6anh4NNOLYicE=",
+            "mb_" + "2cFQAeLIMkzDNa8S/7r5HP1-ILYpzW6anh4NNOLYicE=",
+            # The schema's permissive user-supplied form: knowingly not matched.
+            "mb_secretkey1",
+            "MB_API_KEY=mb_my-own-configured-key-value",
+            # Prefix must be exact and word-anchored. 'mb_' occurs inside
+            # ordinary identifiers, which is what the left guard is for.
+            "MB_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYicE=",
+            "thumb_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYicE=",
+            "honeycomb_" + "2cFQAeLIMkzDNa8S/7r5HP1/ILYpzW6anh4NNOLYicE=",
+            # Prose describing the format carries no credential.
+            "A Metabase API key is mb_ plus 43 base64 characters and one '='.",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
