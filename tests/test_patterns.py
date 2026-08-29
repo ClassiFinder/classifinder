@@ -9268,3 +9268,269 @@ def test_metabase_api_key_masked_placeholders_score_as_test_values():
         assert len(matched) == 1, "not detected: " + mask
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Unleash API token -------------------------------------------------------
+# Format read off the vendor's own generator, not from samples:
+#   https://github.com/Unleash/unleash/blob/main/src/lib/services/api-token-service.ts
+#     generateSecretKey({ projects, environment }) {
+#       const randomStr = crypto.randomBytes(28).toString('hex');
+#       return `${projects[0]}:${environment}.${randomStr}`   // '[]' when >1 project
+#     }
+#   https://github.com/Unleash/unleash/blob/main/src/lib/types/models/api-token.ts
+#     ALL = '*'   — the all-projects / all-environments scope
+#
+# randomBytes(28) -> hex is DETERMINISTICALLY 56 lowercase hex characters, so
+# the body width is exact rather than a measured range. docs.getunleash.io
+# agrees independently: its three published example tokens
+# (new-checkout-flow:development.<hash>, []:production.<hash>,
+# *:development.<hash>) each carry a 56-character [0-9a-f] hash.
+#
+# THE DOCS' "64-character-long hexadecimal string" PROSE IS STALE, and the
+# contradiction is resolved rather than ignored. dfb890c63 ("Feat: Api-Tokens",
+# 2021-03-29) minted a BARE crypto.randomBytes(32).toString('hex') — 64 hex,
+# no prefix at all. c4b697b57d ("Feat/api key scoping", 2021-09-15) replaced it
+# in ONE hunk that both narrowed the body to randomBytes(28) and introduced the
+# `${project}:${environment}.` structure. The anchored three-part form has
+# therefore only ever been 56 hex; {56} is exact and is deliberately not
+# widened to {56,64}. test_unleash_api_token_ignores_the_legacy_bare_hex_form
+# pins the decision to leave the prefixless 64-hex form undetected — unanchored
+# 64-hex is any hex digest — so it cannot be silently reversed.
+#
+# PERSONAL ACCESS TOKENS (`user:` + 56 hex, src/lib/features/pat/pat-service.ts)
+# carry ONE delimiter instead of two and are deliberately out of scope; the
+# regex cannot match them by construction.
+#
+# Every credential literal below is SYNTHETIC — locally generated 28-byte hex
+# runs — except the vendor's OWN published documentation hash, which is pinned
+# as a known test value precisely because it is copied verbatim everywhere.
+_UNLEASH_HASH = "07696a108667cd57ed52aad2e26f8fc8be5e6216d16ca74bb78ba0a7"
+_UNLEASH_HASH_2 = "baf768b78b9ee0e7abae46a6ff79216b08041286cf052790367c6cf4"
+_UNLEASH_DOC_HASH = "be44368985f7fb3237c584ef" + "86f3d6bdada42ddbd63a019d26955178"
+_UNLEASH_TOKEN = "new-checkout-flow:development." + _UNLEASH_HASH
+_UNLEASH_TOKEN_ALL = "*:production." + _UNLEASH_HASH_2
+_UNLEASH_TOKEN_SET = "[]:production." + _UNLEASH_HASH_2
+
+
+def test_unleash_api_token_true_positives():
+    """All three vendor-documented project scopes — a named project id, '[]'
+    (a specific set of projects) and '*' (all projects) — detected bare, in the
+    env-var carrier, in the Authorization header, in JSON and in YAML."""
+    for text in (
+        _UNLEASH_TOKEN,
+        _UNLEASH_TOKEN_SET,
+        _UNLEASH_TOKEN_ALL,
+        "UNLEASH_API_TOKEN=" + _UNLEASH_TOKEN,
+        "Authorization: " + _UNLEASH_TOKEN_SET,
+        '{"unleash": {"token": "' + _UNLEASH_TOKEN_ALL + '"}}',
+        "curl -H 'Authorization: " + _UNLEASH_TOKEN + "' "
+        "https://unleash.example.com/api/client/features",
+        "  clientKey: " + _UNLEASH_TOKEN_ALL,
+        # The admin scope: '*' for both project and environment.
+        "*:*." + _UNLEASH_HASH,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "unleash_api_token"]
+        assert len(matched) == 1, "not detected in: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "unleash"
+        assert matched[0].confidence >= 0.90
+
+
+def test_unleash_api_token_span_covers_the_whole_token():
+    """The reported span must be the credential itself — the projects segment,
+    both delimiters and the hash — with the carrier excluded, and the preview
+    must not leak the hash."""
+    line = 'UNLEASH_API_TOKEN="' + _UNLEASH_TOKEN + '"'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "unleash_api_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _UNLEASH_TOKEN
+    assert _UNLEASH_HASH not in f.value_preview
+
+
+def test_unleash_api_token_hash_width_is_deterministic():
+    """crypto.randomBytes(28).toString('hex') is exactly 56 characters. One
+    character either way is not a token, and a longer hex run is a digest."""
+    for neg in (
+        "default:development." + _UNLEASH_HASH[:-1],
+        "default:development." + _UNLEASH_HASH[:-9],
+        "default:development." + _UNLEASH_HASH + "a",
+        "default:development." + _UNLEASH_HASH + "ff",
+        # The pre-scoping 64-hex width, carried behind the modern structure:
+        # that combination never existed and must not be claimed.
+        "default:development." + _UNLEASH_HASH + _UNLEASH_HASH[:8],
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "unleash_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_unleash_api_token_hash_is_lowercase_hex():
+    """toString('hex') emits lowercase [0-9a-f]. Uppercase hex, base64url and
+    base62 bodies are something Unleash never minted."""
+    for neg in (
+        "default:development." + _UNLEASH_HASH.upper(),
+        "default:development." + _UNLEASH_HASH[:-1] + "G",
+        "default:development." + _UNLEASH_HASH[:-1] + "Z",
+        "default:development." + _UNLEASH_HASH[:-1] + "-",
+        "default:development." + _UNLEASH_HASH.replace("0", "g", 1),
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "unleash_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_unleash_api_token_requires_both_delimiters():
+    """There is no literal prefix here, so the ':' and the '.' are the whole
+    anchor. Neither may be missing, substituted or reordered."""
+    for neg in (
+        "new-checkout-flow.development." + _UNLEASH_HASH,
+        "new-checkout-flow:development:" + _UNLEASH_HASH,
+        "new-checkout-flow:development" + _UNLEASH_HASH,
+        "development." + _UNLEASH_HASH,
+        "new-checkout-flow:" + _UNLEASH_HASH,
+        "new-checkout-flow/development." + _UNLEASH_HASH,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "unleash_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_unleash_api_token_ignores_the_legacy_bare_hex_form():
+    """Before c4b697b57d, Unleash minted a bare randomBytes(32) hex string with
+    no project/environment prefix. That shape is indistinguishable from a git
+    object id, a sha256 sum or a session id, so it is knowingly left undetected
+    rather than traded for a false-positive factory. This test exists to keep
+    the decision explicit."""
+    legacy = _UNLEASH_HASH + _UNLEASH_HASH_2[:8]  # 64 hex, no prefix
+    assert len(legacy) == 64
+    for neg in (
+        legacy,
+        "UNLEASH_API_TOKEN=" + legacy,
+        "Authorization: " + legacy,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "unleash_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_unleash_api_token_ignores_personal_access_tokens():
+    """pat-service.ts mints PATs as `user:` + randomBytes(28) hex — 56 hex with
+    NO period. They carry one delimiter instead of two, so a `user:` variant
+    would be measurably less anchored; it is deliberately out of scope and the
+    regex cannot match the shape by construction."""
+    for neg in (
+        "user:" + _UNLEASH_HASH,
+        "UNLEASH_PAT=user:" + _UNLEASH_HASH_2,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "unleash_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_unleash_api_token_boundary_guards():
+    """Left guard: the projects segment must not begin mid-identifier. Right
+    guard carries the body charset, so a 56-character run that is really the
+    head of a longer hex digest is never reported as a whole token."""
+    for neg in (
+        _UNLEASH_TOKEN + "a",
+        _UNLEASH_TOKEN + "0",
+        _UNLEASH_TOKEN + "beef",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "unleash_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+    # The left guard must not swallow a preceding word-character run into the
+    # projects segment as a fresh match start; the whole slug is one token, so
+    # the span still begins at the start of the projects segment.
+    line = "export UNLEASH_API_TOKEN=" + _UNLEASH_TOKEN_ALL
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "unleash_api_token"]
+    assert len(matched) == 1
+    assert line[matched[0].span_start : matched[0].span_end] == _UNLEASH_TOKEN_ALL
+
+
+def test_unleash_api_token_does_not_claim_hex_digests_or_urls():
+    """The two delimiters plus the exact 56-hex width are what keep this off
+    ordinary colon-and-dot text: docker digests, host:port pairs, Maven
+    coordinates and prose describing the format."""
+    for neg in (
+        "sha256:" + _UNLEASH_HASH + _UNLEASH_HASH_2[:8],
+        "image: registry.example.com/app:v1.2.3",
+        "https://unleash.example.com:8080.health",
+        "com.example:artifact.jar",
+        "An Unleash token looks like <projects>:<environment>.<56 hex chars>.",
+        'UNLEASH_API_TOKEN="*:production.<your-token-hash>"',
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "unleash_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_unleash_api_token_does_not_collide_with_gitlab_feature_flag_token():
+    """The only other 'unleash'-adjacent pattern in the registry is GitLab's
+    feature-flag client token (glffct- + 20 chars), which GitLab's own
+    Unleash-compatible endpoint issues. Neither may claim the other's value."""
+    gitlab_line = "GITLAB_FF_TOKEN=glffct-" + "AbCdEfGhIjKlMnOpQrSt"
+    findings = scan(gitlab_line, min_confidence=0.01)
+    assert [f for f in findings if f.type == "unleash_api_token"] == []
+    assert any(f.type == "gitlab_feature_flag_client_token" for f in findings)
+
+    unleash_findings = scan(_UNLEASH_TOKEN, min_confidence=0.01)
+    assert [
+        f for f in unleash_findings if f.type == "gitlab_feature_flag_client_token"
+    ] == []
+
+
+def test_unleash_api_token_wins_dedup_over_generic_patterns():
+    """The 56-character hex hash is also a long high-entropy run the generic
+    catch-alls can reach. `_dedup_overlapping_findings` prefers a non-generic
+    provider at any overlapping span, so the credential must be attributed to
+    Unleash rather than reported as a generic high-entropy string."""
+    findings = scan("UNLEASH_API_TOKEN=" + _UNLEASH_TOKEN, min_confidence=0.5)
+    types = {f.type for f in findings}
+    assert "unleash_api_token" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_unleash_api_token_vendor_doc_example_scores_as_a_test_value():
+    """docs.getunleash.io publishes ONE hash three times, once per scope shape,
+    so it is copied verbatim into every walkthrough that follows the docs.
+    confidence_base 0.90 sits above the 0.85 FP-wordlist gate (scanner.py:197),
+    so the wordlist never gets a chance to price it down — the three published
+    literals are pinned as known test values instead and land at ~0.15."""
+    for published in (
+        "new-checkout-flow:development." + _UNLEASH_DOC_HASH,
+        "[]:production." + _UNLEASH_DOC_HASH,
+        "*:development." + _UNLEASH_DOC_HASH,
+    ):
+        findings = scan('UNLEASH_API_TOKEN="' + published + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "unleash_api_token"]
+        assert len(matched) == 1, "not detected: " + published
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_unleash_api_token_masked_placeholders_score_as_test_values():
+    """The all-same-character hashes that redacted logs and documentation use
+    are registered as known test values for the same reason."""
+    for mask in (
+        "*:production." + "0" * 56,
+        "*:production." + "a" * 56,
+        "*:production." + "f" * 56,
+        "[]:production." + "0" * 56,
+        "default:development." + "0" * 56,
+    ):
+        findings = scan('UNLEASH_API_TOKEN="' + mask + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "unleash_api_token"]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)

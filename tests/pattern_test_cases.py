@@ -4447,6 +4447,52 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # Unleash API token — the credential minted in
+    # src/lib/services/api-token-service.ts as
+    # `${projects[0]}:${environment}.${crypto.randomBytes(28).toString('hex')}`
+    # ('[]' in place of projects[0] when more than one project is in scope,
+    # '*' for ALL). randomBytes(28) -> hex is deterministically 56 lowercase
+    # hex characters, so the body width is exact. Admin tokens carry '*' for
+    # BOTH segments. The docs' "64-character" prose describes the pre-scoping
+    # bare-hex token that commit c4b697b57d replaced in the same hunk that
+    # introduced the colon+period structure; that legacy prefixless form and
+    # the `user:` personal access token (one delimiter, no period) are both
+    # deliberately NOT matched and are pinned here as negatives. Every hash
+    # literal is SYNTHETIC — a locally generated 28-byte hex run.
+    "unleash_api_token": {
+        "positives": [
+            "UNLEASH_API_TOKEN=new-checkout-flow:development."
+            "742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f0457",
+            "Authorization: []:production."
+            "f6c37d2771b03b8f81111ec4d5b1df56e4bfb119f7a37953859bc655",
+            "*:development.07696a108667cd57ed52aad2e26f8fc8be5e6216d16ca74bb78ba0a7",
+            # Admin scope — ALL for project and environment alike.
+            "*:*.baf768b78b9ee0e7abae46a6ff79216b08041286cf052790367c6cf4",
+        ],
+        "negatives": [
+            # Hash width is deterministic: 28 bytes -> exactly 56 hex chars.
+            "default:development.742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f045",
+            "default:development.742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f0457a",
+            # Lowercase hex only — toString('hex') never emits uppercase.
+            "default:development.742F1AACB450F4061C6DADCB6F5C5F53EE6625707F2EEF6EB16F0457",
+            # Both delimiters are the whole anchor; neither may be missing.
+            "default.development.742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f0457",
+            "default:development:742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f0457",
+            # The legacy prefixless 64-hex form: knowingly not matched, because
+            # unanchored 64-hex is any hex digest.
+            "742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f045707696a108",
+            "sha256:742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f045707696a108",
+            # Personal access tokens: `user:` + 56 hex, no period. Out of scope.
+            "user:742f1aacb450f4061c6dadcb6f5c5f53ee6625707f2eef6eb16f0457",
+            # Ordinary colon-and-dot text.
+            "image: registry.example.com/app:v1.2.3",
+            "com.example:artifact.jar",
+            # Prose describing the format carries no credential.
+            "An Unleash token is <projects>:<environment>.<56 hex characters>.",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
