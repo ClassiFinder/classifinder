@@ -9534,3 +9534,267 @@ def test_unleash_api_token_masked_placeholders_score_as_test_values():
         assert len(matched) == 1, "not detected: " + mask
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Portainer API access token ----------------------------------------------
+# Format read off the vendor's own generator, not from samples:
+#   https://github.com/portainer/portainer/blob/develop/api/apikey/service.go
+#     const portainerAPIKeyPrefix = "ptr_"
+#     GenerateApiKey(user, description):
+#       randKey          := GenerateRandomKey(32)
+#       encodedRawAPIKey := base64.StdEncoding.EncodeToString(randKey)
+#       prefixedAPIKey   := portainerAPIKeyPrefix + encodedRawAPIKey
+#       apiKey := &portainer.APIKey{... Prefix: prefixedAPIKey[:7] ...}
+#
+# 32 bytes is 3*10 + 2, so base64.StdEncoding DETERMINISTICALLY emits 43 data
+# characters plus exactly one '=' pad — 44 characters, 48 with the prefix. The
+# width is a derived fact rather than a measured range. `Prefix:
+# prefixedAPIKey[:7]` corroborates independently that 'ptr_' is part of the RAW
+# key rather than a display decoration: the stored 7-character lookup prefix is
+# 'ptr_' plus the first three body characters.
+#
+# StdEncoding is the PADDED STANDARD encoder: '+' and '/' are both reachable
+# body characters and the '=' is always present. Not base64url, not
+# RawStdEncoding. test_portainer_api_access_token_body_charset_is_standard_
+# base64 pins both halves of that.
+#
+# The DERIVED digest Portainer stores (HashRaw -> base64 of a SHA-256) is a
+# 44-character padded base64 run with NO 'ptr_' prefix, indistinguishable from
+# any other base64'd sha256 sum. It is knowingly left undetected;
+# test_portainer_api_access_token_ignores_the_stored_hash pins the decision so
+# it cannot be silently reversed.
+#
+# Every credential literal below is SYNTHETIC — locally generated 32-byte
+# base64 runs. Portainer is not a GitHub secret-scanning partner, but the
+# public engine repository convention is synthetic literals either way.
+_PORTAINER_BODY = "y7TE6RRYvqhdJW7J/X4ESrq" + "2vexO7xUlIpce5vCBLSg="
+_PORTAINER_BODY_2 = "Xz2R4k9J9sXEQuFaNwcKial" + "bcbavlgYuJzPMmTqIXus="
+_PORTAINER_BODY_PLUS = "QLh1NEvGYxOOK4QoZ/wX+rn" + "qk1kYn597OC2xFDYSfpw="
+_PORTAINER_TOKEN = "ptr_" + _PORTAINER_BODY
+_PORTAINER_TOKEN_2 = "ptr_" + _PORTAINER_BODY_2
+_PORTAINER_TOKEN_PLUS = "ptr_" + _PORTAINER_BODY_PLUS
+
+
+def test_portainer_api_access_token_true_positives():
+    """Detected bare and in every carrier the token actually appears in: the
+    'X-API-Key' header Portainer authenticates it with, an env var, JSON, YAML
+    and a curl invocation."""
+    for text in (
+        _PORTAINER_TOKEN,
+        "PORTAINER_API_KEY=" + _PORTAINER_TOKEN,
+        "X-API-Key: " + _PORTAINER_TOKEN_2,
+        '{"portainer": {"apiKey": "' + _PORTAINER_TOKEN + '"}}',
+        "  api_key: " + _PORTAINER_TOKEN_2,
+        "curl -H 'X-API-Key: " + _PORTAINER_TOKEN + "' "
+        "https://portainer.example.com/api/endpoints",
+        _PORTAINER_TOKEN_PLUS,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "portainer_api_access_token"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "portainer"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_portainer_api_access_token_span_covers_the_whole_token():
+    """The span must cover the prefix and the '=' pad, so redaction removes the
+    entire credential rather than leaving a recoverable tail."""
+    line = 'PORTAINER_API_KEY="' + _PORTAINER_TOKEN + '"'
+    matched = [
+        f for f in scan(line, min_confidence=0.01) if f.type == "portainer_api_access_token"
+    ]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _PORTAINER_TOKEN
+    assert _PORTAINER_BODY not in f.value_preview
+
+
+def test_portainer_api_access_token_body_width_is_deterministic():
+    """GenerateRandomKey(32) -> StdEncoding is always 43 data characters plus
+    exactly one '=' pad. Neither a shorter nor a longer body is a token the
+    vendor could have minted."""
+    short = _PORTAINER_BODY[:-2] + "="
+    long_ = _PORTAINER_BODY[:-1] + "aa="
+    for neg in (
+        "ptr_" + short,
+        "ptr_" + _PORTAINER_BODY[:20] + "=",
+        "ptr_" + long_,
+        # 43 data chars but no pad at all (RawStdEncoding, which Portainer
+        # does not use) and 42 + '==' (a 31-byte payload).
+        "ptr_" + _PORTAINER_BODY[:-1],
+        "ptr_" + _PORTAINER_BODY[:-2] + "==",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "portainer_api_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_portainer_api_access_token_body_charset_is_standard_base64():
+    """base64.StdEncoding, NOT base64url: '+' and '/' are reachable body
+    characters and must match, while '-' and '_' are not and must not."""
+    matched = [
+        f
+        for f in scan(_PORTAINER_TOKEN_PLUS, min_confidence=0.01)
+        if f.type == "portainer_api_access_token"
+    ]
+    assert len(matched) == 1, "standard-base64 '+' and '/' body not detected"
+
+    url_safe = _PORTAINER_BODY_PLUS.replace("+", "-").replace("/", "_")
+    for neg in ("ptr_" + url_safe, "ptr_" + _PORTAINER_BODY[:-2] + "!="):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "portainer_api_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_portainer_api_access_token_final_body_char_is_structurally_constrained():
+    """Two leftover bytes leave only four significant bits in the final 6-bit
+    group, so the 43rd body character of a real token is always one of
+    [AEIMQUYcgkosw048]. The regex deliberately keeps the BROADER superset — the
+    single '=' pad already pins the payload to 32 bytes — so this test records
+    the fact rather than asserting the regex enforces it, and proves the
+    superset never rejects a token the generator can mint."""
+    import base64 as _b64
+    import os as _os
+
+    tail = set()
+    for _ in range(2000):
+        token = "ptr_" + _b64.b64encode(_os.urandom(32)).decode()
+        assert len(token) == 48
+        tail.add(token[-2])
+        matched = [
+            f for f in scan(token, min_confidence=0.01) if f.type == "portainer_api_access_token"
+        ]
+        assert len(matched) == 1, "generator output not detected: " + token
+    assert tail <= set("AEIMQUYcgkosw048"), sorted(tail)
+
+
+def test_portainer_api_access_token_requires_the_exact_prefix():
+    """'ptr_' is part of the raw key (Prefix: prefixedAPIKey[:7]), so it is
+    mandatory, case-sensitive and may not be substituted."""
+    for neg in (
+        _PORTAINER_BODY,
+        "PTR_" + _PORTAINER_BODY,
+        "Ptr_" + _PORTAINER_BODY,
+        "ptr-" + _PORTAINER_BODY,
+        "ptr" + _PORTAINER_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "portainer_api_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_portainer_api_access_token_boundary_guards():
+    """'ptr' is the universal abbreviation for "pointer", so the left guard is
+    load-bearing: the prefix must not begin mid-identifier. It also excludes
+    '-' because base64url is the one alphabet in which the literal 'ptr_' can
+    appear inside a random-looking run. The right guard carries the body
+    charset AND '=', so a 43-character run that is really the head of a longer
+    base64 payload is never claimed as a whole token."""
+    for neg in (
+        "raw_ptr_" + _PORTAINER_BODY,
+        "char_ptr_" + _PORTAINER_BODY,
+        "shared_ptr_" + _PORTAINER_BODY,
+        "Xptr_" + _PORTAINER_BODY,
+        "9ptr_" + _PORTAINER_BODY,
+        "abc-ptr_" + _PORTAINER_BODY,
+        _PORTAINER_TOKEN + "a",
+        _PORTAINER_TOKEN + "=",
+        _PORTAINER_TOKEN + "0",
+        _PORTAINER_TOKEN + "/x",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "portainer_api_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+    # The left guard must not swallow a preceding word-character run into the
+    # match; the span still begins exactly at 'ptr_'.
+    line = "export PORTAINER_API_KEY=" + _PORTAINER_TOKEN
+    matched = [
+        f for f in scan(line, min_confidence=0.01) if f.type == "portainer_api_access_token"
+    ]
+    assert len(matched) == 1
+    assert line[matched[0].span_start : matched[0].span_end] == _PORTAINER_TOKEN
+
+
+def test_portainer_api_access_token_ignores_the_stored_hash():
+    """Portainer stores HashRaw(rawKey) — base64.StdEncoding of a SHA-256 —
+    which is a 44-character padded base64 run with NO 'ptr_' prefix, i.e.
+    indistinguishable from any other base64'd digest. Matching it would be a
+    false-positive factory, so it is knowingly left undetected. This test
+    exists to keep the decision explicit."""
+    import base64 as _b64
+    import hashlib as _hashlib
+
+    stored = _b64.b64encode(_hashlib.sha256(_PORTAINER_TOKEN.encode()).digest()).decode()
+    assert len(stored) == 44 and stored.endswith("=")
+    for neg in (stored, "apiKeyHash: " + stored, "digest=" + stored):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "portainer_api_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_portainer_api_access_token_does_not_claim_other_base64_payloads():
+    """The 'ptr_' prefix plus the exact 44-character padded body is what keeps
+    this off ordinary base64 text: certificate bodies, digests, Authorization
+    values and prose describing the format."""
+    for neg in (
+        "sha256:" + _PORTAINER_BODY,
+        "Authorization: Basic " + _PORTAINER_BODY,
+        "https://portainer.example.com/api/endpoints",
+        "A Portainer token is ptr_ plus 43 base64 characters and one '='.",
+        'PORTAINER_API_KEY="ptr_<your-access-token>"',
+        "PORTAINER_API_KEY=ptr_",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "portainer_api_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_portainer_api_access_token_does_not_collide_with_metabase_api_key():
+    """Metabase's key is the same structural shape — a 3-or-4 character prefix
+    plus 43 standard-base64 characters and one '=' pad — so the two are each
+    other's nearest neighbour in the registry. Neither may claim the other's
+    value."""
+    metabase = "mb_" + _PORTAINER_BODY
+    findings = scan("METABASE_API_KEY=" + metabase, min_confidence=0.01)
+    assert [f for f in findings if f.type == "portainer_api_access_token"] == []
+    assert any(f.type == "metabase_api_key" for f in findings)
+
+    portainer_findings = scan(_PORTAINER_TOKEN, min_confidence=0.01)
+    assert [f for f in portainer_findings if f.type == "metabase_api_key"] == []
+
+
+def test_portainer_api_access_token_wins_dedup_over_generic_patterns():
+    """The 44-character base64 body is also a long high-entropy run the generic
+    catch-alls can reach. `_dedup_overlapping_findings` prefers a non-generic
+    provider at any overlapping span, so the credential must be attributed to
+    Portainer rather than reported as a generic high-entropy string."""
+    findings = scan("PORTAINER_API_KEY=" + _PORTAINER_TOKEN, min_confidence=0.5)
+    types = {f.type for f in findings}
+    assert "portainer_api_access_token" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_portainer_api_access_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.90 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices masked values down. The
+    all-same-character masks that documentation and redacted logs use are
+    registered as known test values instead, landing at ~0.15."""
+    for mask in (
+        "ptr_" + "x" * 43 + "=",
+        "ptr_" + "X" * 43 + "=",
+        "ptr_" + "0" * 43 + "=",
+        "ptr_" + "A" * 43 + "=",
+    ):
+        findings = scan('PORTAINER_API_KEY="' + mask + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "portainer_api_access_token"]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)

@@ -4493,6 +4493,53 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # Portainer API access token — the credential minted in
+    # api/apikey/service.go GenerateApiKey as
+    #   randKey          := GenerateRandomKey(32)
+    #   encodedRawAPIKey := base64.StdEncoding.EncodeToString(randKey)
+    #   prefixedAPIKey   := portainerAPIKeyPrefix + encodedRawAPIKey
+    # with `const portainerAPIKeyPrefix = "ptr_"` and `Prefix:
+    # prefixedAPIKey[:7]` corroborating that the prefix is part of the RAW key.
+    # 32 bytes is 3*10 + 2, so StdEncoding always emits 43 data characters plus
+    # exactly one '=' pad — 44 characters, 48 in total. StdEncoding is the
+    # PADDED STANDARD encoder, so '+' and '/' are reachable and '-'/'_' are
+    # not. The stored HashRaw digest (base64 of a SHA-256, no 'ptr_' prefix) is
+    # deliberately NOT matched and is pinned here as a negative. Every literal
+    # is SYNTHETIC — a locally generated 32-byte base64 run.
+    "portainer_api_access_token": {
+        "positives": [
+            "PORTAINER_API_KEY=ptr_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLSg=",
+            "X-API-Key: ptr_Xz2R4k9J9sXEQuFaNwcKialbcbavlgYuJzPMmTqIXus=",
+            "ptr_prAmS044feB2MtDG7PylLt1nhOk0dN0kT5JjxwTe2ho=",
+            # '+' and '/' are both reachable standard-base64 body characters.
+            "ptr_QLh1NEvGYxOOK4QoZ/wX+rnqk1kYn597OC2xFDYSfpw=",
+        ],
+        "negatives": [
+            # Body width is deterministic: 32 bytes -> 43 data chars + one '='.
+            "ptr_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLS=",
+            "ptr_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLSga=",
+            # RawStdEncoding (no pad) and a 31-byte payload ('==') are shapes
+            # GenerateApiKey cannot mint.
+            "ptr_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLSg",
+            "ptr_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLS==",
+            # base64url is the wrong alphabet.
+            "ptr_QLh1NEvGYxOOK4QoZ_wX-rnqk1kYn597OC2xFDYSfpw=",
+            # The prefix is exact and case-sensitive.
+            "PTR_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLSg=",
+            "y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLSg=",
+            # 'ptr' is the universal abbreviation for "pointer"; the prefix
+            # must not begin mid-identifier.
+            "raw_ptr_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLSg=",
+            "shared_ptr_y7TE6RRYvqhdJW7J/X4ESrq2vexO7xUlIpce5vCBLSg=",
+            # The stored HashRaw digest: base64 of a SHA-256, no 'ptr_' prefix.
+            # Knowingly undetected — it is any base64'd digest.
+            "apiKeyHash: 6PLhDvXjvbGGqvBCXwuBiCTZWBcv8hFovqI8bIrIcnE=",
+            # Prose describing the format carries no credential.
+            "A Portainer token is ptr_ plus 43 base64 characters and one '='.",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
