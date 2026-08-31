@@ -4540,6 +4540,292 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # ── Batch 2026-08-31 — vendor/catalog-sourced ────────────────────────
+
+    # Google OAuth client secret — 'GOCSPX-' + 28 base64url characters, the
+    # format Google has issued since the 2021 console change. The prefixless
+    # secrets it replaced are deliberately NOT matched (an unanchored
+    # base64url run is any random string) and are pinned below as a negative.
+    # Source: Nosey Parker (Apache-2.0), rules/google.yml. Literals assembled
+    # by concatenation — GitHub's partner scanner recognises this prefix.
+    "google_oauth_client_secret": {
+        "positives": [
+            "GOOGLE_CLIENT_SECRET=" + "GOCSPX-" + "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+            '{"web": {"client_secret": "' + "GOCSPX-"
+            + "IkrJSPkdQYtpCx5fN1xV6iQo2bvm" + '"}}',
+            # '_' and '-' are both reachable base64url body characters.
+            "GOCSPX-" + "cYdhpC918HfRk7Co_NiyhUkPtjy9",
+        ],
+        "negatives": [
+            # Body width is exactly 28.
+            "GOCSPX-" + "aB3dEfGh1JkLmN0pQrStUvWx2Yz",
+            "GOCSPX-" + "aB3dEfGh1JkLmN0pQrStUvWx2YzAB",
+            # Prefix is exact and case-sensitive.
+            "gocspx-" + "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+            "GOCSPX_" + "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+            # The legacy prefixless client secret: knowingly not matched.
+            "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+            # Prose describing the format carries no credential.
+            "A Google client secret is GOCSPX- plus 28 base64url characters.",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # DigitalOcean OAuth access + refresh tokens — 'doo_v1_' / 'dor_v1_' + 64
+    # lowercase hex, the same 32-byte body as the 'dop_v1_' personal access
+    # token already registered, behind a prefix naming the token's role. The
+    # bare 64-hex body is any sha256 digest and is knowingly not matched.
+    # Source: gitleaks (MIT), config/gitleaks.toml.
+    "digitalocean_oauth_access_token": {
+        "positives": [
+            "DIGITALOCEAN_TOKEN=doo_v1_"
+            "669e2ed2ba7d848c143706a3ec39cae6fdaa7e8248ba20ac4375e19d5be2a3d0",
+            '{"access_token": "doo_v1_'
+            '19580331c4fc34d6b6f8ae4dc9b26a3627ed424879f77bb4cc3ac1926010cba7"}',
+        ],
+        "negatives": [
+            "doo_v1_" + "a" * 63,
+            "doo_v1_" + "a" * 65,
+            "doo_v1_" + "A" * 64,
+            "doo_v2_" + "a" * 64,
+            "voodoo_v1_" + "a" * 64,
+            # Sibling prefixes belong to sibling patterns, not to this one.
+            "dop_v1_" + "a" * 64,
+            "dor_v1_" + "a" * 64,
+            "a" * 64,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "digitalocean_oauth_refresh_token": {
+        "positives": [
+            "DIGITALOCEAN_TOKEN=dor_v1_"
+            "530c0137fdf81a2e73f9261b2a426fd9a9eeecc79cbb4ffc20f90fe289195803",
+            '{"refresh_token": "dor_v1_'
+            'f71043a168aa4d291b7d779769bee0d5eeadce35feaac682e68aa8cac520a705"}',
+        ],
+        "negatives": [
+            "dor_v1_" + "a" * 63,
+            "dor_v1_" + "a" * 65,
+            "dor_v1_" + "A" * 64,
+            "dor_v2_" + "a" * 64,
+            "dop_v1_" + "a" * 64,
+            "doo_v1_" + "a" * 64,
+            "a" * 64,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Supabase personal access token — the MANAGEMENT-plane credential, shape
+    # taken from Supabase's own CLI validator:
+    #     AccessTokenPattern = regexp.MustCompile(`^sbp_(oauth_)?[a-f0-9]{40}$`)
+    # so the prefix, the optional 'oauth_' infix, the lowercase-hex alphabet
+    # and the exact 40-character width are all vendor-asserted. Disjoint from
+    # the project 'sb_secret_' key and the service-role JWT, both pinned as
+    # negatives.
+    # Source: https://pkg.go.dev/github.com/supabase/cli/internal/utils
+    "supabase_personal_access_token": {
+        "positives": [
+            "SUPABASE_ACCESS_TOKEN=sbp_9f2c41ab77d0e6538bc194ad0f7e2ba63cd85f14",
+            "supabase login --token sbp_82abb4a2914ff1a1e655a88db339f4dedf969130",
+            # The 'oauth_' infix marks a token issued through the OAuth flow.
+            "sbp_oauth_d5fb1539bc9a8e0efcf20595036027a36a78037b",
+        ],
+        "negatives": [
+            "sbp_" + "a" * 39,
+            "sbp_" + "a" * 41,
+            "sbp_" + "A" * 40,
+            "sbp_oauth_" + "a" * 39,
+            # Only 'oauth_' may sit between the prefix and the body.
+            "sbp_oidc_" + "a" * 40,
+            "sbp" + "a" * 40,
+            "xsbp_" + "a" * 40,
+            # The project-scoped secret API key is a different credential.
+            "sb_secret_" + "N7UND0UgjKTVK-Uodkm0Hg" + "_" + "xSvEMPvz",
+            "A Supabase PAT is sbp_ plus 40 hex characters.",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # CircleCI v2 prefixed API tokens — '<scope prefix>_<22 base58>_<40 hex>',
+    # per the vendor changelog announcing the format. Base58 is the Bitcoin
+    # alphabet [1-9A-HJ-NP-Za-km-z], which drops 0, O, I and l; spelling it as
+    # base58 rather than as a loose alphanumeric class is what keeps these
+    # from being generic matchers, and the excluded characters are pinned as
+    # negatives. The legacy bare-40-hex token stays with 'circleci_token'.
+    # Source: https://circleci.com/changelog/new-format-for-api-access-tokens
+    "circleci_personal_access_token": {
+        "positives": [
+            "CIRCLE_TOKEN=CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+            'curl -H "Circle-Token: CCIPAT_pJeghduKJyaeULz5Z1h63s_'
+            '9478961718d618b80bbf41b7eb4fd55fa42684ac"',
+        ],
+        "negatives": [
+            # Base58 excludes 0, O, I and l.
+            "CCIPAT_0LUhR6rJLxYbyzyrP19iMZ_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+            "CCIPAT_OLUhR6rJLxYbyzyrP19iMZ_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+            "CCIPAT_ILUhR6rJLxYbyzyrP19iMZ_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+            "CCIPAT_lLUhR6rJLxYbyzyrP19iMZ_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+            # Both widths are exact.
+            "CCIPAT_ULUhR6rJLxYbyzyrP19iM_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+            "CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2c",
+            # Uppercase hex is not a value the generator emits.
+            "CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_"
+            "8FB1E3510325F7F09361DE22B9420346C53CA2CB",
+            # The project prefix belongs to the sibling pattern.
+            "CCIPRJ_ULUhR6rJLxYbyzyrP19iMZ_"
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+            # The legacy prefixless token stays with 'circleci_token'.
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "circleci_project_access_token": {
+        "positives": [
+            "CIRCLE_TOKEN=CCIPRJ_7Kq2mVYtNbXpLd4RsWzAoU_"
+            "3c9a71fd0428be6510dc7a239f8b41e0d67c25a9",
+            "  circle_token: CCIPRJ_zdFoccfQphAe7i9YK3cpY8_"
+            "2daa66c176e89e276168c43088495013b9a9041b",
+        ],
+        "negatives": [
+            "CCIPRJ_0Kq2mVYtNbXpLd4RsWzAoU_"
+            "3c9a71fd0428be6510dc7a239f8b41e0d67c25a9",
+            "CCIPRJ_7Kq2mVYtNbXpLd4RsWzAo_"
+            "3c9a71fd0428be6510dc7a239f8b41e0d67c25a9",
+            "CCIPRJ_7Kq2mVYtNbXpLd4RsWzAoU_"
+            "3c9a71fd0428be6510dc7a239f8b41e0d67c25a",
+            "ccIPRJ_7Kq2mVYtNbXpLd4RsWzAoU_"
+            "3c9a71fd0428be6510dc7a239f8b41e0d67c25a9",
+            # The personal prefix belongs to the sibling pattern.
+            "CCIPAT_7Kq2mVYtNbXpLd4RsWzAoU_"
+            "3c9a71fd0428be6510dc7a239f8b41e0d67c25a9",
+            "3c9a71fd0428be6510dc7a239f8b41e0d67c25a9",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # GitLab CI/CD job token — 'glcbt-' per GitLab's own token-prefix table,
+    # then a short routing segment, an underscore and a 20-character base64url
+    # body. Eleventh GitLab prefix in the registry; the other ten are disjoint
+    # literals and 'glrt-' is pinned as a negative.
+    # Source: https://docs.gitlab.com/security/tokens/
+    "gitlab_cicd_job_token": {
+        "positives": [
+            "CI_JOB_TOKEN=glcbt-1_HsK2mQ9vTbXr4LdWzAoU",
+            'curl -H "JOB-TOKEN: glcbt-T9pw3_KQVSKMt9ox8_Ke6ykcdb"',
+            "  job_token: glcbt-8a_2WqSdppO9LedfTYAj4Oc",
+        ],
+        "negatives": [
+            # Routing segment is 1-5 alphanumeric characters.
+            "glcbt-_HsK2mQ9vTbXr4LdWzAoU",
+            "glcbt-abcdef_HsK2mQ9vTbXr4LdWzAoU",
+            # Body width is exactly 20.
+            "glcbt-1_HsK2mQ9vTbXr4LdWzAo",
+            "glcbt-1_HsK2mQ9vTbXr4LdWzAoUq",
+            # The separator is an underscore, not a hyphen.
+            "glcbt-1-HsK2mQ9vTbXr4LdWzAoU",
+            "GLCBT-1_HsK2mQ9vTbXr4LdWzAoU",
+            "Xglcbt-1_HsK2mQ9vTbXr4LdWzAoU",
+            # The runner authentication token is a different GitLab prefix.
+            "glrt-HsK2mQ9vTbXr4LdWzAoU",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Grafana Cloud access-policy token — 'glc_' per the vendor's own
+    # access-policy-token docs, then a base64 body with optional padding. The
+    # body is base64 of a small JSON envelope, so the bound is generous
+    # ({32,400}) rather than fixed and entropy_threshold is 0.0 deliberately:
+    # encoded JSON does not clear the floors that suit random-body tokens.
+    # Disjoint from the 'glsa_' service-account token, pinned as a negative.
+    "grafana_cloud_api_token": {
+        "positives": [
+            "GRAFANA_CLOUD_API_KEY=glc_eyJvIjoiMTIzNDU2IiwibiI6InN0YWNrLTEyMy1h"
+            "bGxveSIsImsiOiJhYjEyM0NkNEVmNTZHaDc4SWo5MEtsIiwibSI6eyJyIjoicHJvZC"
+            "11cy1lYXN0LTAifX0=",
+            "glc_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" + "+/",
+        ],
+        "negatives": [
+            # Body is at least 32 standard-base64 characters.
+            "glc_" + "a" * 31,
+            # base64url is the wrong alphabet.
+            "glc_" + "a" * 30 + "-_",
+            "glc" + "a" * 40,
+            "GLC_" + "a" * 40,
+            "Xglc_" + "a" * 40,
+            # The service-account token is a different Grafana credential.
+            "glsa_" + "A" * 32 + "_" + "ab12cd34",
+            "A Grafana Cloud token starts with glc_ and is base64.",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Docker Swarm unlock key — 'SWMKEY-1-' + 43 UNPADDED standard-base64
+    # characters, per Docker's own swarm-manager locking guide. 32 bytes is
+    # 3*10 + 2, so a padded encoding would be 43 data characters plus one '=';
+    # the emitted key carries no pad, so the width is exact and the padded
+    # spelling is pinned as a negative. Disjoint from the join token by both
+    # the literal and the alphabet. Docker's published sample is registered as
+    # a known_test_value and is therefore NOT usable as a positive here.
+    # Source: https://docs.docker.com/engine/swarm/swarm_manager_locking/
+    "docker_swarm_unlock_key": {
+        "positives": [
+            "SWARM_UNLOCK_KEY=SWMKEY-1-M/ww5oNLdKwUcI/EydOu6ZC+aNbBohXlzV3Uw7rwr8U",
+            "docker swarm unlock SWMKEY-1-UYA6wvtrQ/+hgydEvZBhDCEY0Zw5yNIG8DKUpvzFxeo",
+        ],
+        "negatives": [
+            # Body width is exactly 43, and the key carries no '=' pad.
+            "SWMKEY-1-" + "a" * 42,
+            "SWMKEY-1-" + "a" * 44,
+            "SWMKEY-1-" + "a" * 43 + "=",
+            # base64url is the wrong alphabet.
+            "SWMKEY-1-M_ww5oNLdKwUcI_EydOu6ZC-aNbBohXlzV3Uw7rwr8U",
+            # The prefix carries the '-1-' version segment Docker emits.
+            "SWMKEY-2-" + "a" * 43,
+            "swmkey-1-" + "a" * 43,
+            "XSWMKEY-1-" + "a" * 43,
+            # The join token adds a node; it does not unlock one.
+            "SWMTKN-1-" + "0" * 50 + "-" + "1" * 25,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # GitHub OAuth refresh token — 'ghr_' + 36 alphanumeric characters, the
+    # last unregistered member of GitHub's 2021 prefixed token family (ghp_,
+    # gho_, ghu_, ghs_, github_pat_ are all already covered). Literals are
+    # assembled by concatenation: GitHub's own partner scanner recognises this
+    # prefix and push protection would block a contiguous literal.
+    # Source: gitleaks (MIT), config/gitleaks.toml.
+    "github_oauth_refresh_token": {
+        "positives": [
+            "GITHUB_REFRESH_TOKEN=" + "ghr"
+            + "_1B4a2e77PdV8cLmQxYzRt9KwHjNbFgUo3S6i",
+            '{"refresh_token": "' + "ghr"
+            + '_aylLgjqruwVr9a5rxgn8M4R0ThGmquLSTpIb"}',
+        ],
+        "negatives": [
+            # Body is exactly 36 alphanumeric characters — no '_' or '-'.
+            "ghr" + "_" + "a" * 35,
+            "ghr" + "_" + "a" * 37,
+            "ghr" + "_" + "a" * 20 + "_" + "b" * 15,
+            "ghr" + "-" + "a" * 36,
+            "GHR" + "_" + "a" * 36,
+            "xghr" + "_" + "a" * 36,
+            # Sibling prefixes belong to sibling patterns.
+            "ghp_" + "AbCdEfGhIjKlMnOpQrStUvWxYz123456",
+            "A GitHub refresh token starts with ghr_ and is 40 characters.",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
