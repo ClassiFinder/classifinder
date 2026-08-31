@@ -9798,3 +9798,759 @@ def test_portainer_api_access_token_masked_placeholders_score_as_test_values():
         assert len(matched) == 1, "not detected: " + mask
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# ═══════════════════════════════════════════════
+# BATCH 2026-08-31 — 10 vendor/catalog-sourced patterns
+#
+# Every credential literal below is SYNTHETIC unless a docstring says
+# otherwise. The two that GitHub's own partner scanner recognises — the
+# Google OAuth client secret ('GOCSPX-') and the GitHub OAuth refresh token
+# ('ghr_') — are assembled by string concatenation so no contiguous
+# token-shaped literal exists in source; the engine repository's push
+# protection would otherwise block the push.
+# ═══════════════════════════════════════════════
+
+
+# --- Google OAuth client secret ----------------------------------------------
+# 'GOCSPX-' + 28 base64url characters, 35 in total. This is the format Google
+# has issued since the 2021 console change; the prefixless secrets it replaced
+# are deliberately not matched, because an unanchored base64url run is any
+# random string.
+# Source: Nosey Parker (Apache-2.0), crates/noseyparker/data/default/builtin/
+# rules/google.yml.
+_GOCSPX = "GOCSPX-" + "aB3dEfGh1JkLmN0pQrStUvWx2YzA"
+_GOCSPX_2 = "GOCSPX-" + "IkrJSPkdQYtpCx5fN1xV6iQo2bvm"
+_GOCSPX_UNDERSCORE = "GOCSPX-" + "cYdhpC918HfRk7Co_NiyhUkPtjy9"
+
+
+def test_google_oauth_client_secret_true_positives():
+    """Detected bare and in the carriers the secret actually appears in: a
+    client_secret.json download, an env var, YAML and a shell export."""
+    for text in (
+        _GOCSPX,
+        "GOOGLE_CLIENT_SECRET=" + _GOCSPX,
+        '{"web": {"client_secret": "' + _GOCSPX_2 + '"}}',
+        "  client_secret: " + _GOCSPX,
+        "export GOOGLE_OAUTH_CLIENT_SECRET=" + _GOCSPX_2,
+        # '_' and '-' are both reachable base64url body characters.
+        _GOCSPX_UNDERSCORE,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "google_oauth_client_secret"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "google"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_google_oauth_client_secret_true_negatives():
+    """The prefix is exact and case-sensitive, the body width is exactly 28,
+    and the guards keep the prefix from starting mid-identifier."""
+    for neg in (
+        # Body width is exact — 27 and 29 are both wrong.
+        "GOCSPX-" + "aB3dEfGh1JkLmN0pQrStUvWx2Yz",
+        "GOCSPX-" + "aB3dEfGh1JkLmN0pQrStUvWx2YzAB",
+        # Prefix is case-sensitive and may not be substituted.
+        "gocspx-" + "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+        "GOCSPX_" + "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+        "GOCSPX" + "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+        # The legacy prefixless client secret: knowingly not matched.
+        "aB3dEfGh1JkLmN0pQrStUvWx2YzA",
+        # Prose describing the format carries no credential.
+        "A Google client secret is GOCSPX- plus 28 base64url characters.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "google_oauth_client_secret"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_google_oauth_client_secret_span_covers_the_whole_secret():
+    line = 'GOOGLE_CLIENT_SECRET="' + _GOCSPX + '"'
+    matched = [
+        f for f in scan(line, min_confidence=0.01)
+        if f.type == "google_oauth_client_secret"
+    ]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _GOCSPX
+
+
+def test_google_oauth_client_secret_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices masked values down. The
+    all-same-character masks are registered as known test values instead."""
+    for mask in (
+        "GOCSPX-" + "x" * 28,
+        "GOCSPX-" + "X" * 28,
+        "GOCSPX-" + "0" * 28,
+        "GOCSPX-" + "a" * 28,
+    ):
+        matched = [
+            f for f in scan("client_secret=" + mask, min_confidence=0.01)
+            if f.type == "google_oauth_client_secret"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- DigitalOcean OAuth access + refresh tokens ------------------------------
+# 'doo_v1_' (access) and 'dor_v1_' (refresh), each followed by 64 lowercase hex
+# characters — the same 32-byte body the 'dop_v1_' personal access token
+# already registered here carries, behind a prefix that names the token's role.
+# Source: gitleaks (MIT), config/gitleaks.toml.
+_DOO = "doo_v1_669e2ed2ba7d848c143706a3ec39cae6fdaa7e8248ba20ac4375e19d5be2a3d0"
+_DOR = "dor_v1_530c0137fdf81a2e73f9261b2a426fd9a9eeecc79cbb4ffc20f90fe289195803"
+_DOP = "dop_v1_" + "19580331c4fc34d6b6f8ae4dc9b26a3627ed424879f77bb4cc3ac1926010cba7"
+
+
+def test_digitalocean_oauth_tokens_true_positives():
+    for pattern_id, token in (
+        ("digitalocean_oauth_access_token", _DOO),
+        ("digitalocean_oauth_refresh_token", _DOR),
+    ):
+        for text in (
+            token,
+            "DIGITALOCEAN_TOKEN=" + token,
+            '{"access_token": "' + token + '"}',
+            "Authorization: Bearer " + token,
+            "  do_token: " + token,
+        ):
+            findings = scan(text, min_confidence=0.01)
+            matched = [f for f in findings if f.type == pattern_id]
+            assert len(matched) == 1, f"{pattern_id} not detected: {text[:70]}"
+            assert matched[0].severity == "critical"
+            assert matched[0].provider == "digitalocean"
+            assert matched[0].is_likely_test_value is False
+
+
+def test_digitalocean_oauth_tokens_true_negatives():
+    """64 lowercase hex exactly — 63, 65 and uppercase are all wrong — and the
+    prefix must not begin mid-identifier."""
+    for neg in (
+        "doo_v1_" + "a" * 63,
+        "doo_v1_" + "a" * 65,
+        "doo_v1_" + "A" * 64,
+        "dor_v1_" + "a" * 63,
+        "dor_v1_" + "A" * 64,
+        "doo_v2_" + "a" * 64,
+        "voodoo_v1_" + "a" * 64,
+        # The bare 64-hex body is any sha256 digest; knowingly not matched.
+        "a" * 64,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type
+            in {"digitalocean_oauth_access_token", "digitalocean_oauth_refresh_token"}
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_digitalocean_oauth_tokens_do_not_collide_with_the_personal_token():
+    """'dop_v1_', 'doo_v1_' and 'dor_v1_' share a 64-hex body and differ only
+    in the prefix character that names the role. Each value must produce
+    exactly one finding, attributed to the right one of the three."""
+    for token, expected in (
+        (_DOP, "digitalocean_token"),
+        (_DOO, "digitalocean_oauth_access_token"),
+        (_DOR, "digitalocean_oauth_refresh_token"),
+    ):
+        findings = scan("DIGITALOCEAN_TOKEN=" + token, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_digitalocean_oauth_tokens_masked_placeholders_score_as_test_values():
+    for mask in (
+        "doo_v1_" + "0" * 64,
+        "doo_v1_" + "a" * 64,
+        "doo_v1_" + "f" * 64,
+        "dor_v1_" + "0" * 64,
+        "dor_v1_" + "a" * 64,
+        "dor_v1_" + "f" * 64,
+    ):
+        matched = [
+            f for f in scan("DIGITALOCEAN_TOKEN=" + mask, min_confidence=0.01)
+            if f.type.startswith("digitalocean_oauth_")
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Supabase personal access token ------------------------------------------
+# Shape comes from Supabase's OWN CLI validator rather than from samples:
+#   AccessTokenPattern = regexp.MustCompile(`^sbp_(oauth_)?[a-f0-9]{40}$`)
+# so the prefix, the optional 'oauth_' infix, the lowercase-hex alphabet and
+# the exact 40-character width are all vendor-asserted.
+# Source: https://pkg.go.dev/github.com/supabase/cli/internal/utils
+_SBP = "sbp_9f2c41ab77d0e6538bc194ad0f7e2ba63cd85f14"
+_SBP_OAUTH = "sbp_oauth_d5fb1539bc9a8e0efcf20595036027a36a78037b"
+
+
+def test_supabase_personal_access_token_true_positives():
+    """Both spellings authenticate identically, so both must be detected under
+    one pattern id."""
+    for text in (
+        _SBP,
+        _SBP_OAUTH,
+        "SUPABASE_ACCESS_TOKEN=" + _SBP,
+        "supabase login --token " + _SBP,
+        '{"access_token": "' + _SBP_OAUTH + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "supabase_personal_access_token"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "supabase"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_supabase_personal_access_token_oauth_infix_is_part_of_the_secret():
+    """The 'oauth_' infix is not decoration: the span must cover it, so
+    redaction removes the whole credential rather than leaving a tail."""
+    line = 'SUPABASE_ACCESS_TOKEN="' + _SBP_OAUTH + '"'
+    matched = [
+        f for f in scan(line, min_confidence=0.01)
+        if f.type == "supabase_personal_access_token"
+    ]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _SBP_OAUTH
+
+
+def test_supabase_personal_access_token_true_negatives():
+    """40 lowercase hex exactly, and only 'oauth_' may sit between the prefix
+    and the body."""
+    for neg in (
+        "sbp_" + "a" * 39,
+        "sbp_" + "a" * 41,
+        "sbp_" + "A" * 40,
+        "sbp_oauth_" + "a" * 39,
+        "sbp_oidc_" + "a" * 40,
+        "sbp" + "a" * 40,
+        "xsbp_" + "a" * 40,
+        "A Supabase PAT is sbp_ plus 40 hex characters.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "supabase_personal_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_supabase_personal_access_token_does_not_collide_with_project_keys():
+    """The registry carries three Supabase credentials with three different
+    blast radii: the management-plane PAT ('sbp_'), the project secret API key
+    ('sb_secret_') and the legacy service-role key (a JWT). None may claim
+    another's value."""
+    secret_key = "sb_secret_" + "N7UND0UgjKTVK-Uodkm0Hg" + "_" + "xSvEMPvz"
+    for value, expected in (
+        (_SBP, "supabase_personal_access_token"),
+        (_SBP_OAUTH, "supabase_personal_access_token"),
+        (secret_key, "supabase_secret_key"),
+    ):
+        findings = scan("SUPABASE_TOKEN=" + value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_supabase_personal_access_token_masked_placeholders_score_as_test_values():
+    for mask in (
+        "sbp_" + "0" * 40,
+        "sbp_" + "a" * 40,
+        "sbp_" + "f" * 40,
+        "sbp_oauth_" + "0" * 40,
+    ):
+        matched = [
+            f for f in scan("SUPABASE_ACCESS_TOKEN=" + mask, min_confidence=0.01)
+            if f.type == "supabase_personal_access_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- CircleCI v2 prefixed API tokens -----------------------------------------
+# 'CCIPAT_' (personal) / 'CCIPRJ_' (project) + 22 BASE58 characters + '_' + the
+# legacy 40-hex token value. Base58 is the Bitcoin alphabet
+# [1-9A-HJ-NP-Za-km-z], which drops the four visually ambiguous characters 0,
+# O, I and l — spelling it as base58 rather than as a loose alphanumeric class
+# is what keeps these from being generic '<prefix>_<22 alnum>_<40 hex>'
+# matchers.
+# Source: https://circleci.com/changelog/new-format-for-api-access-tokens
+_CCIPAT = "CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb"
+_CCIPRJ = "CCIPRJ_7Kq2mVYtNbXpLd4RsWzAoU_3c9a71fd0428be6510dc7a239f8b41e0d67c25a9"
+
+
+def test_circleci_v2_tokens_true_positives():
+    for pattern_id, token in (
+        ("circleci_personal_access_token", _CCIPAT),
+        ("circleci_project_access_token", _CCIPRJ),
+    ):
+        for text in (
+            token,
+            "CIRCLE_TOKEN=" + token,
+            'curl -H "Circle-Token: ' + token + '" https://circleci.com/api/v2/me',
+            "  circle_token: " + token,
+        ):
+            findings = scan(text, min_confidence=0.01)
+            matched = [f for f in findings if f.type == pattern_id]
+            assert len(matched) == 1, f"{pattern_id} not detected: {text[:70]}"
+            assert matched[0].severity == "high"
+            assert matched[0].provider == "circleci"
+            assert matched[0].is_likely_test_value is False
+
+
+def test_circleci_v2_tokens_body_is_base58_not_alphanumeric():
+    """0, O, I and l are excluded from the base58 alphabet, so a token
+    carrying one is not a value CircleCI could have minted."""
+    for bad in "0OIl":
+        neg = "CCIPAT_" + bad + "LUhR6rJLxYbyzyrP19iMZ_" \
+            "8fb1e3510325f7f09361de22b9420346c53ca2cb"
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "circleci_personal_access_token"
+        ]
+        assert matched == [], "wrongly matched base58-illegal char: " + bad
+
+
+def test_circleci_v2_tokens_true_negatives():
+    """Both widths are exact — 22 base58 and 40 hex — and the prefixes are
+    case-sensitive."""
+    for neg in (
+        "CCIPAT_ULUhR6rJLxYbyzyrP19iM_8fb1e3510325f7f09361de22b9420346c53ca2cb",
+        "CCIPAT_ULUhR6rJLxYbyzyrP19iMZq_8fb1e3510325f7f09361de22b9420346c53ca2cb",
+        "CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2c",
+        "CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8FB1E3510325F7F09361DE22B9420346C53CA2CB",
+        "ccipat_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb",
+        "CCIPAT-ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb",
+        # A third scope prefix CircleCI does not issue.
+        "CCIORG_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type
+            in {"circleci_personal_access_token", "circleci_project_access_token"}
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_circleci_v2_tokens_do_not_double_match_the_legacy_pattern():
+    """The legacy 'circleci_token' pattern requires a CIRCLE_TOKEN /
+    CIRCLECI_TOKEN keyword followed IMMEDIATELY by [=:"'\\s]+ and then 40 hex
+    characters. In a prefixed token the intervening 'CCIPAT_<base58>_' means
+    hex never begins at the separator, so the legacy pattern cannot fire and
+    the prefixed value produces exactly one finding."""
+    for token, expected in (
+        (_CCIPAT, "circleci_personal_access_token"),
+        (_CCIPRJ, "circleci_project_access_token"),
+    ):
+        for line in (
+            "CIRCLE_TOKEN=" + token,
+            "CIRCLECI_TOKEN=" + token,
+            'CIRCLE_TOKEN="' + token + '"',
+        ):
+            findings = scan(line, min_confidence=0.01)
+            assert len(findings) == 1, (line[:40], [f.type for f in findings])
+            assert findings[0].type == expected
+
+    # The legacy bare-hex token is still detected by the legacy pattern —
+    # adding the prefixed patterns must not have taken that away.
+    legacy = "CIRCLE_TOKEN=8fb1e3510325f7f09361de22b9420346c53ca2cb"
+    types = {f.type for f in scan(legacy, min_confidence=0.01)}
+    assert "circleci_token" in types, types
+
+
+def test_circleci_v2_tokens_masked_placeholders_score_as_test_values():
+    for mask, pattern_id in (
+        ("CCIPAT_" + "x" * 22 + "_" + "0" * 40, "circleci_personal_access_token"),
+        ("CCIPAT_" + "X" * 22 + "_" + "f" * 40, "circleci_personal_access_token"),
+        ("CCIPAT_" + "1" * 22 + "_" + "a" * 40, "circleci_personal_access_token"),
+        ("CCIPRJ_" + "x" * 22 + "_" + "0" * 40, "circleci_project_access_token"),
+        ("CCIPRJ_" + "X" * 22 + "_" + "f" * 40, "circleci_project_access_token"),
+        ("CCIPRJ_" + "1" * 22 + "_" + "a" * 40, "circleci_project_access_token"),
+    ):
+        matched = [
+            f for f in scan("CIRCLE_TOKEN=" + mask, min_confidence=0.01)
+            if f.type == pattern_id
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- GitLab CI/CD job token ---------------------------------------------------
+# 'glcbt-' per GitLab's own token-prefix table, then a short routing segment,
+# an underscore and a 20-character base64url body. This is the eleventh GitLab
+# prefix in the registry; the other ten (glpat-, glrt-, gldt-, glptt-, glft-,
+# glimt-, glagent-, gloas-, glsoat-, glffct-) are all disjoint literals.
+# Source: https://docs.gitlab.com/security/tokens/
+_GLCBT = "glcbt-1_HsK2mQ9vTbXr4LdWzAoU"
+_GLCBT_LONG_ROUTE = "glcbt-T9pw3_KQVSKMt9ox8_Ke6ykcdb"
+
+
+def test_gitlab_cicd_job_token_true_positives():
+    """Detected bare and in the carriers a job token actually leaks through:
+    an echoed CI variable, a curl invocation and a job-log line."""
+    for text in (
+        _GLCBT,
+        _GLCBT_LONG_ROUTE,
+        "CI_JOB_TOKEN=" + _GLCBT,
+        'curl -H "JOB-TOKEN: ' + _GLCBT_LONG_ROUTE + '" '
+        "https://gitlab.example.com/api/v4/projects/1/packages",
+        "  job_token: " + _GLCBT,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "gitlab_cicd_job_token"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "gitlab"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_gitlab_cicd_job_token_true_negatives():
+    """The routing segment is 1-5 alphanumeric characters with no '_' or '-',
+    the body is exactly 20 base64url characters, and the prefix must not begin
+    mid-identifier."""
+    for neg in (
+        # Routing segment missing, or longer than the documented bound.
+        "glcbt-_HsK2mQ9vTbXr4LdWzAoU",
+        "glcbt-abcdef_HsK2mQ9vTbXr4LdWzAoU",
+        # Body width is exact.
+        "glcbt-1_HsK2mQ9vTbXr4LdWzAo",
+        "glcbt-1_HsK2mQ9vTbXr4LdWzAoUq",
+        # The separator is an underscore, not a hyphen.
+        "glcbt-1-HsK2mQ9vTbXr4LdWzAoU",
+        # Prefix is exact and case-sensitive.
+        "GLCBT-1_HsK2mQ9vTbXr4LdWzAoU",
+        "glcb-1_HsK2mQ9vTbXr4LdWzAoU",
+        "Xglcbt-1_HsK2mQ9vTbXr4LdWzAoU",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "gitlab_cicd_job_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_gitlab_cicd_job_token_does_not_collide_with_the_runner_token():
+    """'glcbt-' and 'glrt-' are distinct literals in the same GitLab prefix
+    family. Each value must produce exactly one finding, attributed to the
+    right pattern."""
+    runner = "glrt-" + "HsK2mQ9vTbXr4LdWzAoU"
+    for value, expected in (
+        (_GLCBT, "gitlab_cicd_job_token"),
+        (_GLCBT_LONG_ROUTE, "gitlab_cicd_job_token"),
+        (runner, "gitlab_runner_authentication_token"),
+    ):
+        findings = scan("GITLAB_TOKEN=" + value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_gitlab_cicd_job_token_masked_placeholders_score_as_test_values():
+    for mask in (
+        "glcbt-1_" + "x" * 20,
+        "glcbt-1_" + "X" * 20,
+        "glcbt-1_" + "0" * 20,
+    ):
+        matched = [
+            f for f in scan("CI_JOB_TOKEN=" + mask, min_confidence=0.01)
+            if f.type == "gitlab_cicd_job_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Grafana Cloud access-policy token ----------------------------------------
+# 'glc_' per Grafana's own access-policy-token documentation, then a base64
+# body with optional padding. The body is base64 of a small JSON envelope, so
+# the bound is generous ({32,400}) rather than fixed and the entropy gate is
+# 0.0 DELIBERATELY: encoded JSON carries long runs of predictable structure and
+# does NOT clear the floors that suit random-body tokens. A floor high enough
+# to reject a placeholder would reject real tokens first.
+# Source: https://grafana.com/docs/grafana-cloud/security-and-account-management/
+#         authentication-and-permissions/access-policies/using-an-access-policy-token/
+_GLC = (
+    "glc_eyJvIjoiMTIzNDU2IiwibiI6InN0YWNrLTEyMy1hbGxveSIsImsiOiJhYjEyM0NkNEVm"
+    "NTZHaDc4SWo5MEtsIiwibSI6eyJyIjoicHJvZC11cy1lYXN0LTAifX0="
+)
+
+
+def test_grafana_cloud_api_token_true_positives():
+    """Detected bare and in the carriers it actually ships in: an Alloy
+    config, a Prometheus remote_write block and an env var."""
+    for text in (
+        _GLC,
+        "GRAFANA_CLOUD_API_KEY=" + _GLC,
+        '  basic_auth:\n    password: "' + _GLC + '"',
+        "remote_write password " + _GLC,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "grafana_cloud_api_token"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "grafana"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_grafana_cloud_api_token_is_high_confidence_despite_low_entropy_body():
+    """The regression this pins: the body is base64 of JSON, not a random run.
+    An entropy floor copied from a random-body pattern would demote every real
+    token, so entropy_threshold is 0.0 and the finding must stay high-band."""
+    matched = [
+        f for f in scan(_GLC, min_confidence=0.01)
+        if f.type == "grafana_cloud_api_token"
+    ]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90, matched[0].confidence
+
+
+def test_grafana_cloud_api_token_true_negatives():
+    """Body is at least 32 STANDARD base64 characters; base64url spellings and
+    a bare 'glc' prefix are both wrong."""
+    for neg in (
+        "glc_" + "a" * 31,
+        "glc_" + "a" * 30 + "-_",
+        "glc" + "a" * 40,
+        "GLC_" + "a" * 40,
+        "Xglc_" + "a" * 40,
+        "A Grafana Cloud token starts with glc_ and is base64.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "grafana_cloud_api_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_grafana_cloud_api_token_does_not_collide_with_the_service_account_token():
+    """'glc_' (access policy, Grafana Cloud API) and 'glsa_' (service account,
+    one Grafana instance's HTTP API) are different credentials with different
+    rotation paths. Neither may claim the other's value."""
+    glsa = "glsa_" + "A" * 32 + "_" + "ab12cd34"
+    for value, expected in (
+        (_GLC, "grafana_cloud_api_token"),
+        (glsa, "grafana_api_key"),
+    ):
+        findings = scan("GRAFANA_TOKEN=" + value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_grafana_cloud_api_token_masked_placeholders_score_as_test_values():
+    for mask in (
+        "glc_" + "x" * 32,
+        "glc_" + "X" * 32,
+        "glc_" + "0" * 32,
+    ):
+        matched = [
+            f for f in scan("GRAFANA_CLOUD_API_KEY=" + mask, min_confidence=0.01)
+            if f.type == "grafana_cloud_api_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Docker Swarm unlock key --------------------------------------------------
+# 'SWMKEY-1-' + 43 UNPADDED standard-base64 characters, per Docker's own
+# swarm-manager locking guide. 32 bytes is 3*10 + 2, so a padded encoding would
+# be 43 data characters plus one '='; the emitted key carries no pad, so the
+# width is exact. The alphabet is standard base64 — '+' and '/' are both
+# reachable and the documentation's own sample carries both.
+# Source: https://docs.docker.com/engine/swarm/swarm_manager_locking/
+_SWMKEY = "SWMKEY-1-" + "M/ww5oNLdKwUcI/EydOu6ZC+aNbBohXlz" + "V3Uw7rwr8U"
+_SWMKEY_2 = "SWMKEY-1-" + "UYA6wvtrQ/+hgydEvZBhDCEY0Zw5yNIG8" + "DKUpvzFxeo"
+# Docker's PUBLISHED documentation sample — registered as a known test value.
+_SWMKEY_DOC = "SWMKEY-1-" + "WuYH/IX284+lRcXuoVf38viIDK3HJEKY1" + "3MIHX+tTt8"
+
+
+def test_docker_swarm_unlock_key_true_positives():
+    """Detected bare and in the carriers it actually appears in: the output of
+    `docker swarm init --autolock`, an unlock invocation, and a runbook line."""
+    for text in (
+        _SWMKEY,
+        "To unlock a swarm manager, run `docker swarm unlock` and provide "
+        + _SWMKEY_2,
+        "SWARM_UNLOCK_KEY=" + _SWMKEY,
+        "  unlock_key: " + _SWMKEY_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "docker_swarm_unlock_key"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "docker"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_docker_swarm_unlock_key_body_is_unpadded_standard_base64():
+    """'+' and '/' are reachable body characters and must match; base64url's
+    '-'/'_' are not; and the key carries NO '=' pad, so a padded 43-character
+    run is a different encoding and is rejected."""
+    assert "+" in _SWMKEY and "/" in _SWMKEY
+    url_safe = _SWMKEY.replace("+", "-").replace("/", "_")
+    for neg in (
+        url_safe,
+        _SWMKEY + "=",
+        "SWMKEY-1-" + "a" * 42,
+        "SWMKEY-1-" + "a" * 44,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "docker_swarm_unlock_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_docker_swarm_unlock_key_true_negatives():
+    """The prefix is exact, case-sensitive, and carries the '-1-' version
+    segment Docker emits."""
+    for neg in (
+        "SWMKEY-2-" + "a" * 43,
+        "SWMKEY-" + "a" * 43,
+        "swmkey-1-" + "a" * 43,
+        "XSWMKEY-1-" + "a" * 43,
+        "The unlock key starts with SWMKEY-1- and is base64.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "docker_swarm_unlock_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_docker_swarm_unlock_key_does_not_collide_with_the_join_token():
+    """The unlock key and the join token are different credentials that do
+    different things — unlock a restarted manager vs. add a node — and they are
+    disjoint by BOTH the literal ('SWMKEY-1-' vs 'SWMTKN-1-') and the alphabet
+    (standard base64 vs two hyphen-separated base-36 segments). Neither may
+    claim the other's value."""
+    join = "SWMTKN-1-" + "0" * 50 + "-" + "1" * 25
+    for value, expected in (
+        (_SWMKEY, "docker_swarm_unlock_key"),
+        (join, "docker_swarm_join_token"),
+    ):
+        findings = scan("swarm: " + value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_docker_swarm_unlock_key_documentation_sample_scores_as_a_test_value():
+    """Docker's published sample is copied verbatim into every walkthrough
+    that follows the locking guide. confidence_base 0.95 sits above the 0.85
+    FP-wordlist gate (scanner.py:197), so the wordlist never gets a chance to
+    price it down; it is registered as a known test value instead."""
+    for value in (
+        _SWMKEY_DOC,
+        "SWMKEY-1-" + "x" * 43,
+        "SWMKEY-1-" + "0" * 43,
+    ):
+        matched = [
+            f for f in scan("docker swarm unlock " + value, min_confidence=0.01)
+            if f.type == "docker_swarm_unlock_key"
+        ]
+        assert len(matched) == 1, "not detected: " + value
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- GitHub OAuth refresh token -----------------------------------------------
+# 'ghr_' + 36 alphanumeric characters — the last unregistered member of
+# GitHub's 2021 prefixed token family, which the registry already covers as
+# ghp_, gho_, ghu_, ghs_ and github_pat_. Assembled by concatenation
+# throughout: GitHub's own partner scanner recognises this prefix and push
+# protection would block a contiguous literal in the public engine repository.
+# Source: gitleaks (MIT), config/gitleaks.toml.
+_GHR = "ghr" + "_1B4a2e77PdV8cLmQxYzRt9KwHjNbFgUo3S6i"
+_GHR_2 = "ghr" + "_aylLgjqruwVr9a5rxgn8M4R0ThGmquLSTpIb"
+
+
+def test_github_oauth_refresh_token_true_positives():
+    for text in (
+        _GHR,
+        "GITHUB_REFRESH_TOKEN=" + _GHR,
+        '{"refresh_token": "' + _GHR_2 + '"}',
+        "  refresh_token: " + _GHR,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "github_oauth_refresh_token"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "github"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_github_oauth_refresh_token_true_negatives():
+    """The body is exactly 36 alphanumeric characters — no '_' or '-' — and
+    the prefix must not begin mid-identifier."""
+    for neg in (
+        "ghr" + "_" + "a" * 35,
+        "ghr" + "_" + "a" * 37,
+        "ghr" + "_" + "a" * 20 + "_" + "b" * 15,
+        "ghr" + "-" + "a" * 36,
+        "GHR" + "_" + "a" * 36,
+        "xghr" + "_" + "a" * 36,
+        "A GitHub refresh token starts with ghr_ and is 40 characters.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "github_oauth_refresh_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_github_oauth_refresh_token_does_not_collide_with_the_gh_prefix_family():
+    """ghp_, gho_, ghu_, ghs_ and ghr_ differ only in one prefix character.
+    Each value must produce exactly one finding, attributed to the right
+    pattern, so the finding names the token's role."""
+    classic = "ghp_" + "AbCdEfGhIjKlMnOpQrStUvWxYz123456"
+    for value, expected in (
+        (_GHR, "github_oauth_refresh_token"),
+        (classic, "github_pat_classic"),
+    ):
+        findings = scan("GITHUB_TOKEN=" + value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_github_oauth_refresh_token_masked_placeholders_score_as_test_values():
+    for mask in (
+        "ghr" + "_" + "x" * 36,
+        "ghr" + "_" + "X" * 36,
+        "ghr" + "_" + "0" * 36,
+    ):
+        matched = [
+            f for f in scan("GITHUB_REFRESH_TOKEN=" + mask, min_confidence=0.01)
+            if f.type == "github_oauth_refresh_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_batch_2026_08_31_patterns_are_not_claimed_by_generic_catch_alls():
+    """Every credential in this batch sits above the confidence band the
+    generic catch-alls can reach, and `_dedup_overlapping_findings` prefers a
+    non-generic provider at any overlapping span. Each must be attributed to
+    its vendor rather than reported as a generic high-entropy string."""
+    for pattern_id, carrier in (
+        ("google_oauth_client_secret", "GOOGLE_CLIENT_SECRET=" + _GOCSPX),
+        ("digitalocean_oauth_access_token", "DIGITALOCEAN_TOKEN=" + _DOO),
+        ("digitalocean_oauth_refresh_token", "DIGITALOCEAN_TOKEN=" + _DOR),
+        ("supabase_personal_access_token", "SUPABASE_ACCESS_TOKEN=" + _SBP),
+        ("circleci_personal_access_token", "CIRCLE_TOKEN=" + _CCIPAT),
+        ("circleci_project_access_token", "CIRCLE_TOKEN=" + _CCIPRJ),
+        ("gitlab_cicd_job_token", "CI_JOB_TOKEN=" + _GLCBT),
+        ("grafana_cloud_api_token", "GRAFANA_CLOUD_API_KEY=" + _GLC),
+        ("docker_swarm_unlock_key", "SWARM_UNLOCK_KEY=" + _SWMKEY),
+        ("github_oauth_refresh_token", "GITHUB_REFRESH_TOKEN=" + _GHR),
+    ):
+        types = {f.type for f in scan(carrier, min_confidence=0.5)}
+        assert pattern_id in types, (pattern_id, types)
+        assert not any(t.startswith("generic_") for t in types), (pattern_id, types)
