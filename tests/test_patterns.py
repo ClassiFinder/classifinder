@@ -10554,3 +10554,338 @@ def test_batch_2026_08_31_patterns_are_not_claimed_by_generic_catch_alls():
         types = {f.type for f in scan(carrier, min_confidence=0.5)}
         assert pattern_id in types, (pattern_id, types)
         assert not any(t.startswith("generic_") for t in types), (pattern_id, types)
+
+
+# --- Login with Amazon access token ------------------------------------------
+# Format published by the vendor, not inferred from samples:
+#   https://developer.amazon.com/docs/login-with-amazon/access-token.html
+#     "An access token is an alphanumeric code 350 characters or more in
+#      length, with a maximum size of 2048 bytes. Access tokens begin with the
+#      characters Atza|."
+#   https://developer.amazon.com/docs/login-with-amazon/authorization-code-grant.html
+#     {"access_token":"Atza|IQEBLjAsAhRmHjNgHpi0U-Dme37rR6CuUpSR...",
+#      "token_type":"bearer", "expires_in":3600,
+#      "refresh_token":"Atzr|IQEBLzAtAhRPpMJxdwVz2Nn6f2y-tpJX2DeX..."}
+#
+# BOTH published bounds describe the WHOLE token, prefix included, so both are
+# carried into the regex with the 5-character 'Atza|' subtracted: a body of
+# 345..2043 characters. Requiring 350 body characters would miss a token that
+# is exactly 350 characters long — the shortest shape the vendor says it mints
+# — and allowing 2048 body characters would accept a token 5 bytes over the
+# documented ceiling. The token is ASCII, so bytes and characters coincide.
+#
+# The body charset is a deliberate SUPERSET. Amazon calls the token
+# "alphanumeric", which is demonstrably loose: the published example bodies
+# carry '-' ("...Hpi0U-Dme37rR6CuUpSR"), and the docs warn that access tokens
+# "contain characters that are outside the allowed range for URLs" and must be
+# URL-encoded. [0-9A-Za-z+/=_-] therefore covers both base64 and base64url
+# spellings; narrowing to the letters visible in one truncated example would
+# risk missing real tokens, and the 345-character minimum plus the vendor-unique
+# 'Atza|' prefix is what carries the precision, not the alphabet.
+#
+# '|' is deliberately EXCLUDED from the body, which pins the token to exactly
+# ONE pipe. No published example carries a second one, and admitting '|' would
+# let a 345+ character run swallow neighbouring fields of a pipe-delimited log
+# line into the reported span.
+#
+# Every token literal below is SYNTHETIC — base64 of SHA-256 digests over a
+# documented salt, assembled by string concatenation because "Login with
+# Amazon" is a GitHub secret-scanning partner and a contiguous 'Atza|' literal
+# could trip push protection on the public engine repository.
+
+
+def _lwa_body(length: int, salt: str) -> str:
+    """Deterministic synthetic token body: base64 of chained SHA-256 digests.
+
+    Reproducible from the salt alone, so no reviewer has to trust that the
+    literal is not a real credential.
+    """
+    import base64 as _b64
+    import hashlib as _hashlib
+
+    out: list[str] = []
+    total = 0
+    counter = 0
+    while total < length:
+        raw = _hashlib.sha256(f"{salt}:{counter}".encode()).digest()
+        piece = _b64.b64encode(raw).decode().rstrip("=")
+        out.append(piece)
+        total += len(piece)
+        counter += 1
+    return "".join(out)[:length]
+
+
+_LWA_PREFIX = "Atza" + "|"
+_LWA_REFRESH_PREFIX = "Atzr" + "|"
+_LWA_BODY = _lwa_body(400, "classifinder-lwa-fixture-a")
+_LWA_BODY_2 = _lwa_body(512, "classifinder-lwa-fixture-b")
+_LWA_TOKEN = _LWA_PREFIX + _LWA_BODY
+_LWA_TOKEN_2 = _LWA_PREFIX + _LWA_BODY_2
+# The vendor's own published example, truncated with an ellipsis exactly as the
+# docs print it. Structurally unmatchable — 36 body characters, not 345.
+_LWA_DOC_EXAMPLE = _LWA_PREFIX + "IQEBLjAsAhRmHjNgHpi0U-Dme37rR6CuUpSR..."
+
+
+def test_amazon_lwa_access_token_true_positives():
+    """Detected bare and in every carrier a Login with Amazon access token
+    actually appears in: the token-endpoint JSON response, an env var, the
+    'Authorization: bearer' header it is spent through, the SP-API
+    'x-amz-access-token' header, and a curl invocation."""
+    for text in (
+        _LWA_TOKEN,
+        '{"access_token":"' + _LWA_TOKEN + '","token_type":"bearer","expires_in":3600}',
+        "LWA_ACCESS_TOKEN=" + _LWA_TOKEN_2,
+        "Authorization: bearer " + _LWA_TOKEN,
+        "x-amz-access-token: " + _LWA_TOKEN_2,
+        "curl -H 'x-amz-access-token: " + _LWA_TOKEN + "' "
+        "https://sellingpartnerapi-na.amazon.com/orders/v0/orders",
+        "  access_token: " + _LWA_TOKEN_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "amazon_lwa_access_token"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "amazon"
+        assert matched[0].is_likely_test_value is False
+
+
+def test_amazon_lwa_access_token_span_covers_the_whole_token():
+    """The span must cover the 'Atza|' prefix and the final body character, so
+    redaction removes the entire bearer token rather than leaving a replayable
+    tail. The preview must not leak the body."""
+    line = 'ACCESS_TOKEN="' + _LWA_TOKEN + '"'
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "amazon_lwa_access_token"]
+    assert len(matched) == 1
+    f = matched[0]
+    assert line[f.span_start : f.span_end] == _LWA_TOKEN
+    assert f.value_preview.startswith("Atza")
+    assert _LWA_BODY not in f.value_preview
+
+
+def test_amazon_lwa_access_token_minimum_width_is_the_documented_350():
+    """The vendor's floor — "350 characters or more in length" — describes the
+    WHOLE token, so the body floor is 345. A token of exactly 350 characters is
+    the shortest shape Amazon says it mints and MUST be detected; 349 must not
+    be, so a truncated or hand-typed value is never reported as a credential."""
+    exactly_350 = _LWA_PREFIX + _LWA_BODY[:345]
+    assert len(exactly_350) == 350
+    matched = [
+        f for f in scan(exactly_350, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+    ]
+    assert len(matched) == 1, "the documented minimum-length token was missed"
+
+    for neg in (
+        _LWA_PREFIX + _LWA_BODY[:344],
+        _LWA_PREFIX + _LWA_BODY[:100],
+        _LWA_PREFIX + _LWA_BODY[:20],
+        _LWA_PREFIX,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+        ]
+        assert matched == [], "wrongly matched a short value: " + str(len(neg))
+
+
+def test_amazon_lwa_access_token_maximum_width_is_the_documented_2048_bytes():
+    """"Maximum size of 2048 bytes" is likewise the whole token, so the body
+    ceiling is 2043. The token is ASCII, so bytes and characters coincide. A
+    body one character over the ceiling is rejected OUTRIGHT rather than
+    truncated: the right guard refuses every shorter backtrack too, so the
+    engine never reports a partial span that redaction would leave replayable."""
+    long_body = _lwa_body(2100, "classifinder-lwa-fixture-long")
+
+    at_ceiling = _LWA_PREFIX + long_body[:2043]
+    assert len(at_ceiling) == 2048
+    matched = [
+        f for f in scan(at_ceiling, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+    ]
+    assert len(matched) == 1, "the documented maximum-size token was missed"
+    assert matched[0].span_end - matched[0].span_start == 2048
+
+    over_ceiling = _LWA_PREFIX + long_body[:2044]
+    matched = [
+        f for f in scan(over_ceiling, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+    ]
+    assert matched == [], "matched a value larger than the vendor's documented ceiling"
+
+
+def test_amazon_lwa_access_token_body_charset_is_a_deliberate_superset():
+    """Amazon calls the token "alphanumeric", which is loose: the published
+    example body carries '-', and the docs warn the token contains characters
+    "outside the allowed range for URLs". Both base64 and base64url spellings
+    must therefore match, and so must the '=' pad."""
+    base = _LWA_BODY[:340]
+    for tail in ("+/=_-", "-_=/+", "_-+/="):
+        token = _LWA_PREFIX + base + tail
+        assert len(token) == 350
+        matched = [
+            f for f in scan(token, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+        ]
+        assert len(matched) == 1, "charset character rejected: " + tail
+
+
+def test_amazon_lwa_access_token_carries_exactly_one_pipe():
+    """'|' is deliberately excluded from the body, pinning the token to a single
+    pipe. No published example carries a second one, and admitting '|' would let
+    a 345+ character run swallow neighbouring fields of a pipe-delimited log
+    line. A second pipe therefore ends the span rather than extending it, and a
+    body that is only 344 characters before its second pipe is not reported at
+    all."""
+    line = _LWA_TOKEN + "|" + _LWA_BODY_2
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "amazon_lwa_access_token"]
+    assert len(matched) == 1
+    assert line[matched[0].span_start : matched[0].span_end] == _LWA_TOKEN
+
+    piped_log = _LWA_PREFIX + _LWA_BODY[:200] + "|" + _LWA_BODY_2[:300]
+    matched = [
+        f for f in scan(piped_log, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+    ]
+    assert matched == [], "swallowed a pipe-delimited field into the span"
+
+
+def test_amazon_lwa_access_token_requires_the_exact_prefix():
+    """'Atza|' is part of the raw token, so it is mandatory, case-sensitive, and
+    the pipe may not be substituted."""
+    for neg in (
+        _LWA_BODY,
+        "atza|" + _LWA_BODY,
+        "ATZA|" + _LWA_BODY,
+        "AtzA|" + _LWA_BODY,
+        "Atza" + _LWA_BODY,
+        "Atza:" + _LWA_BODY,
+        "Atza-" + _LWA_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:40]
+
+
+def test_amazon_lwa_access_token_boundary_guards():
+    """The left guard keeps 'Atza' from starting mid-token, and the right guard
+    carries the body charset so a 345-character run that is really the head of a
+    longer body is never claimed as a whole token. '=' is deliberately ABSENT
+    from the LEFT guard even though it is a body character, because
+    'access_token=Atza|...' is the single most common carrier there is."""
+    for neg in (
+        "X" + _LWA_TOKEN,
+        "9" + _LWA_TOKEN,
+        "_" + _LWA_TOKEN,
+        "-" + _LWA_TOKEN,
+        "/" + _LWA_TOKEN,
+        "notAtza|" + _LWA_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:40]
+
+    # ...while every delimiter a real carrier actually uses is accepted, '='
+    # first among them.
+    for carrier in (
+        "access_token=" + _LWA_TOKEN,
+        'access_token="' + _LWA_TOKEN + '"',
+        "access_token: " + _LWA_TOKEN,
+        "(" + _LWA_TOKEN + ")",
+        "token\t" + _LWA_TOKEN,
+    ):
+        matched = [
+            f for f in scan(carrier, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+        ]
+        assert len(matched) == 1, "delimiter rejected: " + carrier[:30]
+        assert carrier[matched[0].span_start : matched[0].span_end] == _LWA_TOKEN
+
+
+def test_amazon_lwa_access_token_ignores_the_url_encoded_spelling():
+    """Amazon tells integrators to URL-encode the token, which spells the prefix
+    'Atza%7C' and the body's '+', '/' and '=' as '%2B', '%2F' and '%3D'. The
+    engine has no URL decoder — that is an engine-wide gap, not this pattern's
+    to paper over — so the percent-encoded form is knowingly left undetected
+    rather than bolted on as a second alternation that would also match prose.
+    This test exists to keep the decision explicit."""
+    for neg in (
+        "Atza%7C" + _LWA_BODY,
+        "Atza%7c" + _LWA_BODY,
+        "redirect_uri?access_token=Atza%7C" + _LWA_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+        ]
+        assert matched == [], "wrongly matched the percent-encoded form"
+
+
+def test_amazon_lwa_refresh_token_is_not_claimed_by_the_access_token_pattern():
+    """'Atzr|' is the REFRESH token — same body shape, same 2048-byte ceiling,
+    and a far longer life than the access token's 3600 seconds. It is a real
+    credential and a separate pattern; it was explicitly excluded from this
+    change, so the access-token pattern must not silently mislabel it."""
+    refresh = _LWA_REFRESH_PREFIX + _LWA_BODY
+    matched = [
+        f for f in scan(refresh, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+    ]
+    assert matched == [], "a refresh token was reported as an access token"
+
+    pair = '{"access_token":"' + _LWA_TOKEN + '","refresh_token":"' + refresh + '"}'
+    matched = [f for f in scan(pair, min_confidence=0.01) if f.type == "amazon_lwa_access_token"]
+    assert len(matched) == 1
+    assert pair[matched[0].span_start : matched[0].span_end] == _LWA_TOKEN
+
+
+def test_amazon_lwa_access_token_does_not_collide_with_amazon_mws_auth_token():
+    """The registry's only other Amazon-provider credential. 'amzn.mws.' + a
+    UUID and 'Atza|' + 345 characters share a provider and nothing else;
+    neither may claim the other's value."""
+    mws = "amzn.mws." + "00000000-1111-2222-3333-444455556666"
+    findings = scan("MWSAuthToken=" + mws, min_confidence=0.01)
+    assert [f for f in findings if f.type == "amazon_lwa_access_token"] == []
+    assert any(f.type == "amazon_mws_auth_token" for f in findings)
+
+    findings = scan(_LWA_TOKEN, min_confidence=0.01)
+    assert [f for f in findings if f.type == "amazon_mws_auth_token"] == []
+
+
+def test_amazon_lwa_access_token_ignores_the_truncated_vendor_example():
+    """Amazon's own docs print the token elided —
+    'Atza|IQEBLjAsAhRmHjNgHpi0U-Dme37rR6CuUpSR...' — and that literal is copied
+    verbatim into every integration walkthrough that follows them. It is 41
+    characters, so the 345-character floor makes it structurally unmatchable and
+    it never needs a known_test_values entry to be priced down."""
+    for neg in (
+        _LWA_DOC_EXAMPLE,
+        '{"access_token":"' + _LWA_DOC_EXAMPLE + '","token_type":"bearer"}',
+        "Access tokens begin with the characters Atza|.",
+        'ACCESS_TOKEN="Atza|<your-access-token>"',
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:60]
+
+
+def test_amazon_lwa_access_token_wins_dedup_over_generic_patterns():
+    """A 400-character high-entropy run is exactly what the generic catch-alls
+    reach for. `_dedup_overlapping_findings` prefers a non-generic provider at
+    any overlapping span, so the credential must be attributed to Amazon rather
+    than reported as a generic high-entropy string or a generic API key."""
+    findings = scan("access_token=" + _LWA_TOKEN, min_confidence=0.5)
+    types = {f.type for f in findings}
+    assert "amazon_lwa_access_token" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_amazon_lwa_access_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices a masked value down. The
+    all-same-character masks that redacted logs and documentation use are
+    registered as known test values instead, landing at ~0.15."""
+    for mask in (
+        _LWA_PREFIX + "x" * 345,
+        _LWA_PREFIX + "X" * 345,
+        _LWA_PREFIX + "0" * 345,
+        _LWA_PREFIX + "A" * 345,
+    ):
+        findings = scan('ACCESS_TOKEN="' + mask + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "amazon_lwa_access_token"]
+        assert len(matched) == 1, "not detected: " + mask[:20]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
