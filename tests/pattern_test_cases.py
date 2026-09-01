@@ -24,6 +24,37 @@ _STS_HARNESS_BODY = (
     "yZ0X5cF7hJ2nQ8vL4mR9bXtY6sKdG1oPuTiWxZyA0BSq8+/OuT7wKrsBnG4hJ9vN2m"
 )
 
+# Login with Amazon access-token bodies. Amazon's floor is "350 characters or
+# more" for the WHOLE token, so a body must be at least 345 characters — far too
+# long to inline once per case. Both are SYNTHETIC: base64 of chained SHA-256
+# digests over a documented salt, reproducible with
+#   b64encode(sha256(f"{salt}:{n}").digest()).rstrip("=") for n = 0, 1, 2, ...
+# concatenated and truncated. _LWA_HARNESS_BODY is 400 characters
+# (salt "classifinder-lwa-fixture-a"); _LWA_HARNESS_BODY_2 is 346
+# (salt "classifinder-lwa-harness-b") and opens on '+', which is what pins the
+# left-hand end of the body charset.
+_LWA_HARNESS_BODY = (
+    "htHmwdjjYkWV28DTlcE7G+dYkmxgI+FUb1wNjJMElGE/LuY2rRTqQMiSvjFkSyiRKW"
+    "henE+gtqnpBM3pDTyFugJJzB1q6FMr1t+c3n6b2POiLLIbbqbdy+V+wHOYcHRmcGy9"
+    "9ACAY3I8I8BL79SH6TJNcNWQ3plIg8+ZDRFlkXHkeB0C6BJkWEdFZVHBCDL/H9Cj3j"
+    "8zzDG+mGRcKVUOWjY86XZcqUk/6xT7WtmZzR43KT8p6BCR9DS0x9f6XMV5D8A8nTbS"
+    "gM0ioAQCJtSk4A4WxhL8eU7hLJAkJCBZ6oMqQS0aAT+Na32mxluQNWsgrTKZwXLjk1"
+    "wdiwmc2lQFsFK4k6rwOg3+peR/RgdTKfRK0P7vtAB6+lUMpHo+8zOyjosNx9xloU7P"
+    "kgLR"
+)
+_LWA_HARNESS_BODY_2 = (
+    "+Zc3hyzDLw1gf7F7v4xmB/gNP8JAu76rbhkE0I1FLfgt6cA2hR9LbIfyWbfepV+4Ib"
+    "ciMUnPHIt2RgkO9N0syo/dpeSardQJtyfQ197DSx1160hLVL2lM9tPl3HX2uPCYjJz"
+    "y79cWYiPMFOprPJhe0Tu95GkW9MGc0SRk82fa1oYEvQ1Gl0rXfHh1Qkuz/UfUMyaiW"
+    "moibfcy1OHTqUKEKsdLDsjstG0GTx3bhIaspYT5kyJ5rDTNVPnY3q+4ngP70mfwhQ3"
+    "dQltcf1GNeHEcGHyb2B2sQQXOeVpX8Hx06hVYZQBLf177rUYhm3UIFdo+NqnzQRyGG"
+    "7dlzzAXZlrZuj4pc"
+)
+# The prefix is assembled rather than inlined: "Login with Amazon" is a GitHub
+# secret-scanning partner, and a contiguous 'Atza|' + 345-character literal
+# could trip push protection on the public engine repository.
+_LWA_PREFIX_LITERAL = "Atza" + "|"
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -4825,6 +4856,51 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "A GitHub refresh token starts with ghr_ and is 40 characters.",
         ],
         "min_confidence": 0.90,
+    },
+
+    # Login with Amazon access token — 'Atza|' + 345..2043 characters of
+    # [0-9A-Za-z+/=_-]. Both bounds are the vendor's, restated for the BODY:
+    # developer.amazon.com/docs/login-with-amazon/access-token.html says the
+    # token is "an alphanumeric code 350 characters or more in length, with a
+    # maximum size of 2048 bytes" and "begin[s] with the characters Atza|", so
+    # the 5-character prefix comes off both ends. The charset is a deliberate
+    # superset of base64 and base64url: the vendor's own example body carries
+    # '-', and the docs warn the token contains characters "outside the allowed
+    # range for URLs". '|' is excluded from the body, pinning the token to one
+    # pipe. The 'Atzr|' REFRESH token is a separate credential, deliberately not
+    # matched here, and the percent-encoded spelling 'Atza%7C' is knowingly left
+    # undetected — the engine has no URL decoder. Every literal is SYNTHETIC.
+    "amazon_lwa_access_token": {
+        "positives": [
+            _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY,
+            "access_token=" + _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY_2,
+            'ACCESS_TOKEN="' + _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY + '"',
+            "x-amz-access-token: " + _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY_2,
+            "Authorization: bearer " + _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY,
+            # Exactly 350 characters — the shortest token Amazon says it mints.
+            _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY_2[:345],
+        ],
+        "negatives": [
+            # 349 characters: one short of the documented floor.
+            _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY_2[:344],
+            # The vendor's own example, elided exactly as the docs print it.
+            _LWA_PREFIX_LITERAL + "IQEBLjAsAhRmHjNgHpi0U-Dme37rR6CuUpSR...",
+            "Access tokens begin with the characters Atza|.",
+            'ACCESS_TOKEN="' + _LWA_PREFIX_LITERAL + '<your-access-token>"',
+            # The prefix is exact, case-sensitive, and the pipe is mandatory.
+            "atza|" + _LWA_HARNESS_BODY,
+            "ATZA|" + _LWA_HARNESS_BODY,
+            "Atza" + _LWA_HARNESS_BODY,
+            _LWA_HARNESS_BODY,
+            # 'Atzr|' is the REFRESH token — a real credential, a different
+            # pattern, and explicitly out of scope for this change.
+            "Atzr" + "|" + _LWA_HARNESS_BODY,
+            # URL-encoded spelling: knowingly undetected, no URL decoder.
+            "Atza%7C" + _LWA_HARNESS_BODY,
+            # The left guard: 'Atza' must not start mid-token.
+            "X" + _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY,
+        ],
+        "min_confidence": 0.95,
     },
 }
 
