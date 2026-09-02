@@ -10816,19 +10816,30 @@ def test_amazon_lwa_access_token_ignores_the_url_encoded_spelling():
 
 def test_amazon_lwa_refresh_token_is_not_claimed_by_the_access_token_pattern():
     """'Atzr|' is the REFRESH token — same body shape, same 2048-byte ceiling,
-    and a far longer life than the access token's 3600 seconds. It is a real
-    credential and a separate pattern; it was explicitly excluded from this
-    change, so the access-token pattern must not silently mislabel it."""
+    and a far longer life than the access token's 3600 seconds. It now has its
+    own pattern (`amazon_lwa_refresh_token`, severity critical), so this test
+    pins BOTH halves of the split: the access-token pattern must never claim a
+    refresh token, and the refresh token must not go undetected as a result.
+    In the token-endpoint response the two appear side by side and must be
+    reported as two distinct findings with the correct spans."""
     refresh = _LWA_REFRESH_PREFIX + _LWA_BODY
-    matched = [
-        f for f in scan(refresh, min_confidence=0.01) if f.type == "amazon_lwa_access_token"
-    ]
-    assert matched == [], "a refresh token was reported as an access token"
+    findings = scan(refresh, min_confidence=0.01)
+    assert [f for f in findings if f.type == "amazon_lwa_access_token"] == [], (
+        "a refresh token was reported as an access token"
+    )
+    claimed = [f for f in findings if f.type == "amazon_lwa_refresh_token"]
+    assert len(claimed) == 1, "the refresh token was not detected by its own pattern"
 
     pair = '{"access_token":"' + _LWA_TOKEN + '","refresh_token":"' + refresh + '"}'
-    matched = [f for f in scan(pair, min_confidence=0.01) if f.type == "amazon_lwa_access_token"]
-    assert len(matched) == 1
-    assert pair[matched[0].span_start : matched[0].span_end] == _LWA_TOKEN
+    findings = scan(pair, min_confidence=0.01)
+
+    access = [f for f in findings if f.type == "amazon_lwa_access_token"]
+    assert len(access) == 1
+    assert pair[access[0].span_start : access[0].span_end] == _LWA_TOKEN
+
+    refreshed = [f for f in findings if f.type == "amazon_lwa_refresh_token"]
+    assert len(refreshed) == 1
+    assert pair[refreshed[0].span_start : refreshed[0].span_end] == refresh
 
 
 def test_amazon_lwa_access_token_does_not_collide_with_amazon_mws_auth_token():
@@ -10889,3 +10900,271 @@ def test_amazon_lwa_access_token_masked_placeholders_score_as_test_values():
         assert len(matched) == 1, "not detected: " + mask[:20]
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# ── Login with Amazon refresh token ───────────────────────────────────────
+#
+# The long-lived half of the LwA pair. Amazon publishes the format as an
+# explicit INHERITANCE — "Refresh tokens follow the same format as access
+# tokens, except they begin with the string 'Atzr|'" — so every literal below
+# reuses the access token's synthetic bodies unchanged, and the prefix is again
+# assembled by concatenation because "Login with Amazon" is a GitHub
+# secret-scanning partner.
+
+_LWA_REFRESH_TOKEN = _LWA_REFRESH_PREFIX + _LWA_BODY
+_LWA_REFRESH_TOKEN_2 = _LWA_REFRESH_PREFIX + _LWA_BODY_2
+# The vendor's own published example, truncated with an ellipsis exactly as the
+# authorization-code-grant page prints it. Structurally unmatchable — 36 body
+# characters, not 345.
+_LWA_REFRESH_DOC_EXAMPLE = _LWA_REFRESH_PREFIX + "IQEBLzAtAhRPpMJxdwVz2Nn6f2y-tpJX2DeX..."
+
+
+def test_amazon_lwa_refresh_token_true_positives():
+    """Detected bare and in every carrier a Login with Amazon refresh token
+    actually appears in: the token-endpoint JSON response it is minted in, an
+    env var, the form-encoded body it is spent through at /auth/o2/token, and a
+    curl invocation of that exchange."""
+    for text in (
+        _LWA_REFRESH_TOKEN,
+        '{"access_token":"'
+        + _LWA_TOKEN
+        + '","token_type":"bearer","expires_in":3600,"refresh_token":"'
+        + _LWA_REFRESH_TOKEN
+        + '"}',
+        "LWA_REFRESH_TOKEN=" + _LWA_REFRESH_TOKEN_2,
+        "grant_type=refresh_token&refresh_token=" + _LWA_REFRESH_TOKEN,
+        "curl -d 'grant_type=refresh_token&refresh_token=" + _LWA_REFRESH_TOKEN_2 + "' "
+        "https://api.amazon.com/auth/o2/token",
+        "  refresh_token: " + _LWA_REFRESH_TOKEN_2,
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].confidence >= 0.95
+
+
+def test_amazon_lwa_refresh_token_finding_shape():
+    """Span covers the whole token including the prefix, severity is critical
+    (the token is valid indefinitely, so it is not the sibling's hour-scale
+    'high'), and the preview never leaks the body."""
+    line = 'REFRESH_TOKEN="' + _LWA_REFRESH_TOKEN + '"'
+    findings = [f for f in scan(line, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"]
+    assert len(findings) == 1
+    f = findings[0]
+    assert line[f.span_start : f.span_end] == _LWA_REFRESH_TOKEN
+    assert f.severity == "critical"
+    assert _LWA_BODY not in f.value_preview
+
+
+def test_amazon_lwa_refresh_token_minimum_width_is_the_documented_350():
+    """The floor is inherited: the refresh page says the format is the access
+    token's, and the access-token page publishes "350 characters or more in
+    length". That describes the WHOLE token, so the body floor is 345. Exactly
+    350 must be detected; 349 must not."""
+    exactly_350 = _LWA_REFRESH_PREFIX + _LWA_BODY[:345]
+    assert len(exactly_350) == 350
+    matched = [
+        f for f in scan(exactly_350, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+    ]
+    assert len(matched) == 1, "the documented minimum-length token was missed"
+
+    for neg in (
+        _LWA_REFRESH_PREFIX + _LWA_BODY[:344],
+        _LWA_REFRESH_PREFIX + _LWA_BODY[:100],
+        _LWA_REFRESH_PREFIX + _LWA_BODY[:20],
+        _LWA_REFRESH_PREFIX,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert matched == [], "wrongly matched a short value: " + str(len(neg))
+
+
+def test_amazon_lwa_refresh_token_maximum_width_is_the_documented_2048_bytes():
+    """"Refresh tokens have a maximum size of 2048 bytes" is the vendor's own
+    sentence on the refresh-token page — the ceiling is stated directly rather
+    than inherited. It describes the whole token, so the body ceiling is 2043,
+    and the token is ASCII so bytes and characters coincide. One character over
+    is rejected outright rather than truncated: the right guard refuses every
+    shorter backtrack, so the engine never reports a partial span that redaction
+    would leave replayable."""
+    long_body = _lwa_body(2100, "classifinder-lwa-fixture-long")
+
+    at_ceiling = _LWA_REFRESH_PREFIX + long_body[:2043]
+    assert len(at_ceiling) == 2048
+    matched = [
+        f for f in scan(at_ceiling, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+    ]
+    assert len(matched) == 1, "the documented maximum-size token was missed"
+    assert matched[0].span_end - matched[0].span_start == 2048
+
+    over_ceiling = _LWA_REFRESH_PREFIX + long_body[:2044]
+    matched = [
+        f for f in scan(over_ceiling, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+    ]
+    assert matched == [], "matched a value larger than the vendor's documented ceiling"
+
+
+def test_amazon_lwa_refresh_token_body_charset_is_a_deliberate_superset():
+    """The vendor's own refresh_token example body carries a hyphen
+    ("...2Nn6f2y-tpJX2DeX"), so "alphanumeric" is loose for THIS credential and
+    not only for the access token. Both base64 and base64url spellings must
+    match, and so must the '=' pad."""
+    base = _LWA_BODY[:340]
+    for tail in ("+/=_-", "-_=/+", "_-+/="):
+        token = _LWA_REFRESH_PREFIX + base + tail
+        assert len(token) == 350
+        matched = [
+            f for f in scan(token, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert len(matched) == 1, "charset character rejected: " + tail
+
+
+def test_amazon_lwa_refresh_token_carries_exactly_one_pipe():
+    """'|' is excluded from the body, pinning the token to a single pipe, so a
+    second pipe ends the span rather than extending it and a body that is only
+    344 characters before its second pipe is not reported at all."""
+    line = _LWA_REFRESH_TOKEN + "|" + _LWA_BODY_2
+    matched = [f for f in scan(line, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"]
+    assert len(matched) == 1
+    assert line[matched[0].span_start : matched[0].span_end] == _LWA_REFRESH_TOKEN
+
+    piped_log = _LWA_REFRESH_PREFIX + _LWA_BODY[:200] + "|" + _LWA_BODY_2[:300]
+    matched = [
+        f for f in scan(piped_log, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+    ]
+    assert matched == [], "swallowed a pipe-delimited field into the span"
+
+
+def test_amazon_lwa_refresh_token_prefix_is_exact_and_case_sensitive():
+    """'Atzr|' is a five-character literal. Neither case variation, a missing
+    pipe, a different separator, nor a bare body may match."""
+    for neg in (
+        _LWA_BODY,
+        "atzr|" + _LWA_BODY,
+        "ATZR|" + _LWA_BODY,
+        "AtzR|" + _LWA_BODY,
+        "Atzr" + _LWA_BODY,
+        "Atzr:" + _LWA_BODY,
+        "Atzr-" + _LWA_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:20]
+
+
+def test_amazon_lwa_refresh_token_left_guard_rejects_mid_token_starts():
+    """The left guard stops 'Atzr' being found inside a longer opaque run, which
+    would report a span that is not the credential."""
+    for neg in (
+        "X" + _LWA_REFRESH_TOKEN,
+        "9" + _LWA_REFRESH_TOKEN,
+        "_" + _LWA_REFRESH_TOKEN,
+        "-" + _LWA_REFRESH_TOKEN,
+        "/" + _LWA_REFRESH_TOKEN,
+        "notAtzr|" + _LWA_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert matched == [], "matched a mid-token start: " + neg[:20]
+
+
+def test_amazon_lwa_refresh_token_left_guard_admits_the_common_carriers():
+    """'=' is deliberately absent from the left guard although it is a body
+    character, because 'refresh_token=Atzr|…' is the single most common carrier
+    there is. Quotes, colons, whitespace and brackets must pass too, and the
+    span must never include the carrier."""
+    for carrier in (
+        "refresh_token=" + _LWA_REFRESH_TOKEN,
+        'refresh_token="' + _LWA_REFRESH_TOKEN + '"',
+        "refresh_token: " + _LWA_REFRESH_TOKEN,
+        "(" + _LWA_REFRESH_TOKEN + ")",
+        "token\t" + _LWA_REFRESH_TOKEN,
+    ):
+        matched = [
+            f for f in scan(carrier, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert len(matched) == 1, "missed in carrier: " + carrier[:24]
+        assert carrier[matched[0].span_start : matched[0].span_end] == _LWA_REFRESH_TOKEN
+
+
+def test_amazon_lwa_refresh_token_percent_encoded_form_is_knowingly_undetected():
+    """The refresh token is posted to /auth/o2/token in a form-encoded body,
+    which spells the prefix 'Atzr%7C' and the body's '+', '/' and '=' as '%2B',
+    '%2F' and '%3D'. The engine has no URL decoder — an engine-wide gap, not
+    this pattern's to paper over — so the percent-encoded form is knowingly left
+    undetected rather than bolted on as a second alternation that would also
+    match prose. This test keeps the decision explicit."""
+    for neg in (
+        "Atzr%7C" + _LWA_BODY,
+        "Atzr%7c" + _LWA_BODY,
+        "grant_type=refresh_token&refresh_token=Atzr%7C" + _LWA_BODY,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert matched == [], "wrongly matched the percent-encoded form"
+
+
+def test_amazon_lwa_refresh_token_ignores_the_truncated_vendor_example():
+    """Amazon's own docs print the refresh token elided —
+    'Atzr|IQEBLzAtAhRPpMJxdwVz2Nn6f2y-tpJX2DeX...' — and that literal is copied
+    verbatim into every integration walkthrough that follows them. It is 41
+    characters, so the 345-character floor makes it structurally unmatchable and
+    it never needs a known_test_values entry to be priced down."""
+    for neg in (
+        _LWA_REFRESH_DOC_EXAMPLE,
+        '{"refresh_token":"' + _LWA_REFRESH_DOC_EXAMPLE + '","token_type":"bearer"}',
+        "Refresh tokens follow the same format as access tokens, except they "
+        "begin with the string Atzr|.",
+        'REFRESH_TOKEN="Atzr|<your-refresh-token>"',
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01) if f.type == "amazon_lwa_refresh_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:60]
+
+
+def test_amazon_lwa_refresh_token_wins_dedup_over_generic_patterns():
+    """A 400-character high-entropy run is exactly what the generic catch-alls
+    reach for. `_dedup_overlapping_findings` prefers a non-generic provider at
+    any overlapping span, so the credential must be attributed to Amazon rather
+    than reported as a generic high-entropy string or a generic API key."""
+    findings = scan("refresh_token=" + _LWA_REFRESH_TOKEN, min_confidence=0.5)
+    types = {f.type for f in findings}
+    assert "amazon_lwa_refresh_token" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_amazon_lwa_refresh_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never prices a masked value down. The
+    all-same-character masks that redacted logs and documentation use are
+    registered as known test values instead, landing at ~0.15."""
+    for mask in (
+        _LWA_REFRESH_PREFIX + "x" * 345,
+        _LWA_REFRESH_PREFIX + "X" * 345,
+        _LWA_REFRESH_PREFIX + "0" * 345,
+        _LWA_REFRESH_PREFIX + "A" * 345,
+    ):
+        findings = scan('REFRESH_TOKEN="' + mask + '"', min_confidence=0.01)
+        matched = [f for f in findings if f.type == "amazon_lwa_refresh_token"]
+        assert len(matched) == 1, "not detected: " + mask[:20]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_amazon_lwa_refresh_token_does_not_collide_with_amazon_mws_auth_token():
+    """The registry's other Amazon-provider credentials. 'amzn.mws.' + a UUID
+    and 'Atzr|' + 345 characters share a provider and nothing else; neither may
+    claim the other's value."""
+    mws = "amzn.mws." + "00000000-1111-2222-3333-444455556666"
+    findings = scan("MWSAuthToken=" + mws, min_confidence=0.01)
+    assert [f for f in findings if f.type == "amazon_lwa_refresh_token"] == []
+    assert any(f.type == "amazon_mws_auth_token" for f in findings)
+
+    findings = scan(_LWA_REFRESH_TOKEN, min_confidence=0.01)
+    assert [f for f in findings if f.type == "amazon_mws_auth_token"] == []

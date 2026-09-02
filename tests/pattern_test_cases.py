@@ -54,6 +54,7 @@ _LWA_HARNESS_BODY_2 = (
 # secret-scanning partner, and a contiguous 'Atza|' + 345-character literal
 # could trip push protection on the public engine repository.
 _LWA_PREFIX_LITERAL = "Atza" + "|"
+_LWA_REFRESH_PREFIX_LITERAL = "Atzr" + "|"
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -4892,13 +4893,60 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "ATZA|" + _LWA_HARNESS_BODY,
             "Atza" + _LWA_HARNESS_BODY,
             _LWA_HARNESS_BODY,
-            # 'Atzr|' is the REFRESH token — a real credential, a different
-            # pattern, and explicitly out of scope for this change.
+            # 'Atzr|' is the REFRESH token — a real credential with its own
+            # pattern (amazon_lwa_refresh_token), never this one's.
             "Atzr" + "|" + _LWA_HARNESS_BODY,
             # URL-encoded spelling: knowingly undetected, no URL decoder.
             "Atza%7C" + _LWA_HARNESS_BODY,
             # The left guard: 'Atza' must not start mid-token.
             "X" + _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY,
+        ],
+        "min_confidence": 0.95,
+    },
+
+    # Login with Amazon refresh token — 'Atzr|' + the SAME 345..2043 window of
+    # [0-9A-Za-z+/=_-]. The vendor states the format as an inheritance:
+    # developer.amazon.com/docs/login-with-amazon/refresh-token.html says
+    # "Refresh tokens follow the same format as access tokens, except they begin
+    # with the string Atzr|" and "Refresh tokens have a maximum size of 2048
+    # bytes"; the 350-character floor comes transitively from the access-token
+    # page through that same-format statement. Both bounds describe the WHOLE
+    # token, so the 5-character prefix comes off each end. Severity is critical
+    # rather than the sibling's high because the vendor says refresh tokens
+    # "are valid indefinitely, unless the user has removed the website or
+    # mobile app from the list of allowed apps for their account". Every
+    # literal is SYNTHETIC and the prefix is assembled by concatenation.
+    "amazon_lwa_refresh_token": {
+        "positives": [
+            _LWA_REFRESH_PREFIX_LITERAL + _LWA_HARNESS_BODY,
+            "refresh_token=" + _LWA_REFRESH_PREFIX_LITERAL + _LWA_HARNESS_BODY_2,
+            'REFRESH_TOKEN="' + _LWA_REFRESH_PREFIX_LITERAL + _LWA_HARNESS_BODY + '"',
+            "grant_type=refresh_token&refresh_token="
+            + _LWA_REFRESH_PREFIX_LITERAL
+            + _LWA_HARNESS_BODY_2,
+            '{"refresh_token":"' + _LWA_REFRESH_PREFIX_LITERAL + _LWA_HARNESS_BODY + '"}',
+            # Exactly 350 characters — the shortest token the inherited floor allows.
+            _LWA_REFRESH_PREFIX_LITERAL + _LWA_HARNESS_BODY_2[:345],
+        ],
+        "negatives": [
+            # 349 characters: one short of the documented floor.
+            _LWA_REFRESH_PREFIX_LITERAL + _LWA_HARNESS_BODY_2[:344],
+            # The vendor's own example, elided exactly as the docs print it.
+            _LWA_REFRESH_PREFIX_LITERAL + "IQEBLzAtAhRPpMJxdwVz2Nn6f2y-tpJX2DeX...",
+            "Refresh tokens begin with the string Atzr|.",
+            'REFRESH_TOKEN="' + _LWA_REFRESH_PREFIX_LITERAL + '<your-refresh-token>"',
+            # The prefix is exact, case-sensitive, and the pipe is mandatory.
+            "atzr|" + _LWA_HARNESS_BODY,
+            "ATZR|" + _LWA_HARNESS_BODY,
+            "Atzr" + _LWA_HARNESS_BODY,
+            _LWA_HARNESS_BODY,
+            # 'Atza|' is the ACCESS token — the sibling pattern's value, never
+            # this one's.
+            _LWA_PREFIX_LITERAL + _LWA_HARNESS_BODY,
+            # URL-encoded spelling: knowingly undetected, no URL decoder.
+            "Atzr%7C" + _LWA_HARNESS_BODY,
+            # The left guard: 'Atzr' must not start mid-token.
+            "X" + _LWA_REFRESH_PREFIX_LITERAL + _LWA_HARNESS_BODY,
         ],
         "min_confidence": 0.95,
     },
