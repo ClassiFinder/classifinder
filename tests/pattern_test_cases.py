@@ -4950,6 +4950,81 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+
+    # Azure Storage SAS token — the credential is the 'sig=' value, but a bare
+    # 'sig=' is NEVER matched: 'sig' is an ordinary query parameter name and
+    # matching it alone would be a false-positive factory. Detection requires
+    # the mandatory 'sv=' signed-version DATE literal (20YY-MM-DD) to co-occur
+    # in the same bounded, unbroken query string. Both fields are Required on
+    # every SAS per Microsoft's own reference:
+    # learn.microsoft.com/en-us/rest/api/storageservices/create-service-sas and
+    # .../create-account-sas. 'sig' is defined there as an HMAC-SHA256 "encode[d]
+    # by using Base64 encoding" — 32 bytes, so exactly 43 base64 characters plus
+    # one pad, in the raw ('+', '/', '=') or percent-encoded ('%2B', '%2F',
+    # '%3D') spelling. Order is tolerated in both directions. Every signature
+    # below is SYNTHETIC or comes from Microsoft's own published examples.
+    "azure_storage_sas_token": {
+        "positives": [
+            # Microsoft's "Create a service SAS" worked example.
+            "https://myaccount.blob.core.windows.net/sascontainer/sasblob.txt"
+            "?sv=2022-11-02&st=2023-04-16T18%3A03%3A05Z&se=2023-04-17T02%3A03%3A05Z"
+            "&sr=b&sp=r&sig=Z%2FRHIX5Xcg0Mq2rqI3OlWTjEg2tYkboXr1P9ZUXDtkk%3D",
+            # Account SAS: ss= / srt= instead of sr=.
+            "https://myaccount.blob.core.windows.net/?restype=service&comp=properties"
+            "&sv=2022-11-02&ss=bf&srt=s&sp=rw&st=2023-04-16T18%3A03%3A05Z"
+            "&se=2023-04-17T02%3A03%3A05Z"
+            "&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D",
+            # Connection string carrier: 'sv=' follows 'SharedAccessSignature='
+            # rather than a '?' or '&', and the signature is unencoded.
+            "BlobEndpoint=https://myaccount.blob.core.windows.net/;"
+            "SharedAccessSignature=sv=2022-11-02&ss=b&srt=co&sp=rwdlac"
+            "&se=2023-04-17T02:03:05Z&st=2023-04-16T18:03:05Z&spr=https"
+            "&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw=",
+            # Azure does not mandate parameter order: sig= before sv=.
+            "https://myaccount.file.core.windows.net/share/file"
+            "?sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D"
+            "&sv=2021-06-08&sr=f&sp=r",
+            # Raw '+' and '/' body characters, raw '=' pad.
+            "https://myaccount.dfs.core.windows.net/fs/path?sv=2021-06-08&sr=d&sp=r"
+            "&sig=pZ4Iyd2bl5CFcISFej+YYI34BJjFc+V7o/w1TU09JEY=",
+            # Percent-encoded '+' and '/' in the body.
+            "https://myaccount.queue.core.windows.net/q?sv=2020-08-04&ss=q&srt=o&sp=p"
+            "&sig=pZ4Iyd2bl5CFcISFej%2BYYI34BJjFc%2BV7o%2Fw1TU09JEY%3D",
+        ],
+        "negatives": [
+            # A LONE 'sig=' — the whole point of the sv= anchor. 'sig' is an
+            # ordinary parameter name and appears across the benign corpus.
+            "https://example.com/download?id=42"
+            "&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D",
+            # Service Bus / Event Hubs SAS: carries a sig= but has NO sv=, and
+            # is a different credential family (azure_service_bus_key).
+            "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessSignature "
+            "sr=https%3A%2F%2Fns.servicebus.windows.net%2Fq"
+            "&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D"
+            "&se=1735689600&skn=RootManageSharedAccessKey",
+            # Microsoft redacts the signature in its own docs.
+            "https://myaccount.blob.core.windows.net/c/b?sv=2022-11-02&sr=b&sp=r"
+            "&sig=<signature>",
+            "https://myaccount.blob.core.windows.net/c/b?sv=2022-11-02&sr=b&sp=r"
+            "&sig=REDACTED",
+            # 'sv' must be a DATE literal, not any value.
+            "?sv=latest&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D",
+            "?sv=2022-11&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D",
+            # Left guards: neither field name may start mid-identifier.
+            "?srv=2022-11-02&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D",
+            "?sv=2022-11-02&xsig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D",
+            # Body width is exact: 43 data characters plus exactly one pad.
+            "?sv=2022-11-02&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESX%3D",
+            "?sv=2022-11-02&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXww%3D",
+            "?sv=2022-11-02&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw",
+            "?sv=2022-11-02&sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D%3D",
+            # The two fields must share ONE unbroken query string; whitespace
+            # between them is what separates two unrelated documents.
+            "sv=2022-11-02 is the signed storage service version.\n"
+            "sig=aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
