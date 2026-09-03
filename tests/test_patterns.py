@@ -11168,3 +11168,286 @@ def test_amazon_lwa_refresh_token_does_not_collide_with_amazon_mws_auth_token():
 
     findings = scan(_LWA_REFRESH_TOKEN, min_confidence=0.01)
     assert [f for f in findings if f.type == "amazon_mws_auth_token"] == []
+
+
+# ═══════════════════════════════════════════════
+# AZURE STORAGE SAS TOKEN (added 2026-09-03)
+# ═══════════════════════════════════════════════
+
+# Microsoft's own worked examples. "Create a service SAS" and "Create an
+# account SAS" both redact the signature as `sig=<signature>`, so the two
+# signature VALUES below are synthetic 43-character base64 runs plus one pad —
+# the exact width base64 of a 32-byte HMAC-SHA256 always produces.
+_SAS_SIG_ENCODED = "Z%2FRHIX5Xcg0Mq2rqI3OlWTjEg2tYkboXr1P9ZUXDtkk%3D"
+_SAS_SIG_ENCODED_2 = "aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw%3D"
+_SAS_SIG_RAW = "pZ4Iyd2bl5CFcISFej+YYI34BJjFc+V7o/w1TU09JEY="
+
+_SERVICE_SAS_URL = (
+    "https://myaccount.blob.core.windows.net/sascontainer/sasblob.txt"
+    "?sv=2022-11-02&st=2023-04-16T18%3A03%3A05Z&se=2023-04-17T02%3A03%3A05Z"
+    "&sr=b&sp=r&sig=" + _SAS_SIG_ENCODED
+)
+_ACCOUNT_SAS_URL = (
+    "https://myaccount.blob.core.windows.net/?restype=service&comp=properties"
+    "&sv=2022-11-02&ss=bf&srt=s&sp=rw&st=2023-04-16T18%3A03%3A05Z"
+    "&se=2023-04-17T02%3A03%3A05Z&sig=" + _SAS_SIG_ENCODED_2
+)
+
+
+def _sas(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "azure_storage_sas_token"]
+
+
+def test_azure_storage_sas_token_detects_the_vendor_worked_examples():
+    """Both SAS flavours Microsoft documents. The service SAS carries `sr=`
+    (signed resource); the account SAS carries `ss=` / `srt=` instead. Both are
+    required to carry `sv=` and `sig=`, which is exactly what the pattern keys
+    on, so one regex covers both without a flavour-specific branch."""
+    for url in (_SERVICE_SAS_URL, _ACCOUNT_SAS_URL):
+        matched = _sas(url)
+        assert len(matched) == 1, "missed: " + url[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "azure"
+        assert matched[0].confidence >= 0.90
+
+
+def test_azure_storage_sas_token_span_is_the_signature_only():
+    """The credential material is the `sig` value, not the query string that
+    carries it. The span must cover the signature alone so `/v1/redact` returns
+    a URL that is still structurally intact — the reason the pattern captures
+    into a named `secret` group rather than matching the whole token."""
+    matched = _sas(_SERVICE_SAS_URL)
+    assert len(matched) == 1
+    span = _SERVICE_SAS_URL[matched[0].span_start : matched[0].span_end]
+    assert span == _SAS_SIG_ENCODED
+    assert "sv=" not in span and "sig=" not in span
+
+
+def test_azure_storage_sas_token_never_fires_on_a_lone_sig_parameter():
+    """The load-bearing constraint, and the reason this candidate was deferred
+    from the 2026-08-31 batch. `sig` is an ordinary query-parameter name — CDN
+    URLs, download links, webhook callbacks and image proxies all use it — so a
+    bare `sig=` match would be a false-positive factory. Nothing detects
+    without the mandatory `sv=` signed-version date literal alongside it."""
+    for neg in (
+        "https://cdn.example.com/asset.png?exp=1735689600&sig=" + _SAS_SIG_ENCODED,
+        "https://example.com/download?id=42&sig=" + _SAS_SIG_ENCODED_2,
+        "GET /webhook?ts=1735689600&sig=" + _SAS_SIG_RAW,
+        "?sig=" + _SAS_SIG_ENCODED,
+        "signature = '" + _SAS_SIG_RAW + "'",
+    ):
+        assert _sas(neg) == [], "fired on a lone sig=: " + neg[:60]
+
+
+def test_azure_storage_sas_token_requires_sv_to_be_a_date_literal():
+    """`sv` is the signed storage-service VERSION and Microsoft only ever mints
+    it as a date (2012-02-12 and later). Requiring `20YY-MM-DD` rather than any
+    `sv=` value is most of the pattern's precision: `sv=1`, `sv=latest` or a
+    template placeholder must not unlock the signature match."""
+    for neg in (
+        "?sv=latest&sig=" + _SAS_SIG_ENCODED,
+        "?sv=1&sig=" + _SAS_SIG_ENCODED,
+        "?sv=2022-11&sig=" + _SAS_SIG_ENCODED,
+        "?sv=${SAS_VERSION}&sig=" + _SAS_SIG_ENCODED,
+        "?sv=1999-11-02&sig=" + _SAS_SIG_ENCODED,  # not a 20YY version
+    ):
+        assert _sas(neg) == [], "matched a non-date sv=: " + neg[:40]
+
+    assert len(_sas("?sv=2012-02-12&sr=b&sig=" + _SAS_SIG_ENCODED)) == 1
+
+
+def test_azure_storage_sas_token_tolerates_either_parameter_order():
+    """Every first-party generator appends `sig` after the fields it signs, so
+    `sv` precedes it in practice — but Azure does not MANDATE parameter order,
+    and the service accepts a reordered query string. Both directions detect;
+    a single named capture group cannot span both, so the regex carries two
+    branches and this test pins that they agree."""
+    sv_first = (
+        "https://myaccount.blob.core.windows.net/c/b?sv=2022-11-02&sr=b&sp=r&sig="
+        + _SAS_SIG_ENCODED_2
+    )
+    sig_first = (
+        "https://myaccount.blob.core.windows.net/c/b?sig="
+        + _SAS_SIG_ENCODED_2
+        + "&sv=2022-11-02&sr=b&sp=r"
+    )
+    for url in (sv_first, sig_first):
+        matched = _sas(url)
+        assert len(matched) == 1, "missed: " + url[:60]
+        assert url[matched[0].span_start : matched[0].span_end] == _SAS_SIG_ENCODED_2
+
+
+def test_azure_storage_sas_token_matches_both_signature_spellings():
+    """The signature is base64 of a 32-byte HMAC-SHA256, so `+`, `/` and the
+    single `=` pad are all reachable. In a URL they are usually percent-encoded
+    (`%2B`, `%2F`, `%3D`), but a SAS pasted into a connection string, an
+    appsettings file or a Terraform variable keeps them raw. Both spellings —
+    and the lowercase hex forms — must match, or half the real leaks are
+    missed."""
+    for sig in (
+        _SAS_SIG_RAW,
+        "pZ4Iyd2bl5CFcISFej%2BYYI34BJjFc%2BV7o%2Fw1TU09JEY%3D",
+        "pZ4Iyd2bl5CFcISFej%2byYI34BJjFc%2bV7o%2fw1TU09JEY%3d",
+    ):
+        url = "https://myaccount.blob.core.windows.net/c/b?sv=2021-06-08&sr=b&sig=" + sig
+        matched = _sas(url)
+        assert len(matched) == 1, "missed spelling: " + sig[:24]
+        assert url[matched[0].span_start : matched[0].span_end] == sig
+
+
+def test_azure_storage_sas_token_body_width_is_exact():
+    """32 bytes base64-encode to exactly 43 data characters plus one `=` pad.
+    A 42- or 44-character run, an unpadded run, or a double pad is some other
+    base64 payload — not a SAS signature — and claiming it would report a span
+    that is not the credential."""
+    stem = "https://myaccount.blob.core.windows.net/c/b?sv=2022-11-02&sr=b&sig="
+    body43 = "aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXw"
+    assert len(body43) == 43
+    assert len(_sas(stem + body43 + "%3D")) == 1
+    assert len(_sas(stem + body43 + "=")) == 1
+    for bad in (
+        body43[:42] + "%3D",
+        body43 + "w%3D",
+        body43,
+        body43 + "%3D%3D",
+        body43 + "==",
+    ):
+        assert _sas(stem + bad) == [], "matched a bad body width: " + bad[-12:]
+
+
+def test_azure_storage_sas_token_requires_one_unbroken_query_string():
+    """The two anchors must co-occur inside a bounded run of non-whitespace,
+    non-quote characters. Prose that mentions `sv=` in one sentence and a
+    signature in another — documentation, incident write-ups, the benign
+    corpus — is not a credential, and the window is what keeps the pattern from
+    stitching two unrelated fragments into one finding."""
+    for neg in (
+        "sv=2022-11-02 is the signed storage service version.\nsig=" + _SAS_SIG_ENCODED,
+        'The token starts "sv=2022-11-02" and ends "sig=' + _SAS_SIG_ENCODED + '"',
+        "?sv=2022-11-02&" + "padding=x&" * 60 + "sig=" + _SAS_SIG_ENCODED,
+    ):
+        assert _sas(neg) == [], "stitched across a break: " + neg[:50]
+
+
+def test_azure_storage_sas_token_left_guards_reject_mid_identifier_starts():
+    """Neither field name may begin inside a longer identifier. Without the
+    guards `srv=2022-11-02` would satisfy the version anchor and any parameter
+    ending in `sig` would satisfy the signature anchor."""
+    for neg in (
+        "?srv=2022-11-02&sig=" + _SAS_SIG_ENCODED,
+        "?ssv=2022-11-02&sig=" + _SAS_SIG_ENCODED,
+        "?x_sv=2022-11-02&sig=" + _SAS_SIG_ENCODED,
+        "?sv=2022-11-02&xsig=" + _SAS_SIG_ENCODED,
+        "?sv=2022-11-02&resig=" + _SAS_SIG_ENCODED,
+        "?sv=2022-11-02&my_sig=" + _SAS_SIG_ENCODED,
+    ):
+        assert _sas(neg) == [], "matched a mid-identifier start: " + neg[:34]
+
+
+def test_azure_storage_sas_token_admits_the_connection_string_carrier():
+    """An Azure Storage connection string spells the SAS as
+    `SharedAccessSignature=sv=...&sig=...`, so `sv` is preceded by `=` rather
+    than `?` or `&`. The guards are deliberately delimiter-agnostic lookbehinds
+    rather than a literal `[?&]` for exactly this carrier — it is one of the
+    most common ways a SAS actually leaks, out of a settings file rather than
+    out of a URL."""
+    conn = (
+        "BlobEndpoint=https://myaccount.blob.core.windows.net/;"
+        "SharedAccessSignature=sv=2022-11-02&ss=b&srt=co&sp=rwdlac"
+        "&se=2023-04-17T02:03:05Z&st=2023-04-16T18:03:05Z&spr=https&sig="
+        + _SAS_SIG_RAW
+    )
+    matched = _sas(conn)
+    assert len(matched) == 1
+    assert conn[matched[0].span_start : matched[0].span_end] == _SAS_SIG_RAW
+
+
+def test_azure_storage_sas_token_does_not_claim_the_service_bus_signature():
+    """Service Bus and Event Hubs also publish a `SharedAccessSignature sr=...
+    &sig=...&se=...&skn=...` bearer token, and it also carries a `sig=`. It has
+    NO `sv=`, so the required version anchor excludes it — the new pattern must
+    not double-fire on a credential family the registry already covers under
+    `azure_service_bus_key` / `azure_event_hub_key`."""
+    sb = (
+        "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessSignature "
+        "sr=https%3A%2F%2Fns.servicebus.windows.net%2Fq&sig="
+        + _SAS_SIG_ENCODED_2
+        + "&se=1735689600&skn=RootManageSharedAccessKey"
+    )
+    assert _sas(sb) == []
+
+
+def test_azure_storage_sas_token_does_not_collide_with_azure_storage_key():
+    """`azure_storage_key` is the ACCOUNT key: 86 base64 characters plus `==`
+    behind an `AccountKey=` context prefix — a permanent root credential. A SAS
+    is a delegated, expiring signature with a 43-character body and no such
+    prefix. Distinct credential types, distinct severities; neither pattern may
+    claim the other's value."""
+    account_key = (
+        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6"
+        "IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGx=="
+    )
+    findings = scan(account_key, min_confidence=0.01)
+    assert [f for f in findings if f.type == "azure_storage_sas_token"] == []
+    assert any(f.type == "azure_storage_key" for f in findings)
+
+    findings = scan(_SERVICE_SAS_URL, min_confidence=0.01)
+    assert [f for f in findings if f.type == "azure_storage_key"] == []
+    assert any(f.type == "azure_storage_sas_token" for f in findings)
+
+
+def test_azure_storage_sas_token_wins_dedup_over_generic_patterns():
+    """A 43-character base64 run beside a `sig=` assignment is exactly what the
+    generic catch-alls reach for. `_dedup_overlapping_findings` prefers the
+    higher-confidence finding at an overlapping span, so the credential must be
+    attributed to Azure rather than reported as a generic high-entropy string."""
+    findings = scan(_SERVICE_SAS_URL, min_confidence=0.5)
+    types = {f.type for f in findings}
+    assert "azure_storage_sas_token" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_azure_storage_sas_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.90 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never gets a chance to price a masked
+    value down. The all-same-character masks that redacted logs and
+    documentation use are registered as known test values instead, landing at
+    ~0.15. Microsoft's own `sig=<signature>` elision needs no entry — `<` is
+    outside the body charset, so it is structurally unmatchable."""
+    stem = "https://myaccount.blob.core.windows.net/c/b?sv=2022-11-02&sr=b&sig="
+    for mask in ("A" * 43 + "%3D", "x" * 43 + "=", "0" * 43 + "%3D", "X" * 43 + "="):
+        matched = _sas(stem + mask)
+        assert len(matched) == 1, "not detected: " + mask[:12]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_azure_storage_sas_token_redaction_preserves_the_url_shape():
+    """The reason the span is the signature alone. A redacted SAS URL must stay
+    readable as a URL — host, container, blob and every non-secret query
+    parameter intact — so an agent can log or diff it without leaking the
+    credential."""
+    from app.engine.redactor import redact
+
+    redacted, _ = redact(_SERVICE_SAS_URL, scan(_SERVICE_SAS_URL))
+    assert _SAS_SIG_ENCODED not in redacted
+    assert "myaccount.blob.core.windows.net" in redacted
+    assert "sv=2022-11-02" in redacted
+    assert redacted.endswith("&sig=[AZURE_STORAGE_SAS_TOKEN_REDACTED]")
+
+
+def test_azure_storage_sas_token_bounded_window_is_not_quadratic():
+    """The `{0,400}` window and the `[^\\s"'<>]` class are what keep the two
+    anchors from scanning an entire document. A long unbroken run with a
+    version literal but no signature, and a long run of near-miss signatures,
+    must both fall through quickly rather than backtrack."""
+    import time
+
+    for text in (
+        "?sv=2022-11-02&" + "A" * 50000,
+        ("&sig=" + "A" * 43 + "%3D") * 500,
+        "?sv=2022-11-02&" + ("sig=" + "A" * 42 + "=&") * 400,
+    ):
+        started = time.perf_counter()
+        assert _sas(text) == []
+        assert time.perf_counter() - started < 1.0
