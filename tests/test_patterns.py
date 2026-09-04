@@ -11451,3 +11451,322 @@ def test_azure_storage_sas_token_bounded_window_is_not_quadratic():
         started = time.perf_counter()
         assert _sas(text) == []
         assert time.perf_counter() - started < 1.0
+
+
+# ═══════════════════════════════════════════════
+# AZURE APP CONFIGURATION CONNECTION STRING (added 2026-09-04)
+# ═══════════════════════════════════════════════
+
+# Format per Nosey Parker rule np.azure.2 (Apache-2.0),
+# crates/noseyparker/data/default/builtin/rules/azure.yml, corroborated
+# structurally by Microsoft Learn's App Configuration client-library readme,
+# which publishes the template
+# `Endpoint=https://<my-host>.azconfig.io;Id=<Id>;Secret=<Secret>` with
+# placeholders only.
+#
+# Every secret below is SYNTHETIC — a locally generated base64 run of a 32-byte
+# value — and every connection string is assembled from parts rather than
+# written as one literal, so this file never carries a contiguous
+# credential-shaped string for GitHub Push Protection to block.
+_APPCONFIG_ENDPOINT = "https://appconfig-test01.azconfig.io"
+_APPCONFIG_ID = "09pv-l0-s0:opFCQMC6+9485xJgN5Ws"
+_APPCONFIG_SECRET = "lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc="
+_APPCONFIG_SECRET_2 = "rDr54Twdj9WCZe5c1wLBvPv2kCBLPCbpXCsfqqB+AEg="
+
+
+def _appconfig_conn(
+    endpoint=_APPCONFIG_ENDPOINT,
+    key_id=_APPCONFIG_ID,
+    secret=_APPCONFIG_SECRET,
+    prefix="",
+):
+    """Assemble a connection string from its three segments."""
+    return prefix + endpoint + ";Id=" + key_id + ";Secret=" + secret
+
+
+def _appconfig(text):
+    return [
+        f
+        for f in scan(text, min_confidence=0.01)
+        if f.type == "azure_app_configuration_connection_string"
+    ]
+
+
+def test_azure_app_configuration_detects_the_vendor_template():
+    """The shape the Azure Portal's Access settings blade and
+    `az appconfig credential list` both emit. Severity is critical because an
+    App Configuration store routinely holds the downstream connection strings
+    and feature flags for a whole application — the blast radius is everything
+    the store serves, not just the store."""
+    conn = _appconfig_conn(prefix="Endpoint=")
+    matched = _appconfig(conn)
+    assert len(matched) == 1
+    assert matched[0].severity == "critical"
+    assert matched[0].provider == "azure"
+    assert matched[0].confidence >= 0.95
+
+
+def test_azure_app_configuration_endpoint_prefix_is_optional():
+    """Microsoft's template spells the whole string `Endpoint=https://...`, but
+    real fragments drop the prefix — the catalog's own leaked example does. The
+    pattern therefore does not match or require `Endpoint=` at all: the left
+    guard is a lookbehind, and the `=` that precedes `https` satisfies it, so
+    both spellings detect identically."""
+    with_prefix = _appconfig(_appconfig_conn(prefix="Endpoint="))
+    without_prefix = _appconfig(_appconfig_conn())
+    assert len(with_prefix) == 1 and len(without_prefix) == 1
+    assert with_prefix[0].confidence == without_prefix[0].confidence
+    # And the carrier an app actually leaks it out of.
+    env = _appconfig_conn(prefix="APP_CONFIGURATION_CONNECTION_STRING=Endpoint=")
+    assert len(_appconfig(env)) == 1
+
+
+def test_azure_app_configuration_span_is_the_secret_only():
+    """The credential material is the `Secret=` value. The store name and the
+    key Id are not secret — they are what an operator needs in order to find
+    and regenerate the right key — so the span must cover the secret alone and
+    `/v1/redact` must leave the rest of the string standing."""
+    conn = _appconfig_conn(prefix="Endpoint=")
+    matched = _appconfig(conn)
+    assert len(matched) == 1
+    span = conn[matched[0].span_start : matched[0].span_end]
+    assert span == _APPCONFIG_SECRET
+    assert "azconfig.io" not in span and "Id=" not in span
+
+
+def test_azure_app_configuration_requires_all_three_segments():
+    """The co-occurrence IS the pattern. No segment detects on its own: an
+    `.azconfig.io` hostname is a public endpoint, a key Id is not a credential,
+    and a base64 run behind `Secret=` is the shape of every generic catch-all
+    false positive there is."""
+    for neg in (
+        _APPCONFIG_ENDPOINT,
+        "Endpoint=" + _APPCONFIG_ENDPOINT,
+        "Id=" + _APPCONFIG_ID,
+        "Secret=" + _APPCONFIG_SECRET,
+        # Endpoint + secret, no Id.
+        _APPCONFIG_ENDPOINT + ";Secret=" + _APPCONFIG_SECRET,
+        # Id + secret, no endpoint.
+        "Id=" + _APPCONFIG_ID + ";Secret=" + _APPCONFIG_SECRET,
+        # Endpoint + Id, no secret.
+        _APPCONFIG_ENDPOINT + ";Id=" + _APPCONFIG_ID,
+    ):
+        assert _appconfig(neg) == [], "fired on a partial string: " + neg[:60]
+
+
+def test_azure_app_configuration_requires_the_azconfig_host_literal():
+    """`.azconfig.io` is the literal that makes this an App Configuration
+    store rather than any other `https://host;Id=...;Secret=...` shape. Without
+    it the pattern would claim arbitrary semicolon-delimited config strings."""
+    for host in (
+        "https://appconfig-test01.vault.azure.net",
+        "https://appconfig-test01.azconfig.com",
+        "https://appconfig-test01.azconfig.io.evil.example",
+        "https://azconfig.io",  # host label is mandatory, not optional
+        "http://appconfig-test01.azconfig.io",  # scheme literal is https
+        "https://example.com",
+    ):
+        neg = _appconfig_conn(endpoint=host)
+        assert _appconfig(neg) == [], "matched a non-azconfig host: " + host
+
+
+def test_azure_app_configuration_id_charset_keeps_base64_signs():
+    """Real key identifiers are NOT alphanumeric. The catalog's
+    leaked-in-the-wild example is `Id=+8zC-l4-s0:+CqeGMSCw1jwHIR/eOuC` — a `+`
+    in the first segment and both a `+` and a `/` in the body. Narrowing the Id
+    to `[A-Za-z0-9]` would silently miss every identifier carrying a base64
+    sign character, which is most of them."""
+    for key_id in (
+        "+8zC-l4-s0:+CqeGMSCw1jwHIR/eOuC",
+        "jQlx-6D-bR:RWR84Em/tXp4K7VKG1XC",
+        "afhp-Dj-T7:cckvpxyavmEOJDh8xhTX",
+        "//aa-++-//:++++////aaaaBBBBcccc",
+    ):
+        conn = _appconfig_conn(key_id=key_id)
+        assert len(_appconfig(conn)) == 1, "missed an Id shape: " + key_id
+
+
+def test_azure_app_configuration_id_segment_widths_are_pinned():
+    """Azure mints the Id as 4-2-2 dash-joined segments, a colon, then an
+    18-22 character body. The widths are most of what stops the pattern from
+    matching an arbitrary `Id=<anything>` assignment between the endpoint and
+    the secret."""
+    body20 = "opFCQMC6+9485xJgN5Ws"
+    assert len(body20) == 20
+    for bad_id in (
+        "09p-l0-s0:" + body20,  # 3-char head
+        "09pvv-l0-s0:" + body20,  # 5-char head
+        "09pv-l-s0:" + body20,  # 1-char middle
+        "09pv-l00-s0:" + body20,  # 3-char middle
+        "09pv-l0-s:" + body20,  # 1-char tail
+        "09pv-l0-s00:" + body20,  # 3-char tail
+        "09pv-l0-s0:" + body20[:17],  # 17-char body, one under the floor
+        "09pv-l0-s0:" + (body20 + "AAA")[:23],  # 23-char body, one over
+        "09pvl0s0:" + body20,  # no dashes at all
+        "09pv-l0-s0" + body20,  # no colon
+    ):
+        conn = _appconfig_conn(key_id=bad_id)
+        assert _appconfig(conn) == [], "matched a malformed Id: " + bad_id[:24]
+
+    # The documented floor and ceiling both detect.
+    assert len(_appconfig(_appconfig_conn(key_id="09pv-l0-s0:" + body20[:18]))) == 1
+    assert len(_appconfig(_appconfig_conn(key_id="09pv-l0-s0:" + (body20 + "AAA")[:22]))) == 1
+
+
+def test_azure_app_configuration_secret_body_bounds_and_single_pad():
+    """The access key Azure mints is base64 of a 32-byte value, which is always
+    exactly 43 data characters plus one `=` pad — every published example has
+    that width. The accepted range is the catalog rule's `{36,50}` rather than
+    a hard 43, because 43 is what the examples show and not something the
+    vendor states, and the three-segment anchor carries the precision anyway.
+    The single trailing pad, however, is required: an unpadded run or a double
+    pad is some other base64 payload and claiming it would report a span that
+    is not the credential."""
+    canonical = _APPCONFIG_SECRET
+    assert len(canonical.rstrip("=")) == 43 and canonical.endswith("=")
+    assert len(_appconfig(_appconfig_conn(secret=canonical))) == 1
+
+    filler = "aB3dEfGh5Cdj2Pw4tgU7IlSTkWgn7bUkkAg8P6HESXwQrTyUiOpAsDfGh"
+    assert len(_appconfig(_appconfig_conn(secret=filler[:36] + "="))) == 1
+    assert len(_appconfig(_appconfig_conn(secret=filler[:50] + "="))) == 1
+    for bad in (
+        filler[:35] + "=",  # one under the floor
+        filler[:51] + "=",  # one over the ceiling
+        canonical.rstrip("="),  # unpadded
+        canonical + "=",  # double pad
+        canonical.rstrip("=") + "=x",  # pad is not the end of the run
+    ):
+        assert _appconfig(_appconfig_conn(secret=bad)) == [], (
+            "matched a bad secret body: " + bad[-14:]
+        )
+
+
+def test_azure_app_configuration_segments_must_be_unbroken():
+    """The three segments are joined by literal `;` with nothing between them.
+    A documentation page or an incident write-up that names the store on one
+    line and a base64 key on another is not a connection string, and the
+    pattern must not stitch the two into one finding."""
+    for neg in (
+        _APPCONFIG_ENDPOINT + "\n;Id=" + _APPCONFIG_ID + ";Secret=" + _APPCONFIG_SECRET,
+        _APPCONFIG_ENDPOINT + "; Id=" + _APPCONFIG_ID + ";Secret=" + _APPCONFIG_SECRET,
+        _APPCONFIG_ENDPOINT + ";Id=" + _APPCONFIG_ID + "; Secret=" + _APPCONFIG_SECRET,
+        _APPCONFIG_ENDPOINT + ";Id=" + _APPCONFIG_ID + ";Secret= " + _APPCONFIG_SECRET,
+        _APPCONFIG_ENDPOINT + "\nId=" + _APPCONFIG_ID + "\nSecret=" + _APPCONFIG_SECRET,
+        _APPCONFIG_ENDPOINT + ",Id=" + _APPCONFIG_ID + ",Secret=" + _APPCONFIG_SECRET,
+    ):
+        assert _appconfig(neg) == [], "stitched across a break: " + neg[:56]
+
+
+def test_azure_app_configuration_left_guard_rejects_mid_identifier_starts():
+    """The endpoint may not begin inside a longer identifier. Without the
+    lookbehind, any token ending in the literal `https` would unlock a match."""
+    for prefix in ("x", "_", "-", "0", "nothttps"):
+        neg = _appconfig_conn(prefix=prefix)
+        assert _appconfig(neg) == [], "matched a mid-identifier start: " + prefix
+    # A delimiter before the endpoint is fine, and is the normal carrier.
+    for prefix in ("Endpoint=", "= ", '"', "'", "(", "\n", " "):
+        assert len(_appconfig(_appconfig_conn(prefix=prefix))) == 1, prefix
+
+
+def test_azure_app_configuration_placeholders_and_masks_do_not_report():
+    """Two separate defences. Microsoft's own `Id=<Id>;Secret=<Secret>`
+    template is structurally unmatchable — `<` is outside both the Id and the
+    secret charsets — so it needs no entry. The all-same-character masks that
+    redacted logs and screenshots use ARE matchable, so they are registered as
+    known test values and land at ~0.15; that registration is load-bearing
+    because confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), which never gets a chance to price them down."""
+    template = "Endpoint=https://<my-host>.azconfig.io;Id=<Id>;Secret=<Secret>"
+    assert _appconfig(template) == []
+
+    for mask in ("A" * 43 + "=", "x" * 43 + "=", "0" * 43 + "="):
+        matched = _appconfig(_appconfig_conn(secret=mask))
+        assert len(matched) == 1, "not detected: " + mask[:10]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_azure_app_configuration_wins_dedup_over_generic_patterns():
+    """Before this pattern existed the live engine reported the key as
+    `generic_high_entropy` at 0.47 — below the 0.5 default threshold, so a real
+    leak returned zero findings. `_dedup_overlapping_findings` prefers the
+    higher-confidence finding at an overlapping span, so the credential must
+    now be attributed to Azure rather than to a generic catch-all."""
+    conn = _appconfig_conn(prefix="Endpoint=")
+    types = {f.type for f in scan(conn, min_confidence=0.5)}
+    assert "azure_app_configuration_connection_string" in types
+    assert not any(t.startswith("generic_") for t in types), types
+
+
+def test_azure_app_configuration_does_not_collide_with_other_azure_keys():
+    """The registry already carries several Azure base64 credentials, and none
+    of them shares this shape. `azure_storage_key` and `azure_cosmos_db_key`
+    are 86 base64 characters plus `==` behind an `AccountKey=` context prefix;
+    `azure_storage_sas_token` is a 43-character signature gated on a `sv=`
+    date literal in a query string. A 43+pad body behind `;Secret=` in an
+    `.azconfig.io` string can be claimed by none of them, and this pattern must
+    likewise not claim theirs."""
+    conn = _appconfig_conn(prefix="Endpoint=")
+    findings = scan(conn, min_confidence=0.01)
+    assert [f for f in findings if f.type != "azure_app_configuration_connection_string"] == []
+
+    account_key = (
+        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6"
+        "IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGx=="
+    )
+    assert _appconfig(account_key) == []
+    assert any(f.type == "azure_storage_key" for f in scan(account_key, min_confidence=0.01))
+
+    sas = (
+        "https://myaccount.blob.core.windows.net/c/b?sv=2022-11-02&sr=b&sig="
+        "Z%2FRHIX5Xcg0Mq2rqI3OlWTjEg2tYkboXr1P9ZUXDtkk%3D"
+    )
+    assert _appconfig(sas) == []
+    assert any(f.type == "azure_storage_sas_token" for f in scan(sas, min_confidence=0.01))
+
+
+def test_azure_app_configuration_redaction_preserves_store_and_key_id():
+    """The operational reason the span is the secret alone: a redacted
+    connection string still names the store and the key Id, which is exactly
+    what someone needs in order to run
+    `az appconfig credential regenerate --name <store> --id <key-id>`."""
+    from app.engine.redactor import redact
+
+    conn = _appconfig_conn(prefix="Endpoint=")
+    redacted, _ = redact(conn, scan(conn))
+    assert _APPCONFIG_SECRET not in redacted
+    assert "appconfig-test01.azconfig.io" in redacted
+    assert "Id=" + _APPCONFIG_ID in redacted
+    assert redacted.endswith("[AZURE_APP_CONFIGURATION_CONNECTION_STRING_REDACTED]")
+
+
+def test_azure_app_configuration_two_strings_report_two_findings():
+    """A settings file or a `credential list` dump carries the read-only and
+    the read-write key together. They are format-identical, so both must be
+    reported — the recommendation tells the operator to treat the leak as
+    read-write until the Ids are matched against the store."""
+    text = (
+        "read_only  = " + _appconfig_conn(prefix="Endpoint=") + "\n"
+        "read_write = " + _appconfig_conn(key_id="jQlx-6D-bR:RWR84Em/tXp4K7VKG1XC",
+                                          secret=_APPCONFIG_SECRET_2, prefix="Endpoint=")
+    )
+    matched = _appconfig(text)
+    assert len(matched) == 2
+    spans = {text[f.span_start : f.span_end] for f in matched}
+    assert spans == {_APPCONFIG_SECRET, _APPCONFIG_SECRET_2}
+
+
+def test_azure_app_configuration_is_not_quadratic():
+    """The pattern is a fully anchored, contiguous chain of bounded segments —
+    there is no scanning window here — so long near-miss input must fall
+    through fast rather than backtrack."""
+    import time
+
+    for text in (
+        _APPCONFIG_ENDPOINT + ";Id=" + "A" * 50000,
+        ("https://a.azconfig.io;Id=aaaa-aa-aa:" + "a" * 20 + ";Secret=" + "a" * 60) * 200,
+        "https://a.azconfig.io;" + ("Id=aaaa-aa-aa:" + "a" * 22 + ";") * 500,
+    ):
+        started = time.perf_counter()
+        assert _appconfig(text) == []
+        assert time.perf_counter() - started < 1.0
