@@ -5025,6 +5025,72 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+
+    # Azure App Configuration connection string — the credential is the
+    # ';Secret=' value, but it is NEVER matched on its own. Detection requires
+    # three segments in one unbroken string: the '.azconfig.io' store endpoint
+    # host literal, the ';Id=' key identifier in Azure's 4-2-2:body shape, and
+    # ';Secret=' with the base64 access key. Format per Nosey Parker rule
+    # np.azure.2 (Apache-2.0), corroborated by Microsoft Learn's App
+    # Configuration client-library template
+    # 'Endpoint=https://<my-host>.azconfig.io;Id=<Id>;Secret=<Secret>'.
+    # Every secret below is SYNTHETIC — a locally generated base64 run of a
+    # 32-byte value — and every connection-string literal is split at the
+    # 'Secret=' boundary so the source never carries a contiguous
+    # credential-shaped string past GitHub Push Protection.
+    "azure_app_configuration_connection_string": {
+        "positives": [
+            # The vendor's own template spelling, with the 'Endpoint=' prefix.
+            "Endpoint=https://appconfig-test01.azconfig.io"
+            ";Id=09pv-l0-s0:opFCQMC6+9485xJgN5Ws;Secret="
+            "lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc=",
+            # No 'Endpoint=' prefix — the fragment shape leaks take in the wild.
+            "https://contoso-appconfig-dev.azconfig.io"
+            ";Id=jQlx-6D-bR:RWR84Em/tXp4K7VKG1XC;Secret="
+            "rDr54Twdj9WCZe5c1wLBvPv2kCBLPCbpXCsfqqB+AEg=",
+            # An Id opening on '+' and carrying '/' — real identifiers are not
+            # alphanumeric, so the Id charset must stay base64.
+            "https://store7.azconfig.io"
+            ";Id=+8zC-l4-s0:+CqeGMSCw1jwHIR/eOuC;Secret="
+            "mMPQYA9ood1gJePqSwT7JJMUt2skd16AWxW3wcoMwTA=",
+            # In an env-var carrier, which is how the string usually leaks.
+            "APP_CONFIGURATION_CONNECTION_STRING=Endpoint="
+            "https://my-store-prod.azconfig.io"
+            ";Id=afhp-Dj-T7:cckvpxyavmEOJDh8xhTX;Secret="
+            "NUBzb9yC3OSc9pJrN44t8GT/ZigQMAiY/0xnH016Zgg=",
+        ],
+        "negatives": [
+            # The endpoint alone is a public hostname, not a credential.
+            "https://appconfig-test01.azconfig.io",
+            # A 'Secret=' base64 run with no App Configuration endpoint.
+            "Endpoint=https://example.com;Id=09pv-l0-s0:opFCQMC6+9485xJgN5Ws"
+            ";Secret=lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc=",
+            # Endpoint and secret, but the Id segment is missing entirely.
+            "https://appconfig-test01.azconfig.io;Secret="
+            "lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc=",
+            # Microsoft's own placeholder template.
+            "Endpoint=https://<my-host>.azconfig.io;Id=<Id>;Secret=<Secret>",
+            # Id shape must be 4-2-2:body; 3-2-2 is not what Azure mints.
+            "https://appconfig-test01.azconfig.io"
+            ";Id=09p-l0-s0:opFCQMC6+9485xJgN5Ws;Secret="
+            "lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc=",
+            # The three segments must be unbroken — prose between them is two
+            # unrelated documents, not one connection string.
+            "Endpoint=https://appconfig-test01.azconfig.io\n"
+            "Id=09pv-l0-s0:opFCQMC6+9485xJgN5Ws\n"
+            "Secret=lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc=",
+            # A different Azure host: '.azconfig.io' is the literal that makes
+            # this an App Configuration store.
+            "https://appconfig-test01.vault.azure.net"
+            ";Id=09pv-l0-s0:opFCQMC6+9485xJgN5Ws;Secret="
+            "lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc=",
+            # The secret body must carry its single base64 pad.
+            "https://appconfig-test01.azconfig.io"
+            ";Id=09pv-l0-s0:opFCQMC6+9485xJgN5Ws;Secret="
+            "lHn/RBYfwO1ij81wA6DNXwxu2InggYQtzaDMIW9nQAc",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
