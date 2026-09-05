@@ -11770,3 +11770,201 @@ def test_azure_app_configuration_is_not_quadratic():
         started = time.perf_counter()
         assert _appconfig(text) == []
         assert time.perf_counter() - started < 1.0
+
+
+# ═══════════════════════════════════════════════
+# NEW RELIC LICENSE KEY (added 2026-09-05)
+# ═══════════════════════════════════════════════
+
+# Format per Nosey Parker rule np.newrelic.1 (Apache-2.0),
+# crates/noseyparker/data/default/builtin/rules/newrelic.yml — a six-character
+# lowercase-alphanumeric account/region head, thirty lowercase hex characters,
+# and the literal uppercase suffix 'NRAL'. New Relic's own API-keys page
+# corroborates the 40-character LENGTH but calls the key "a 40-character
+# hexadecimal string", a sentence that predates the suffix.
+#
+# Every key below is SYNTHETIC — a sequential hex run, deliberately structured
+# rather than random — and every literal is assembled from its head, body and
+# suffix rather than written contiguously. New Relic is a GitHub secret
+# scanning partner, so no key-shaped 40-character literal is committed here.
+_NR_SUFFIX = "NR" + "AL"
+_NR_BODY = "0123456789abcdef0123456789abcd"  # 30 sequential hex characters
+_NR_BODY_2 = "fedcba9876543210fedcba98765432"  # 30, descending
+
+
+def _nr_key(head="abc123", body=_NR_BODY, suffix=_NR_SUFFIX):
+    """Assemble a license key from its head, body and suffix."""
+    return head + body + suffix
+
+
+def _nr(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "newrelic_license_key"]
+
+
+def test_newrelic_license_key_detects_the_catalog_shape():
+    """6 lowercase-alphanumeric + 30 lowercase hex + 'NRAL' = 40 characters.
+    Severity is medium, matching honeycomb_ingest_key: a license key is
+    write-only — it cannot read telemetry, run NRQL or change account
+    settings — so the exposure is data injection and ingest-billing abuse
+    rather than data theft."""
+    key = _nr_key()
+    assert len(key) == 40
+    matched = _nr("NEW_RELIC_LICENSE_KEY=" + key)
+    assert len(matched) == 1
+    assert matched[0].provider == "newrelic"
+    assert matched[0].severity == "medium"
+    assert matched[0].confidence >= 0.95
+
+
+def test_newrelic_license_key_head_charset_admits_the_region_prefix():
+    """The head and the body are genuinely different charsets, not a redundant
+    spelling. US-account keys are hex all the way through, but a regional key
+    carries a non-hex region head — the catalog's own example opens 'eu01xx',
+    where 'u' and 'x' are outside the hex alphabet. Narrowing the head to
+    [a-f0-9] would silently miss every EU-region key, and the head is left in
+    its general [a-z0-9] form rather than enumerated so a newly-opened region
+    is detected rather than missed."""
+    for head in ("eu01xx", "abc123", "033f2f", "zz99zz", "000000", "gov01a"):
+        text = "license_key: " + _nr_key(head=head)
+        assert len(_nr(text)) == 1, "missed a head shape: " + head
+
+
+def test_newrelic_license_key_body_must_be_hexadecimal():
+    """Only the first six characters may leave the hex alphabet. Nosey Parker
+    ships this exact string as a NEGATIVE example precisely because its body
+    runs past 'f' into g, h, i and beyond — it is a placeholder written to look
+    like a key, not a key."""
+    placeholder_body = "d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8"
+    assert len(placeholder_body) == 30
+    assert _nr("--set global.licenseKey=" + _nr_key(head="a1b2c3", body=placeholder_body)) == []
+    # One non-hex character anywhere in the body is enough to disqualify it.
+    for position in (0, 1, 14, 28, 29):
+        body = _NR_BODY[:position] + "z" + _NR_BODY[position + 1 :]
+        assert _nr(_nr_key(body=body)) == [], "matched a non-hex body at " + str(position)
+
+
+def test_newrelic_license_key_suffix_is_case_sensitive():
+    """A deliberate narrowing of the catalog rule's case-insensitive spelling.
+    Every published key pairs a lowercase body with an uppercase 'NRAL', so
+    requiring the real casing is free precision — and a key whose suffix has
+    been lower-cased would not authenticate against the ingest endpoint, so
+    nothing that is actually a credential is lost. The body casing is pinned
+    the same way: New Relic emits lowercase hex, and uppercase hex is not a
+    shape the vendor mints."""
+    for suffix in ("nral", "NRal", "nrAL", "Nral"):
+        assert _nr(_nr_key(suffix=suffix)) == [], "matched a mis-cased suffix: " + suffix
+    assert _nr(_nr_key(body=_NR_BODY.upper())) == []
+    assert _nr(_nr_key(head="ABC123")) == []
+
+
+def test_newrelic_license_key_width_is_exact():
+    """40 characters, no more and no fewer. The suffix is the only anchor
+    there is, so the fixed width has to carry the rest of the precision."""
+    assert _nr(_nr_key(head="abc12")) == []  # 5-character head
+    assert _nr(_nr_key(head="abc1234")) == []  # 7-character head
+    assert _nr(_nr_key(body=_NR_BODY[:29])) == []  # 29-character body
+    assert _nr(_nr_key(body=_NR_BODY + "e")) == []  # 31-character body
+
+
+def test_newrelic_license_key_guards_reject_a_longer_run():
+    """The lookarounds are what stop a longer alphanumeric blob that merely
+    ENDS in the right forty characters from being reported as a key. Without
+    the left guard the engine would re-align the window inside the run and
+    claim a span that is not the credential."""
+    key = _nr_key()
+    for prefix in ("x", "0", "_", "-", "deadbeef"):
+        assert _nr(prefix + key) == [], "matched a mid-run start: " + prefix
+    for suffix in ("x", "0", "_", "-", "0123"):
+        assert _nr(key + suffix) == [], "matched a continuing run: " + suffix
+    # The ordinary carriers must all still detect.
+    for carrier in ("=", ": ", '"', "'", " ", "\n", "/", ",", "(", "&key="):
+        assert len(_nr(carrier + key)) == 1, "guard rejected a carrier: " + repr(carrier)
+
+
+def test_newrelic_license_key_real_world_carriers():
+    """The shapes a license key actually leaks in: a newrelic.yml agent config,
+    an environment variable, a Helm value, a Kubernetes secret and an OTLP
+    exporter header."""
+    key = _nr_key()
+    for carrier in (
+        "common: &default_settings\n  license_key: " + key,
+        "NEW_RELIC_LICENSE_KEY=" + key,
+        "NEW_RELIC_INGEST_KEY=" + key,
+        "newrelic:\n  licenseKey: " + key,
+        "helm upgrade nri --set global.licenseKey=" + key + " newrelic/nri-bundle",
+        'OTEL_EXPORTER_OTLP_HEADERS="api-key=' + key + '"',
+        '{"newrelic": {"license_key": "' + key + '"}}',
+    ):
+        assert len(_nr(carrier)) == 1, "missed a carrier: " + carrier[:40]
+
+
+def test_newrelic_license_key_masks_are_registered_test_values():
+    """Redacted logs and screenshots replace the body with a single repeated
+    character, and those masks ARE structurally matchable. Registering them is
+    load-bearing: confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+    (scanner.py:197), so the wordlist never gets a chance to price them down."""
+    for mask_char in ("a", "0"):
+        matched = _nr("license_key: " + _nr_key(head=mask_char * 6, body=mask_char * 30))
+        assert len(matched) == 1, "not detected: " + mask_char
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_newrelic_license_key_does_not_claim_the_prefixed_new_relic_keys():
+    """New Relic's other key types are all PREFIX-anchored and structurally
+    distinct — this pattern is the only suffix-anchored one — so none of them
+    may be claimed here, and this key may not be claimed by them."""
+    others = {
+        "newrelic_user_api_key": "NRAK-" + "abcdefghij0123456789klmnopq",
+        "newrelic_admin_api_key": "NRAA-" + "0123456789abcdef0123456789a",
+        "newrelic_insights_key": "NRII-" + "0123456789abcdef0123456789abcdef",
+    }
+    for expected_type, value in others.items():
+        assert _nr(value) == [], "claimed a prefixed key: " + expected_type
+        types = {f.type for f in scan(value, min_confidence=0.01)}
+        assert expected_type in types, (expected_type, types)
+
+    key = _nr_key()
+    assert [f for f in scan(key, min_confidence=0.01) if f.type != "newrelic_license_key"] == []
+
+
+def test_newrelic_license_key_does_not_ship_the_legacy_bare_hex_form():
+    """New Relic's API-keys page still calls a license key "a 40-character
+    hexadecimal string" — a sentence that predates the NRAL suffix. That
+    legacy form has no structural anchor at all: it is indistinguishable from a
+    SHA-1 digest or a git object id, so it belongs to the generic path rather
+    than to a provider pattern. This test pins the decision so it cannot be
+    silently reversed by widening the regex."""
+    legacy = "0123456789abcdef0123456789abcdef01234567"
+    assert len(legacy) == 40
+    assert _nr("license_key: " + legacy) == []
+    # A git object id in prose must stay a non-event for this pattern.
+    assert _nr("commit 8f2a1c9d0e4b6a7c3f5d2e1b0a9c8d7e6f5a4b3c") == []
+
+
+def test_newrelic_license_key_span_is_the_whole_token():
+    """The credential is the forty characters in their entirety — the head is
+    not a separate public identifier the way a Honeycomb key ID is — so the
+    span must cover the whole token and /v1/redact must remove all of it."""
+    from app.engine.redactor import redact
+
+    key = _nr_key()
+    text = "license_key: " + key
+    matched = _nr(text)
+    assert len(matched) == 1
+    assert text[matched[0].span_start : matched[0].span_end] == key
+    redacted, _ = redact(text, scan(text))
+    assert key not in redacted
+    assert "license_key: " in redacted
+    assert redacted.endswith("[NEWRELIC_LICENSE_KEY_REDACTED]")
+
+
+def test_newrelic_license_key_two_keys_report_two_findings():
+    """An agent config that reports to two accounts, or a credential dump,
+    carries more than one key and every one of them must be reported."""
+    key_a = _nr_key()
+    key_b = _nr_key(head="eu01xx", body=_NR_BODY_2)
+    text = "us_license_key: " + key_a + "\neu_license_key: " + key_b
+    matched = _nr(text)
+    assert len(matched) == 2
+    assert {text[f.span_start : f.span_end] for f in matched} == {key_a, key_b}

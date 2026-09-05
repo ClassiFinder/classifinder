@@ -5091,6 +5091,60 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.95,
     },
+
+    # New Relic license key (ingest key) — the registry's only SUFFIX-anchored
+    # New Relic pattern: a six-character lowercase-alphanumeric account/region
+    # head, thirty lowercase hex characters, and the literal uppercase 'NRAL'.
+    # Format per Nosey Parker rule np.newrelic.1 (Apache-2.0). New Relic's own
+    # API-keys page corroborates the 40-character LENGTH but calls the key "a
+    # 40-character hexadecimal string" — a sentence that predates the suffix,
+    # and the reason the bare 40-hex legacy form is deliberately not shipped.
+    # Every key below is SYNTHETIC (a sequential hex run) and assembled from
+    # parts: New Relic is a GitHub secret scanning partner, so no contiguous
+    # 40-character key-shaped literal is committed here.
+    "newrelic_license_key": {
+        "positives": [
+            # A newrelic.yml agent config, which is where the key normally sits.
+            "common: &default_settings\n  license_key: "
+            "abc1230123456789abcdef0123456789abcd" + "NR" + "AL",
+            # An EU-region key: 'eu01xx' is why the head charset is [a-z0-9]
+            # rather than [a-f0-9] — 'u' and 'x' are outside the hex alphabet.
+            "NEW_RELIC_LICENSE_KEY="
+            "eu01xxfedcba9876543210fedcba98765432" + "NR" + "AL",
+            # The infrastructure agent's Helm value.
+            "helm upgrade nri --set global.licenseKey="
+            "def4560123456789abcdef0123456789abcd" + "NR" + "AL",
+            # An OTLP exporter header, the newest carrier of the three.
+            'OTEL_EXPORTER_OTLP_HEADERS="api-key='
+            "0f9e8d0123456789abcdef0123456789abcd" + "NR" + "AL" + '"',
+        ],
+        "negatives": [
+            # The legacy bare 40-character hex form the vendor page still
+            # describes: unanchorable, indistinguishable from a SHA-1 digest,
+            # and deliberately left to the generic path.
+            "license_key: 0123456789abcdef0123456789abcdef01234567",
+            # Nosey Parker's own negative example — the body runs past 'f'
+            # into g, h, i, so it is a placeholder dressed as a key.
+            "--set global.licenseKey="
+            "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8" + "NR" + "AL",
+            # The suffix is matched case-sensitively as uppercase.
+            "license_key: abc1230123456789abcdef0123456789abcdnral",
+            # New Relic emits lowercase hex; uppercase is not a shape it mints.
+            "license_key: ABC1230123456789ABCDEF0123456789ABCD" + "NR" + "AL",
+            # 39 characters — the width is exact, because the suffix is the
+            # only anchor there is.
+            "license_key: abc123"
+            "0123456789abcdef0123456789abc" + "NR" + "AL",
+            # A longer alphanumeric run that merely ENDS in a valid forty
+            # characters is not a key; the left guard refuses to re-align.
+            "deadbeefabc1230123456789abcdef0123456789abcd" + "NR" + "AL",
+            # The token may not continue past the suffix either.
+            "abc1230123456789abcdef0123456789abcd" + "NR" + "AL" + "0123",
+            # A git object id in prose stays a non-event.
+            "commit 8f2a1c9d0e4b6a7c3f5d2e1b0a9c8d7e6f5a4b3c",
+        ],
+        "min_confidence": 0.95,
+    },
 }
 
 # fmt: on
