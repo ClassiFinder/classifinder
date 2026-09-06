@@ -56,6 +56,14 @@ _LWA_HARNESS_BODY_2 = (
 _LWA_PREFIX_LITERAL = "Atza" + "|"
 _LWA_REFRESH_PREFIX_LITERAL = "Atzr" + "|"
 
+# GitLab runner registration tokens. 'GR1348941' is a literal vendor constant
+# (GitLab's RUNNERS_TOKEN_PREFIX); the bodies are 20 urlsafe-base64 characters.
+# Split so no contiguous registration-token literal is committed to source.
+_GRRT_PREFIX_CASES = "GR" + "1348941"
+_GRRT_CASES = _GRRT_PREFIX_CASES + "C6YcZVddc8kjtdU-yWYD"
+_GRRT_CASES_2 = _GRRT_PREFIX_CASES + "hQ2p_Vn8ZsKdT3mLxRb9"
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -4769,6 +4777,38 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "Xglcbt-1_HsK2mQ9vTbXr4LdWzAoU",
             # The runner authentication token is a different GitLab prefix.
             "glrt-HsK2mQ9vTbXr4LdWzAoU",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # GitLab runner registration token — the literal 'GR1348941' prefix per
+    # GitLab's own app/models/concerns/runners_token_prefixable.rb
+    # (RUNNERS_TOKEN_PREFIX), then a 20-character urlsafe-base64 body. The
+    # deprecated counterpart to the 'glrt-' runner AUTHENTICATION token, which
+    # is pinned as a negative. Literals are concatenated so no contiguous
+    # registration-token value is committed to source.
+    # Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/app/models/concerns/runners_token_prefixable.rb
+    "gitlab_runner_registration_token": {
+        "positives": [
+            'gitlab-runner register --registration-token "'
+            + _GRRT_CASES + '"',
+            "      REGISTRATION_TOKEN: " + _GRRT_CASES_2,
+            "  runnerRegistrationToken: " + _GRRT_CASES,
+        ],
+        "negatives": [
+            # Body width is exactly 20.
+            _GRRT_PREFIX_CASES + "C6YcZVddc8kjtdU-yWY",
+            _GRRT_PREFIX_CASES + "C6YcZVddc8kjtdU-yWYDq",
+            # gitlab-runner's error logs emit a truncated short form.
+            _GRRT_PREFIX_CASES + "mKfY-Pk_",
+            # The prefix is an exact, case-sensitive literal.
+            "gr" + "1348941" + "C6YcZVddc8kjtdU-yWYD",
+            "GR" + "1348940" + "C6YcZVddc8kjtdU-yWYD",
+            # Must not begin mid-identifier or be claimed out of a longer run.
+            "X" + _GRRT_CASES,
+            _GRRT_PREFIX_CASES + "C6YcZVddc8kjtdU-yWYDextra",
+            # The runner authentication token is a different credential.
+            "glrt-" + "C6YcZVddc8kjtdU-yWYD",
         ],
         "min_confidence": 0.90,
     },

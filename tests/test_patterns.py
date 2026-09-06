@@ -10267,6 +10267,128 @@ def test_gitlab_cicd_job_token_masked_placeholders_score_as_test_values():
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
 
 
+# --- GitLab runner registration token -----------------------------------------
+# 'GR1348941' is a LITERAL vendor prefix, not a family abbreviation: GitLab's
+# app/models/concerns/runners_token_prefixable.rb sets
+# RUNNERS_TOKEN_PREFIX = 'GR1348941' and documents it as "GR (for Gitlab
+# Runner) combined with the rotation date (20220225) decimal to hex encoded".
+# The body is 20 characters of Devise.friendly_token output (urlsafe base64),
+# so the whole token is exactly 29 characters.
+#
+# The example below is GitLab's own, from doc/ci/runners/new_creation_workflow.md
+# (rendered at https://docs.gitlab.com/ci/runners/new_creation_workflow/), split
+# so no contiguous registration-token literal is committed to source.
+# Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/app/models/concerns/runners_token_prefixable.rb
+_GR_PREFIX = "GR" + "1348941"
+_GRRT = _GR_PREFIX + "C6YcZVddc8kjtdU-yWYD"          # GitLab's published example
+_GRRT_UNDERSCORE = _GR_PREFIX + "hQ2p_Vn8ZsKdT3mLxRb9"  # body with '_'
+
+
+def test_gitlab_runner_registration_token_true_positives():
+    """Detected bare and in the carriers a registration token actually leaks
+    through: a `gitlab-runner register` invocation, a docker-compose
+    environment entry, a Helm values file and a CI variable."""
+    for text in (
+        _GRRT,
+        _GRRT_UNDERSCORE,
+        'gitlab-runner register --registration-token "' + _GRRT + '"',
+        "      REGISTRATION_TOKEN: " + _GRRT_UNDERSCORE,
+        "  runnerRegistrationToken: " + _GRRT,
+        "CI_SERVER_TOKEN=" + _GRRT,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [
+            f for f in findings
+            if f.type == "gitlab_runner_registration_token"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "medium"
+        assert matched[0].provider == "gitlab"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_gitlab_runner_registration_token_true_negatives():
+    """The prefix is an exact, case-sensitive literal and the body is exactly
+    20 base64url characters. Nothing shorter, longer, re-cased or embedded
+    mid-identifier may match."""
+    for neg in (
+        # Body width is exact — 19 and 21 both fail.
+        _GR_PREFIX + "C6YcZVddc8kjtdU-yWY",
+        _GR_PREFIX + "C6YcZVddc8kjtdU-yWYDq",
+        # gitlab-runner's own error logs emit a TRUNCATED short form. Matching
+        # it would turn every runner log line into a finding, so the strict
+        # {20} body deliberately excludes it.
+        _GR_PREFIX + "mKfY-Pk_",
+        # Prefix is case-sensitive and exact.
+        "gr" + "1348941" + "C6YcZVddc8kjtdU-yWYD",
+        "Gr" + "1348941" + "C6YcZVddc8kjtdU-yWYD",
+        "GR" + "1348940" + "C6YcZVddc8kjtdU-yWYD",
+        "GR" + "134894" + "C6YcZVddc8kjtdU-yWYDx",
+        # Must not begin mid-identifier, and must not be claimed out of the
+        # middle of a longer run.
+        "X" + _GRRT,
+        "_" + _GRRT,
+        _GR_PREFIX + "C6YcZVddc8kjtdU-yWYDextra",
+        # Prose naming the prefix is not a token.
+        "Registration tokens start with the " + _GR_PREFIX + " prefix.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "gitlab_runner_registration_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_gitlab_runner_registration_token_does_not_collide_with_glrt():
+    """The registration token ('GR1348941…') and the runner AUTHENTICATION
+    token ('glrt-…') are the two halves of GitLab's runner-token migration and
+    share a body width. Each value must produce exactly one finding, attributed
+    to the right pattern."""
+    auth = "glrt-" + "C6YcZVddc8kjtdU-yWYD"
+    for value, expected in (
+        (_GRRT, "gitlab_runner_registration_token"),
+        (_GRRT_UNDERSCORE, "gitlab_runner_registration_token"),
+        (auth, "gitlab_runner_authentication_token"),
+    ):
+        findings = scan("RUNNER_TOKEN=" + value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_gitlab_runner_registration_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never gets a chance to price a mask down. The masks are registered
+    as known_test_values instead and must land at ~0.15."""
+    for mask in (
+        _GR_PREFIX + "x" * 20,
+        _GR_PREFIX + "X" * 20,
+        _GR_PREFIX + "0" * 20,
+    ):
+        matched = [
+            f for f in scan("REGISTRATION_TOKEN=" + mask, min_confidence=0.01)
+            if f.type == "gitlab_runner_registration_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_gitlab_runner_registration_token_redaction_covers_the_whole_token():
+    """The prefix is a shared constant, not a per-runner identifier, but the
+    span is still the whole 29-character token: leaving the prefix visible
+    would buy an operator nothing and the body alone is the credential."""
+    from app.engine.redactor import redact
+
+    line = 'gitlab-runner register --registration-token "' + _GRRT + '"'
+    findings = scan(line, min_confidence=0.01)
+    redacted_text, _ = redact(line, findings, style="label")
+    assert _GRRT not in redacted_text
+    assert "C6YcZVddc8kjtdU-yWYD" not in redacted_text
+    assert _GR_PREFIX not in redacted_text
+    assert "gitlab-runner register" in redacted_text
+
+
 # --- Grafana Cloud access-policy token ----------------------------------------
 # 'glc_' per Grafana's own access-policy-token documentation, then a base64
 # body with optional padding. The body is base64 of a small JSON envelope, so
