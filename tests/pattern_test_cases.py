@@ -64,6 +64,65 @@ _GRRT_CASES = _GRRT_PREFIX_CASES + "C6YcZVddc8kjtdU-yWYD"
 _GRRT_CASES_2 = _GRRT_PREFIX_CASES + "hQ2p_Vn8ZsKdT3mLxRb9"
 
 
+
+# ── 2026-09-07 batch ──────────────────────────────────────────────────────
+# Every literal below is SYNTHETIC and assembled by concatenation, so no
+# contiguous credential-shaped value is committed to source. Heroku, Plaid and
+# Mapbox are GitHub secret-scanning partners, which makes the split load-bearing
+# rather than merely conventional.
+_HRKU_PREFIX = "HRKU" + "-"
+_HRKU_A = _HRKU_PREFIX + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fif"
+_HRKU_B = _HRKU_PREFIX + "FyYA11m1JDKafHZIgoWHWwAh3ttEjONpx9gwy83aSpZ6fI8eSfIrLIO7Ip0W"
+
+_HVR_A = "hvr" + "." + "O13Eb1d8Ui35C71STSsWaXqj"
+_HVR_B = "hvr" + "." + "TYof2xCJyX8miGsi9q6XzD35q8O6"
+
+_AQVN_35 = "AQVN" + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vuP"
+_AQVN_36 = "AQVN" + "SuuPkdTLF2GZTnfb2COwQrXbO509DJR-OB2u"
+_AQVN_38 = "AQVN" + "oTp4sKlEqYwIPSsvei-PifAq6kph-qOjiZ4w3Q"
+
+_ODT_V413 = "odt" + "_" + "Fowwh8Tq" + "_" + "5sVqpvsiyEWOg51Iek4z5maYbVKITUqw"
+_ODT_LEGACY = "odt" + "_" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU"
+_ODT_LEGACY_2 = "odt" + "_" + "ERMmLp6WPB4JbKNkRQAthPDdScrv6baY"
+
+_PXAPI_A = "px-api-" + "731ac57d-9492-469f-ad7e-9ce9b25f06b9"
+_PXAPI_B = "px-api-" + "9e679c7e-646c-4c68-a78d-8bdb46a3c4a6"
+_PXAPI_C = "px-api-" + "b83d4311-6665-4017-aa38-bc6d34b61660"
+
+_PLAID_PROD = "access-" + "production-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988"
+_PLAID_SANDBOX = "access-" + "sandbox-" + "3c9c2cdd-cb14-47ae-adbe-cffce493f4ad"
+_PLAID_DEV = "access-" + "development-" + "1a5757e4-298e-4bc1-a570-7f8906aa1f23"
+
+# Mapbox payloads are base64url of a small JSON object, which is why they
+# always open 'eyJ'. These two decode to {"u":"clsfndr","a":"cksynth0000001"}
+# and {"u":"cfdemo","a":"cksynth0000002"}.
+_MAPBOX_PAYLOAD = "eyJ1IjoiY2xzZm5kciIsImEiOiJja3N5bnRoMDAwMDAwMSJ9"
+_MAPBOX_PAYLOAD_2 = "eyJ1IjoiY2ZkZW1vIiwiYSI6ImNrc3ludGgwMDAwMDAyIn0"
+_MAPBOX_SIG_A = "euN6nH-FC4z8TOT4QG1aSlE6FG0"
+_MAPBOX_SIG_B = "68E15XAvC_mOZ-s0bJwh"
+_MAPBOX_SK_A = "sk" + "." + _MAPBOX_PAYLOAD + "." + _MAPBOX_SIG_A
+_MAPBOX_SK_B = "sk" + "." + _MAPBOX_PAYLOAD_2 + "." + _MAPBOX_SIG_B
+
+_FC_A = "fc" + "-" + "bc7417c0adf910ff097fcc9ae360cc3e"
+_FC_B = "fc" + "-" + "11a93e580daa3208d933de75c3cb1bee"
+_FC_C = "fc" + "-" + "656e667ddb514abd515aeec10e1b80f2"
+
+# WireGuard keys are base64 of 32 bytes, so always 43 characters plus one pad.
+_WG_PRIV_A = "BSHi+kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0E="
+_WG_PRIV_B = "PWp55w+iaLK483Qel/Hz46lGPVXuYk7tEPnGl9b5g8k="
+_WG_PSK = "Zt5+Oi5IhGiKxyZYVAa6SOBlWm4WbZWoH3z7WLiElkQ="
+_WG_PUB = "IUqr9VCm0MbyBTrcsuGsyiky6tUxRnr5rZmqYkyOuJ8="
+
+# bcrypt salt+digest halves: 22 characters of salt and 31 of digest, in
+# bcrypt's own './A-Za-z0-9' alphabet.
+_BCRYPT_BODY_A = "km8V8mFDG1DVWpDcZS24VDpDhqgGcz0Kt.BNIUBfQ5vcaj8.6XQ3P"
+_BCRYPT_BODY_B = "QcboHrJl2BMyxMMUeuNCuyGgZ1u.AOyqGg5ieaWDOKAsjS0WU4IqX"
+_BCRYPT_BODY_C = "jFBq5vQH1hBfKhkeJQWxZAhiQrDW8hmcUrZBdWLLYqGO/ZnsQc3YF"
+_BCRYPT_2B = "$2b$" + "12$" + _BCRYPT_BODY_A
+_BCRYPT_2Y = "$2y$" + "10$" + _BCRYPT_BODY_B
+_BCRYPT_2A = "$2a$" + "08$" + _BCRYPT_BODY_C
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -5184,6 +5243,270 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "commit 8f2a1c9d0e4b6a7c3f5d2e1b0a9c8d7e6f5a4b3c",
         ],
         "min_confidence": 0.95,
+    },
+
+    # ── 2026-09-07 batch ─────────────────────────────────────────────────
+
+    # Heroku 'HRKU-' platform API key — 65 characters, per Heroku's own
+    # changelog item announcing the format. The older heroku_api_key is a
+    # context-gated bare UUID and is pinned as a non-collision case.
+    # Source: https://devcenter.heroku.com/changelog-items/3175
+    "heroku_api_key_v2": {
+        "positives": [
+            "HEROKU_API_KEY=" + _HRKU_A,
+            'curl -u ":' + _HRKU_B + '" https://api.heroku.com/apps',
+            "  heroku_api_key: " + _HRKU_A,
+        ],
+        "negatives": [
+            # The body is exactly 60 characters.
+            _HRKU_PREFIX + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fi",
+            _HRKU_PREFIX + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fifQ",
+            # The prefix is an exact, case-sensitive literal.
+            "hrku" + "-" + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fif",
+            # Must not be carved out of a longer identifier.
+            "X" + _HRKU_A,
+            _HRKU_A + "extra",
+            # The UUID-shaped legacy Heroku key is a different pattern.
+            "HEROKU_API_KEY=01234567-89ab-cdef-0123-456789abcdef",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # HashiCorp Vault recovery token — 'hvr.', the third member of the
+    # 'hvs.' / 'hvb.' / 'hvr.' prefix family. Body bounds are the vendor's
+    # "at least 24 randomly-generated characters".
+    # Source: https://developer.hashicorp.com/vault/docs/concepts/tokens
+    "vault_recovery_token": {
+        "positives": [
+            "VAULT_TOKEN=" + _HVR_A,
+            "vault operator generate-root -decode=" + _HVR_B,
+            "  recovery_token: " + _HVR_A,
+        ],
+        "negatives": [
+            # 23 characters is below the vendor's documented floor.
+            "hvr." + "O13Eb1d8Ui35C71STSsWaXq",
+            # The sibling prefixes are different credentials.
+            "hvs." + "O13Eb1d8Ui35C71STSsWaXqj",
+            "hvb." + "O13Eb1d8Ui35C71STSsWaXqj",
+            # The prefix is exact and case-sensitive.
+            "HVR." + "O13Eb1d8Ui35C71STSsWaXqj",
+            "hvr" + "O13Eb1d8Ui35C71STSsWaXqj",
+            # Prose naming the prefix is not a token.
+            "Recovery tokens carry the hvr. prefix.",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Yandex Cloud service-account API key — 'AQVN' + 35..38 base64url,
+    # the character class and width published verbatim by Yandex in its own
+    # documentation repository. Distinct from the 't1.' IAM token and the
+    # 'y[0-3]_' Passport OAuth token, both pinned as non-collision cases.
+    # Source: https://github.com/yandex-cloud/docs/blob/master/en/_includes/security/standard/authentication.md
+    "yandex_cloud_api_key": {
+        "positives": [
+            "YC_API_KEY=" + _AQVN_35,
+            "  api_key: " + _AQVN_38,
+            'Authorization: Api-Key ' + _AQVN_36,
+        ],
+        "negatives": [
+            # 34 and 39 both sit outside the vendor's published window.
+            "AQVN" + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vu",
+            "AQVN" + "oTp4sKlEqYwIPSsvei-PifAq6kph-qOjiZ4w3Qz",
+            # The prefix is exact and case-sensitive.
+            "aqvn" + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vuP",
+            "AQVM" + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vuP",
+            # Must not be carved out of a longer base64url run.
+            "X" + _AQVN_35,
+            _AQVN_35 + "abcd",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Dependency-Track API key — BOTH documented forms. The legacy
+    # 'odt_' + 32 shape (4.9.0–4.12) and the 'odt_<8-char publicId>_<32-char
+    # key>' shape the vendor introduced in 4.13.0.
+    # Source: https://docs.dependencytrack.org/2025/04/07/v4.13.0/
+    "dependency_track_api_key": {
+        "positives": [
+            "X-Api-Key: " + _ODT_V413,
+            "DT_API_KEY=" + _ODT_LEGACY,
+            "  dtrack_api_key: " + _ODT_LEGACY_2,
+        ],
+        "negatives": [
+            # The key half is exactly 32 characters in both forms.
+            "odt" + "_" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHip",
+            "odt" + "_" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipUx",
+            # The publicId half is exactly 8 characters.
+            "odt" + "_" + "Fowwh8T" + "_" + "5sVqpvsiyEWOg51Iek4z5maYbVKITUqw",
+            "odt" + "_" + "Fowwh8Tqq" + "_" + "5sVqpvsiyEWOg51Iek4z5maYbVKITUqw",
+            # The prefix is exact and case-sensitive.
+            "ODT" + "_" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU",
+            "odt" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU",
+            # Must not be carved out of a longer underscore-joined identifier.
+            "prefix_odt" + "_" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU",
+            "odt" + "_" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU" + "_tail",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Pixie API key — 'px-api-' + a canonical dashed UUID, from Pixie's own
+    # Apache-2.0 src/cloud/auth/apikey/api_key.go. The 'px-dep-' variant is
+    # NOT in that source and is deliberately unmatched.
+    # Source: https://github.com/pixie-io/pixie/blob/main/src/cloud/auth/apikey/api_key.go
+    "pixie_api_key": {
+        "positives": [
+            "PX_API_KEY=" + _PXAPI_A,
+            "px auth login --api_key " + _PXAPI_B,
+            "  pixieApiKey: " + _PXAPI_C,
+        ],
+        "negatives": [
+            # The body is a full canonical UUID; a truncated one is not a key.
+            "px-api-" + "731ac57d-9492-469f-ad7e-9ce9b25f06b",
+            # The undashed spelling is not a shape Pixie mints.
+            "px-api-" + "731ac57d9492469fad7e9ce9b25f06b9",
+            # 'px-dep-' does not appear in the vendor generator.
+            "px-dep-" + "731ac57d-9492-469f-ad7e-9ce9b25f06b9",
+            # The prefix is exact and case-sensitive.
+            "PX-API-" + "731ac57d-9492-469f-ad7e-9ce9b25f06b9",
+            # Must not be carved out of a longer hyphenated run.
+            "x" + _PXAPI_A,
+            _PXAPI_A + "-9492",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Plaid access token — 'access-<environment>-<UUID>' per Plaid's own
+    # glossary. All three environment literals are kept: 'development' is
+    # retired, but tokens minted against it still exist in old code.
+    # Source: https://plaid.com/docs/quickstart/glossary/
+    "plaid_access_token": {
+        "positives": [
+            "PLAID_ACCESS_TOKEN=" + _PLAID_PROD,
+            '{"access_token": "' + _PLAID_SANDBOX + '"}',
+            "  plaid_access_token: " + _PLAID_DEV,
+        ],
+        "negatives": [
+            # Only the three documented environments are accepted.
+            "access-" + "staging-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988",
+            "access-" + "prod-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988",
+            # The public token is a different, non-secret credential.
+            "public-" + "sandbox-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988",
+            # The body is a full canonical UUID.
+            "access-" + "sandbox-" + "823f5d7e-2de0-4a1f-a2a3-edc536df398",
+            "access-" + "sandbox-" + "823f5d7e2de04a1fa2a3edc536df3988",
+            # Must not be carved out of a longer hyphenated run.
+            _PLAID_PROD + "-2de0",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Mapbox SECRET access token — anchored on 'sk.eyJ', because a Mapbox
+    # payload is base64url JSON and therefore always opens 'eyJ'. The public
+    # 'pk.' token, OpenAI's 'sk-' and Stripe's 'sk_live_' are all pinned as
+    # non-collision cases.
+    # Source: https://docs.mapbox.com/api/accounts/tokens/
+    "mapbox_secret_access_token": {
+        "positives": [
+            "MAPBOX_SECRET_TOKEN=" + _MAPBOX_SK_A,
+            "  mapbox_access_token: " + _MAPBOX_SK_B,
+            'curl "https://api.mapbox.com/tokens/v2/me?access_token='
+            + _MAPBOX_SK_A + '"',
+        ],
+        "negatives": [
+            # The public token is a different credential, and a different
+            # pattern.
+            "pk." + _MAPBOX_PAYLOAD + "." + _MAPBOX_SIG_A,
+            # The payload segment must be base64url JSON, so it must open eyJ.
+            "sk." + "abcdefghijklmnopqrstuvwxyz0123456789" + "." + _MAPBOX_SIG_A,
+            # The dot separator is what distinguishes this from OpenAI and
+            # Stripe secret keys.
+            "sk-" + "eyJ1IjoiZXhhbXBsZXVzZXIiLCJhIjoiY2p0ZXN0MDAwMDAwMDEifQ",
+            "sk_" + "live_" + "eyJ1IjoiZXhhbXBsZXVzZXIiLCJhIjoiY2p0ZXN0MDAw",
+            # A single segment is not a token.
+            "sk." + _MAPBOX_PAYLOAD,
+            # Must not be carved out of a longer run.
+            "x" + _MAPBOX_SK_A,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Firecrawl API key — 'fc-' + exactly 32 hex. The width is the vendor's
+    # own arithmetic: its API server strips '^fc-' and re-inserts UUID dashes
+    # with /(.{8})(.{4})(.{4})(.{4})(.{12})/.
+    # Source: https://github.com/firecrawl/firecrawl/blob/main/apps/api/src/lib/parseApi.ts
+    "firecrawl_api_key": {
+        "positives": [
+            "FIRECRAWL_API_KEY=" + _FC_A,
+            'FirecrawlApp(api_key="' + _FC_B + '")',
+            "  firecrawl_api_key: " + _FC_C,
+        ],
+        "negatives": [
+            # The body is exactly 32 characters.
+            "fc-" + "bc7417c0adf910ff097fcc9ae360cc3",
+            "fc-" + "bc7417c0adf910ff097fcc9ae360cc3ef",
+            # The body is lowercase hex; Firecrawl mints an undashed UUID.
+            "fc-" + "BC7417C0ADF910FF097FCC9AE360CC3E",
+            "fc-" + "bc7417c0adf910ff097fcc9ae360ccZZ",
+            # The prefix is exact.
+            "fcx" + "bc7417c0adf910ff097fcc9ae360cc3e",
+            # Must not be carved out of a longer identifier.
+            "x" + _FC_A,
+            _FC_A + "ab",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    # WireGuard private / pre-shared key — structural, anchored on the
+    # literal configuration field name. The identically shaped 'PublicKey'
+    # field is deliberately NOT matched.
+    # Source: https://www.wireguard.com/quickstart/
+    "wireguard_private_key": {
+        "positives": [
+            "PrivateKey = " + _WG_PRIV_A,
+            "PrivateKey=" + _WG_PRIV_B,
+            "PresharedKey = " + _WG_PSK,
+        ],
+        "negatives": [
+            # A public key has the same shape and is public by definition.
+            "PublicKey = " + _WG_PUB,
+            # A bare 44-character base64 value is far too generic to claim.
+            _WG_PRIV_A,
+            # The value is exactly 43 base64 characters plus one '=' pad.
+            "PrivateKey = " + "BSHi+kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0=",
+            "PrivateKey = " + "BSHi+kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0EA=",
+            # Unpadded base64url output is not what wg genkey emits.
+            "PrivateKey = " + "BSHi-kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0E",
+            # A different field name is a different value.
+            "Endpoint = " + _WG_PRIV_A,
+        ],
+        "min_confidence": 0.85,
+    },
+
+    # bcrypt password hash — a VERIFIER, not a bearer credential, which is
+    # why severity is medium. 60 characters, always.
+    # Source: https://passlib.readthedocs.io/en/stable/lib/passlib.hash.bcrypt.html
+    "bcrypt_password_hash": {
+        "positives": [
+            "password_hash = " + _BCRYPT_2B,
+            'admin:' + _BCRYPT_2Y,
+            '{"password": "' + _BCRYPT_2A + '"}',
+        ],
+        "negatives": [
+            # '$2c$' is not one of the four minor versions in use.
+            "$2c$12$" + _BCRYPT_BODY_A,
+            # The cost factor is exactly two digits.
+            "$2b$1$" + _BCRYPT_BODY_A,
+            "$2b$120$" + _BCRYPT_BODY_A,
+            "$2b$ab$" + _BCRYPT_BODY_A,
+            # The salt+digest half is exactly 53 characters.
+            "$2b$12$" + _BCRYPT_BODY_A[:-1],
+            "$2b$12$" + _BCRYPT_BODY_A + "x",
+            # Other modular-crypt families are not bcrypt.
+            "$5$rounds=5000$" + "usesomesillystri$KqJWpanXZHKq2BOB43TSaYhEWsQ1Lr5QNyPCDH887P9",
+            # Prose naming the prefix is not a hash.
+            "bcrypt hashes start with $2b$ and are 60 characters long.",
+        ],
+        "min_confidence": 0.90,
     },
 }
 
