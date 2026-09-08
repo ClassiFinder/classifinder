@@ -12090,3 +12090,917 @@ def test_newrelic_license_key_two_keys_report_two_findings():
     matched = _nr(text)
     assert len(matched) == 2
     assert {text[f.span_start : f.span_end] for f in matched} == {key_a, key_b}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 2026-09-07 BATCH
+#
+# Every credential literal below is SYNTHETIC and assembled by concatenation,
+# so no contiguous credential-shaped value is committed to source. Heroku,
+# Plaid and Mapbox are GitHub secret-scanning partners, which makes the split
+# load-bearing rather than merely conventional.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+# --- Heroku 'HRKU-' platform API key ------------------------------------------
+# Heroku's own changelog item announcing the format states the key is 65
+# characters and publishes a worked example verbatim, so the body is 60
+# urlsafe-base64 characters behind the five-character 'HRKU-' literal. The
+# 'HRKU-AA' shape some catalogues hard-code is an issuance cohort, not a
+# documented constant, and is deliberately not encoded.
+# Source: https://devcenter.heroku.com/changelog-items/3175
+_HRKU_PFX = "HRKU" + "-"
+_HRKU_KEY = _HRKU_PFX + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fif"
+_HRKU_KEY_2 = _HRKU_PFX + "FyYA11m1JDKafHZIgoWHWwAh3ttEjONpx9gwy83aSpZ6fI8eSfIrLIO7Ip0W"
+
+
+def test_heroku_api_key_v2_true_positives():
+    """Detected bare and in the carriers a Heroku platform key actually leaks
+    through: an env assignment, a curl invocation and a CI config."""
+    for text in (
+        _HRKU_KEY,
+        _HRKU_KEY_2,
+        "HEROKU_API_KEY=" + _HRKU_KEY,
+        'curl -u ":' + _HRKU_KEY_2 + '" https://api.heroku.com/apps',
+        "  heroku_api_key: " + _HRKU_KEY,
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "heroku_api_key_v2"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "heroku"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_heroku_api_key_v2_true_negatives():
+    """The body is exactly 60 characters and the prefix is an exact,
+    case-sensitive literal. The 'AA' cohort artifact is NOT required."""
+    for neg in (
+        _HRKU_PFX + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fi",
+        _HRKU_PFX + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fifQ",
+        "hrku" + "-" + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fif",
+        "HRKV" + "-" + "ZgZ9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fif",
+        "X" + _HRKU_KEY,
+        "_" + _HRKU_KEY,
+        _HRKU_KEY + "extra",
+        "Heroku keys now carry the " + _HRKU_PFX + " prefix.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "heroku_api_key_v2"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_heroku_api_key_v2_accepts_bodies_outside_the_aa_cohort():
+    """Regression guard on the one thing most likely to be 'fixed' wrongly.
+    Upstream catalogues hard-code 'HRKU-AA' + 58; Heroku documents no such
+    constant, so a body that does NOT begin 'AA' must still be detected."""
+    key = _HRKU_PFX + "QQ" + "Z9mNbDn3I0GzyS6Z9LYuR-HsZpb9qYw4GUJWtIC7ZRlSciDc3610t31fif"
+    matched = [
+        f for f in scan("HEROKU_API_KEY=" + key, min_confidence=0.01)
+        if f.type == "heroku_api_key_v2"
+    ]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+
+
+def test_heroku_api_key_v2_does_not_collide_with_the_uuid_heroku_key():
+    """The two Heroku key formats are different credentials with different
+    remediation. Each value must be attributed to the right pattern."""
+    legacy = "01234567-89ab-cdef-0123-456789abcdef"
+    findings = scan("HEROKU_API_KEY=" + legacy, min_confidence=0.01)
+    assert [f.type for f in findings if f.type == "heroku_api_key_v2"] == []
+    assert any(f.type == "heroku_api_key" for f in findings)
+
+    findings = scan("HEROKU_API_KEY=" + _HRKU_KEY, min_confidence=0.01)
+    assert [f.type for f in findings] == ["heroku_api_key_v2"]
+
+
+def test_heroku_api_key_v2_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never gets a chance to price a mask down. The masks are registered
+    as known_test_values instead and must land at ~0.15."""
+    for mask in (
+        _HRKU_PFX + "x" * 60,
+        _HRKU_PFX + "X" * 60,
+        _HRKU_PFX + "0" * 60,
+    ):
+        matched = [
+            f for f in scan("HEROKU_API_KEY=" + mask, min_confidence=0.01)
+            if f.type == "heroku_api_key_v2"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Dependency-Track API key -------------------------------------------------
+# TWO documented forms, and both must match. The vendor's 4.13.0 release note
+# states the new one verbatim: "Keys generated by version 4.13.0 and later will
+# follow the format odt_<publicId>_<key>, where publicId consists of 8 random
+# characters, and key of the usual 32 random characters." Catalogues that ship
+# only the legacy 'odt_' + 32 shape miss every key a current release mints.
+# Source: https://docs.dependencytrack.org/2025/04/07/v4.13.0/
+_ODT = "odt" + "_"
+_ODT_NEW = _ODT + "Fowwh8Tq" + "_" + "5sVqpvsiyEWOg51Iek4z5maYbVKITUqw"
+_ODT_OLD = _ODT + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU"
+
+
+def test_dependency_track_api_key_detects_both_documented_forms():
+    """The 4.13.0+ 'odt_<publicId>_<key>' form and the 4.9.0-4.12 legacy form
+    are both live in the field and both must be detected."""
+    for text, expected_len in ((_ODT_NEW, 45), (_ODT_OLD, 36)):
+        assert len(text) == expected_len
+        matched = [
+            f for f in scan("X-Api-Key: " + text, min_confidence=0.01)
+            if f.type == "dependency_track_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + text
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "dependency_track"
+        assert matched[0].confidence >= 0.90
+        # The whole key is the span, publicId included.
+        span = ("X-Api-Key: " + text)[matched[0].span_start : matched[0].span_end]
+        assert span == text
+
+
+def test_dependency_track_api_key_true_negatives():
+    """Both halves have exact widths, and the prefix is case-sensitive."""
+    for neg in (
+        _ODT + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHip",
+        _ODT + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipUx",
+        _ODT + "Fowwh8T" + "_" + "5sVqpvsiyEWOg51Iek4z5maYbVKITUqw",
+        _ODT + "Fowwh8Tqq" + "_" + "5sVqpvsiyEWOg51Iek4z5maYbVKITUqw",
+        "ODT" + "_" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU",
+        "odt" + "Qn4lIYRxKQirEI9M8R9bxBitVeQhHipU",
+        "prefix_" + _ODT_OLD,
+        _ODT_OLD + "_tail",
+        _ODT_OLD + "x",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "dependency_track_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_dependency_track_api_key_reports_one_finding_per_key():
+    """The legacy branch cannot also claim a slice of a 4.13+ key: the 32
+    characters after 'odt_' would have to contain the publicId separator, and
+    '_' is outside the body charset. One key, one finding, either way."""
+    text = "keys:\n  old: " + _ODT_OLD + "\n  new: " + _ODT_NEW
+    matched = [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "dependency_track_api_key"
+    ]
+    assert len(matched) == 2
+    assert {text[f.span_start : f.span_end] for f in matched} == {_ODT_OLD, _ODT_NEW}
+
+
+def test_dependency_track_api_key_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so masks in
+    both shapes are registered as known_test_values and land at ~0.15."""
+    for mask in (
+        _ODT + "x" * 32,
+        _ODT + "0" * 32,
+        _ODT + "x" * 8 + "_" + "x" * 32,
+    ):
+        matched = [
+            f for f in scan("DT_API_KEY=" + mask, min_confidence=0.01)
+            if f.type == "dependency_track_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Plaid access token -------------------------------------------------------
+# 'access-<environment>-<UUID>' per Plaid's own glossary. All three environment
+# literals are kept: 'development' was retired as a Plaid environment, but
+# tokens minted against it still sit in old code, which is exactly the cohort a
+# secret scanner is for.
+# Source: https://plaid.com/docs/quickstart/glossary/
+_PLAID_A = "access-" + "production-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988"
+_PLAID_B = "access-" + "sandbox-" + "3c9c2cdd-cb14-47ae-adbe-cffce493f4ad"
+_PLAID_C = "access-" + "development-" + "1a5757e4-298e-4bc1-a570-7f8906aa1f23"
+
+
+def test_plaid_access_token_true_positives():
+    """All three documented environments are detected, in the carriers a Plaid
+    access token actually leaks through: an env var, a JSON API response and a
+    YAML config."""
+    for text in (
+        _PLAID_A,
+        _PLAID_B,
+        _PLAID_C,
+        "PLAID_ACCESS_TOKEN=" + _PLAID_A,
+        '{"access_token": "' + _PLAID_B + '", "item_id": "abc"}',
+        "  plaid_access_token: " + _PLAID_C,
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "plaid_access_token"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "plaid"
+        assert matched[0].confidence >= 0.90
+
+
+def test_plaid_access_token_sandbox_is_not_priced_below_production():
+    """Severity is critical for every environment on purpose. Pricing sandbox
+    tokens lower would be one string substitution away from mispricing a
+    production token, and the finding already names the environment in the
+    value it reports."""
+    prod = [f for f in scan(_PLAID_A, min_confidence=0.01) if f.type == "plaid_access_token"]
+    sand = [f for f in scan(_PLAID_B, min_confidence=0.01) if f.type == "plaid_access_token"]
+    assert prod[0].severity == sand[0].severity == "critical"
+    assert prod[0].confidence == sand[0].confidence
+
+
+def test_plaid_access_token_true_negatives():
+    """Only the three documented environments are accepted, the body is a full
+    canonical UUID, and the public token is a different credential."""
+    for neg in (
+        "access-" + "staging-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988",
+        "access-" + "prod-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988",
+        "public-" + "sandbox-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988",
+        "access-" + "sandbox-" + "823f5d7e-2de0-4a1f-a2a3-edc536df398",
+        "access-" + "sandbox-" + "823f5d7e2de04a1fa2a3edc536df3988",
+        "ACCESS-" + "SANDBOX-" + "823f5d7e-2de0-4a1f-a2a3-edc536df3988",
+        _PLAID_A + "-2de0",
+        "x" + _PLAID_A,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "plaid_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_plaid_published_quickstart_token_scores_as_a_test_value():
+    """Plaid's quickstart prints one sandbox token verbatim and the tutorial
+    ecosystem reproduces it endlessly. confidence_base 0.95 sits above the 0.85
+    FP-wordlist gate, so it is pinned as a known_test_value and lands at ~0.15
+    rather than becoming a permanent high-confidence finding in documentation."""
+    published = "access-" + "sandbox-" + "de3ce8ef-33f8-452c-a685-8671031fc0f6"
+    matched = [
+        f for f in scan("ACCESS_TOKEN=" + published, min_confidence=0.01)
+        if f.type == "plaid_access_token"
+    ]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- HashiCorp Vault recovery token -------------------------------------------
+# The third and last member of Vault's token-prefix family. Body bounds are
+# copied verbatim from vault_batch_token so all three stay consistent:
+# HashiCorp documents the prefix as followed by "at least 24 randomly-generated
+# characters".
+# Source: https://developer.hashicorp.com/vault/docs/concepts/tokens
+_HVR = "hvr" + "."
+_HVR_24 = _HVR + "O13Eb1d8Ui35C71STSsWaXqj"
+_HVR_28 = _HVR + "TYof2xCJyX8miGsi9q6XzD35q8O6"
+
+
+def test_vault_recovery_token_true_positives():
+    """Detected bare and in the carriers a recovery token leaks through: an env
+    assignment, a generate-root invocation and a runbook."""
+    for text in (
+        _HVR_24,
+        _HVR_28,
+        "VAULT_TOKEN=" + _HVR_24,
+        "vault operator generate-root -decode=" + _HVR_28,
+        "  recovery_token: " + _HVR_24,
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "vault_recovery_token"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "vault"
+        assert matched[0].confidence >= 0.90
+
+
+def test_vault_recovery_token_true_negatives():
+    """The vendor's floor is 24 body characters, and the prefix is exact."""
+    for neg in (
+        _HVR + "O13Eb1d8Ui35C71STSsWaXq",
+        "HVR." + "O13Eb1d8Ui35C71STSsWaXqj",
+        "hvr" + "O13Eb1d8Ui35C71STSsWaXqj",
+        "Recovery tokens carry the " + _HVR + " prefix.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "vault_recovery_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_vault_token_family_splits_three_ways():
+    """'hvs.' service, 'hvb.' batch and 'hvr.' recovery tokens are three
+    different credentials with three different remediations. Each value must
+    produce exactly one finding, attributed to the right pattern."""
+    body = "O13Eb1d8Ui35C71STSsWaXqj"
+    for prefix, expected in (
+        ("hvs" + ".", "vault_token"),
+        ("hvb" + ".", "vault_batch_token"),
+        ("hvr" + ".", "vault_recovery_token"),
+    ):
+        findings = scan("VAULT_TOKEN=" + prefix + body, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+
+def test_vault_recovery_token_greedy_body_takes_the_whole_token():
+    """The trailing guard is what makes the {24,} run consume the entire token
+    rather than reporting a 24-character prefix of a longer one."""
+    long_token = _HVR + "TYof2xCJyX8miGsi9q6XzD35q8O6bktuIdzgXpuIcFmFHhy4"
+    text = "VAULT_TOKEN=" + long_token
+    matched = [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "vault_recovery_token"
+    ]
+    assert len(matched) == 1
+    assert text[matched[0].span_start : matched[0].span_end] == long_token
+
+
+def test_vault_recovery_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so masks are
+    registered as known_test_values and land at ~0.15."""
+    for mask in (_HVR + "X" * 28, _HVR + "x" * 24):
+        matched = [
+            f for f in scan("VAULT_TOKEN=" + mask, min_confidence=0.01)
+            if f.type == "vault_recovery_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Mapbox secret access token -----------------------------------------------
+# The dangerous half of the Mapbox token pair. Mapbox's own token reference
+# states that all secret access tokens start with 'sk'; the payload segment is
+# base64url JSON, so it always opens 'eyJ', which turns a two-character prefix
+# into a five-character anchor for free.
+# Source: https://docs.mapbox.com/api/accounts/tokens/
+_MB_PAYLOAD = "eyJ1IjoiY2xzZm5kciIsImEiOiJja3N5bnRoMDAwMDAwMSJ9"
+_MB_PAYLOAD_2 = "eyJ1IjoiY2ZkZW1vIiwiYSI6ImNrc3ludGgwMDAwMDAyIn0"
+_MB_SIG = "euN6nH-FC4z8TOT4QG1aSlE6FG0"
+_MB_SIG_2 = "68E15XAvC_mOZ-s0bJwh"
+_MB_SK = "sk" + "." + _MB_PAYLOAD + "." + _MB_SIG
+_MB_SK_2 = "sk" + "." + _MB_PAYLOAD_2 + "." + _MB_SIG_2
+
+
+def test_mapbox_secret_access_token_true_positives():
+    """Detected bare and in the carriers a secret token leaks through: an env
+    var, a YAML config and a curl invocation against the tokens API."""
+    for text in (
+        _MB_SK,
+        _MB_SK_2,
+        "MAPBOX_SECRET_TOKEN=" + _MB_SK,
+        "  mapbox_access_token: " + _MB_SK_2,
+        'curl "https://api.mapbox.com/tokens/v2/me?access_token=' + _MB_SK + '"',
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "mapbox_secret_access_token"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "mapbox"
+        assert matched[0].confidence >= 0.90
+
+
+def test_mapbox_secret_access_token_true_negatives():
+    """The anchor is 'sk.eyJ' and the token has exactly two segments."""
+    for neg in (
+        # A payload that is not base64url JSON cannot open 'eyJ'.
+        "sk" + "." + "abcdefghijklmnopqrstuvwxyz0123456789" + "." + _MB_SIG,
+        # One segment is not a token.
+        "sk" + "." + _MB_PAYLOAD,
+        # Signature bounds are 20..30.
+        "sk" + "." + _MB_PAYLOAD + "." + "abcdefghijklmnopqrs",
+        "sk" + "." + _MB_PAYLOAD + "." + "a" * 31,
+        # Must not be carved out of a longer run. Four extra characters put
+        # the signature at 31, past the ceiling; the guards then refuse every
+        # shorter backtrack too, so nothing is claimed rather than a truncated
+        # span being reported.
+        "x" + _MB_SK,
+        _MB_SK + "abcd",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "mapbox_secret_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_mapbox_secret_token_does_not_collide_with_the_public_pk_token():
+    """'pk.' tokens are meant to ship in browser JavaScript; 'sk.' tokens carry
+    write scopes and must never leave a server. They are separate patterns with
+    separate severities, and neither may claim the other's value."""
+    public = "pk" + "." + "a" * 60 + "." + "b" * 22
+    findings = scan("MAPBOX_TOKEN=" + public, min_confidence=0.01)
+    assert [f.type for f in findings if f.type == "mapbox_secret_access_token"] == []
+    assert any(f.type == "mapbox_api_token" for f in findings)
+
+    findings = scan("MAPBOX_TOKEN=" + _MB_SK, min_confidence=0.01)
+    assert [f.type for f in findings] == ["mapbox_secret_access_token"]
+
+
+def test_mapbox_secret_token_does_not_collide_with_openai_or_stripe_sk_keys():
+    """Three registry credentials open with the characters 'sk'. The separator
+    is what tells them apart: Mapbox uses '.', OpenAI '-', Stripe '_'."""
+    openai = "sk-" + "T3BlbkFJ" + "a" * 40
+    stripe = "sk_" + "live_" + "4eC39HqLyjWDarjtT1zdp7dc"
+    for value in (openai, stripe):
+        matched = [
+            f for f in scan("API_KEY=" + value, min_confidence=0.01)
+            if f.type == "mapbox_secret_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + value[:40]
+
+
+def test_mapbox_secret_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so masks are
+    registered as known_test_values and land at ~0.15."""
+    for mask in (
+        "sk." + "eyJ" + "x" * 29 + "." + "x" * 20,
+        "sk." + "eyJ" + "X" * 29 + "." + "X" * 20,
+        "sk." + "eyJ" + "0" * 29 + "." + "0" * 20,
+    ):
+        matched = [
+            f for f in scan("MAPBOX_SECRET_TOKEN=" + mask, min_confidence=0.01)
+            if f.type == "mapbox_secret_access_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Firecrawl API key --------------------------------------------------------
+# The 32-hex body is the vendor's own arithmetic rather than a measured width:
+# Firecrawl's API server strips '^fc-' from the supplied key and re-inserts UUID
+# dashes with /(.{8})(.{4})(.{4})(.{4})(.{12})/, which only makes sense if what
+# remains is an undashed UUID.
+# Source: https://github.com/firecrawl/firecrawl/blob/main/apps/api/src/lib/parseApi.ts
+_FC = "fc" + "-"
+_FC_KEY = _FC + "bc7417c0adf910ff097fcc9ae360cc3e"
+_FC_KEY_2 = _FC + "11a93e580daa3208d933de75c3cb1bee"
+
+
+def test_firecrawl_api_key_true_positives():
+    for text in (
+        _FC_KEY,
+        _FC_KEY_2,
+        "FIRECRAWL_API_KEY=" + _FC_KEY,
+        'FirecrawlApp(api_key="' + _FC_KEY_2 + '")',
+        "  firecrawl_api_key: " + _FC_KEY,
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "firecrawl_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "firecrawl"
+        assert matched[0].confidence >= 0.85
+
+
+def test_firecrawl_api_key_true_negatives():
+    """The body is exactly 32 lowercase hexadecimal characters — an undashed
+    UUID — so nothing shorter, longer, upper-cased or non-hex may match."""
+    for neg in (
+        _FC + "bc7417c0adf910ff097fcc9ae360cc3",
+        _FC + "bc7417c0adf910ff097fcc9ae360cc3ef",
+        _FC + "BC7417C0ADF910FF097FCC9AE360CC3E",
+        _FC + "bc7417c0adf910ff097fcc9ae360ccZZ",
+        _FC + "bc7417c0-adf9-10ff-097f-cc9ae360cc3e",
+        "fcx" + "bc7417c0adf910ff097fcc9ae360cc3e",
+        "x" + _FC_KEY,
+        _FC_KEY + "ab",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "firecrawl_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_firecrawl_api_key_stays_above_the_fp_wordlist_gate():
+    """confidence_base is 0.90 rather than 0.95 because 'fc-' is only a
+    three-character anchor — but it is deliberately still above 0.85, so the
+    FP-wordlist penalty (-0.40) can never silently sink a real key that happens
+    to sit in a file called test or demo."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    pattern = next(p for p in PATTERN_REGISTRY if p.id == "firecrawl_api_key")
+    assert pattern.confidence_base >= 0.85
+    matched = [
+        f for f in scan("test_firecrawl_api_key=" + _FC_KEY, min_confidence=0.01)
+        if f.type == "firecrawl_api_key"
+    ]
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+
+
+def test_firecrawl_api_key_masked_placeholders_score_as_test_values():
+    for mask in (_FC + "0" * 32, _FC + "f" * 32, _FC + "a" * 32):
+        matched = [
+            f for f in scan("FIRECRAWL_API_KEY=" + mask, min_confidence=0.01)
+            if f.type == "firecrawl_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Pixie API key ------------------------------------------------------------
+# From Pixie's own Apache-2.0 source: src/cloud/auth/apikey/api_key.go sets
+# apiKeyPrefix = "px-api-" and builds a key as that prefix plus a uuid.NewV4()
+# string. The 'px-dep-' variant claimed elsewhere is NOT in that file and is
+# deliberately unmatched.
+# Source: https://github.com/pixie-io/pixie/blob/main/src/cloud/auth/apikey/api_key.go
+_PX = "px-api-"
+_PX_KEY = _PX + "731ac57d-9492-469f-ad7e-9ce9b25f06b9"
+_PX_KEY_2 = _PX + "9e679c7e-646c-4c68-a78d-8bdb46a3c4a6"
+
+
+def test_pixie_api_key_true_positives():
+    for text in (
+        _PX_KEY,
+        _PX_KEY_2,
+        "PX_API_KEY=" + _PX_KEY,
+        "px auth login --api_key " + _PX_KEY_2,
+        "  pixieApiKey: " + _PX_KEY,
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "pixie_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        # Pixie is a CNCF project stewarded by New Relic, but the credential is
+        # Pixie's own — a leak is remediated in Pixie Cloud, not New Relic.
+        assert matched[0].provider == "pixie"
+        assert matched[0].confidence >= 0.90
+
+
+def test_pixie_api_key_true_negatives():
+    """The body is a canonical dashed UUID, and only 'px-api-' is shipped."""
+    for neg in (
+        _PX + "731ac57d-9492-469f-ad7e-9ce9b25f06b",
+        _PX + "731ac57d9492469fad7e9ce9b25f06b9",
+        "px-dep-" + "731ac57d-9492-469f-ad7e-9ce9b25f06b9",
+        "PX-API-" + "731ac57d-9492-469f-ad7e-9ce9b25f06b9",
+        _PX + "731AC57D-9492-469F-AD7E-9CE9B25F06B9",
+        "x" + _PX_KEY,
+        _PX_KEY + "-9492",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "pixie_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_pixie_api_key_masked_placeholders_score_as_test_values():
+    for mask in (
+        _PX + "00000000-0000-0000-0000-000000000000",
+        _PX + "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    ):
+        matched = [
+            f for f in scan("PX_API_KEY=" + mask, min_confidence=0.01)
+            if f.type == "pixie_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Yandex Cloud API key -----------------------------------------------------
+# Yandex publishes the character class and the {35,38} width verbatim in its own
+# public documentation repository, labelled "Yandex.Cloud API Keys (Speechkit,
+# Vision, Translate)". The width is a range because that is what the vendor
+# states.
+# Source: https://github.com/yandex-cloud/docs/blob/master/en/_includes/security/standard/authentication.md
+_AQVN = "AQVN"
+_AQVN_MIN = _AQVN + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vuP"
+_AQVN_MID = _AQVN + "SuuPkdTLF2GZTnfb2COwQrXbO509DJR-OB2u"
+_AQVN_MAX = _AQVN + "oTp4sKlEqYwIPSsvei-PifAq6kph-qOjiZ4w3Q"
+
+
+def test_yandex_cloud_api_key_true_positives():
+    """Both ends of the vendor's published width window, and the middle."""
+    for text in (_AQVN_MIN, _AQVN_MID, _AQVN_MAX):
+        assert 39 <= len(text) <= 42
+        matched = [
+            f for f in scan("YC_API_KEY=" + text, min_confidence=0.01)
+            if f.type == "yandex_cloud_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + text
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "yandex_cloud"
+        assert matched[0].confidence >= 0.90
+
+
+def test_yandex_cloud_api_key_true_negatives():
+    """34 and 39 body characters both sit outside the vendor's window, and the
+    guards mean a 39-character body matches nothing at all rather than being
+    truncated to 38."""
+    for neg in (
+        _AQVN + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vu",
+        _AQVN + "oTp4sKlEqYwIPSsvei-PifAq6kph-qOjiZ4w3Qz",
+        "aqvn" + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vuP",
+        "AQVM" + "pb3AOd0fg7EeDtIlJzCgs73ls4phLGe3vuP",
+        "X" + _AQVN_MIN,
+        _AQVN_MIN + "abcd",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "yandex_cloud_api_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_yandex_credential_family_splits_three_ways():
+    """An API key does not expire, an IAM token lasts ~12 hours, and a Passport
+    OAuth token is the user credential you exchange for IAM tokens. Three
+    different credentials, three different severities, no cross-claiming."""
+    iam = "t1" + "." + "a" * 40 + "." + "B" * 86
+    passport = "y0" + "_" + "A" * 55
+    for value, expected in (
+        (_AQVN_MIN, "yandex_cloud_api_key"),
+        (iam, "yandex_cloud_iam_token"),
+    ):
+        matched = [
+            f for f in scan("YC_TOKEN=" + value, min_confidence=0.01)
+            if f.type in {
+                "yandex_cloud_api_key",
+                "yandex_cloud_iam_token",
+                "yandex_passport_oauth_token",
+            }
+        ]
+        assert [f.type for f in matched] == [expected], value[:30]
+    # The Passport token's own mixed-case requirement is out of scope here; all
+    # that matters is that the API-key pattern never claims it.
+    assert [
+        f for f in scan("YC_TOKEN=" + passport, min_confidence=0.01)
+        if f.type == "yandex_cloud_api_key"
+    ] == []
+
+
+def test_yandex_cloud_api_key_masked_placeholders_score_as_test_values():
+    for mask in (_AQVN + "x" * 35, _AQVN + "X" * 38, _AQVN + "0" * 36):
+        matched = [
+            f for f in scan("YC_API_KEY=" + mask, min_confidence=0.01)
+            if f.type == "yandex_cloud_api_key"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- WireGuard private / pre-shared key ---------------------------------------
+# A Curve25519 private key is exactly 32 bytes, so `wg genkey` output is always
+# 44 base64 characters — 43 data characters plus one '=' pad. That shape alone
+# is far too generic to ship, so the pattern is anchored on the literal
+# configuration field name instead.
+# Source: https://www.wireguard.com/quickstart/
+_WG_A = "BSHi+kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0E="
+_WG_B = "PWp55w+iaLK483Qel/Hz46lGPVXuYk7tEPnGl9b5g8k="
+_WG_PSK_V = "Zt5+Oi5IhGiKxyZYVAa6SOBlWm4WbZWoH3z7WLiElkQ="
+_WG_PUB_V = "IUqr9VCm0MbyBTrcsuGsyiky6tUxRnr5rZmqYkyOuJ8="
+
+
+def test_wireguard_private_key_true_positives():
+    """Detected in the carriers WireGuard keys actually live in: a wg-quick
+    .conf [Interface] section, a spacing-free assignment, and a PresharedKey
+    entry in a [Peer] section."""
+    for text in (
+        "PrivateKey = " + _WG_A,
+        "PrivateKey=" + _WG_B,
+        "PresharedKey = " + _WG_PSK_V,
+        'PrivateKey = "' + _WG_A + '"',
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "wireguard_private_key"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "wireguard"
+        assert matched[0].confidence >= 0.85
+        # Only the key is the span — the field name is the anchor, not part of
+        # the credential.
+        assert text[matched[0].span_start : matched[0].span_end].endswith("=")
+        assert len(text[matched[0].span_start : matched[0].span_end]) == 44
+
+
+def test_wireguard_public_key_is_deliberately_not_matched():
+    """A WireGuard public key has exactly the same 44-character shape, sits in
+    the same file, usually on the adjacent line — and is public by definition.
+    Every [Peer] section of every server config carries one. Matching it would
+    turn this pattern into a false-positive generator on precisely the files it
+    exists to read."""
+    for text in (
+        "PublicKey = " + _WG_PUB_V,
+        "PublicKey=" + _WG_PUB_V,
+        "[Peer]\nPublicKey = " + _WG_PUB_V + "\nAllowedIPs = 10.0.0.2/32",
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "wireguard_private_key"
+        ]
+        assert matched == [], "PublicKey wrongly matched: " + text[:70]
+
+
+def test_wireguard_private_key_true_negatives():
+    """The field-name anchor is the pattern: a bare 44-character base64 value
+    is far too generic to claim, and the value width is protocol-fixed."""
+    for neg in (
+        # No field name at all.
+        _WG_A,
+        "hash = " + _WG_A,
+        # A different field.
+        "Endpoint = " + _WG_A,
+        "AllowedIPs = " + _WG_A,
+        # 43+1 is exact.
+        "PrivateKey = " + "BSHi+kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0=",
+        "PrivateKey = " + "BSHi+kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0EA=",
+        # wg genkey emits padded standard base64, not unpadded base64url.
+        "PrivateKey = " + "BSHi-kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0E",
+        # Double padding is a 31-byte value, not a Curve25519 key.
+        "PrivateKey = " + "BSHi+kv0nnkzm8Vofm6CfugFLz7Ccc18iP1nrE3sc0E==",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "wireguard_private_key"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_wireguard_config_reports_the_private_key_and_not_the_peer_key():
+    """The whole-file case: a realistic wg0.conf carries one private key and one
+    or more peer public keys. Exactly the private key is reported."""
+    conf = (
+        "[Interface]\n"
+        "Address = 10.0.0.1/24\n"
+        "PrivateKey = " + _WG_A + "\n"
+        "ListenPort = 51820\n"
+        "\n"
+        "[Peer]\n"
+        "PublicKey = " + _WG_PUB_V + "\n"
+        "PresharedKey = " + _WG_PSK_V + "\n"
+        "AllowedIPs = 10.0.0.2/32\n"
+    )
+    matched = [
+        f for f in scan(conf, min_confidence=0.01)
+        if f.type == "wireguard_private_key"
+    ]
+    values = {conf[f.span_start : f.span_end] for f in matched}
+    assert values == {_WG_A, _WG_PSK_V}
+    assert _WG_PUB_V not in values
+
+
+def test_wireguard_private_key_redaction_covers_the_key_not_the_field_name():
+    from app.engine.redactor import redact
+
+    line = "PrivateKey = " + _WG_A
+    findings = scan(line, min_confidence=0.01)
+    redacted_text, _ = redact(line, findings, style="label")
+    assert _WG_A not in redacted_text
+    assert "PrivateKey = " in redacted_text
+
+
+def test_wireguard_private_key_masked_placeholders_score_as_test_values():
+    for mask in ("A" * 43 + "=", "x" * 43 + "=", "0" * 43 + "="):
+        matched = [
+            f for f in scan("PrivateKey = " + mask, min_confidence=0.01)
+            if f.type == "wireguard_private_key"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- bcrypt password hash -----------------------------------------------------
+# A VERIFIER, not a bearer credential. It authenticates nothing on its own,
+# which is exactly why severity is medium: its value is as a signal that a
+# password table leaked or an administrative password was hardcoded, plus the
+# offline-cracking exposure that follows.
+# Source: https://passlib.readthedocs.io/en/stable/lib/passlib.hash.bcrypt.html
+_BC_A = "km8V8mFDG1DVWpDcZS24VDpDhqgGcz0Kt.BNIUBfQ5vcaj8.6XQ3P"
+_BC_B = "QcboHrJl2BMyxMMUeuNCuyGgZ1u.AOyqGg5ieaWDOKAsjS0WU4IqX"
+_BC_C = "jFBq5vQH1hBfKhkeJQWxZAhiQrDW8hmcUrZBdWLLYqGO/ZnsQc3YF"
+_BC_2B = "$2b$" + "12$" + _BC_A
+_BC_2Y = "$2y$" + "10$" + _BC_B
+_BC_2A = "$2a$" + "08$" + _BC_C
+
+
+def test_bcrypt_password_hash_true_positives():
+    """All four minor versions in use, in the carriers a hash actually leaks
+    through: a seed script, an htpasswd line and a JSON fixture."""
+    for text in (
+        _BC_2B,
+        _BC_2Y,
+        _BC_2A,
+        "$2x$" + "12$" + _BC_A,
+        "password_hash = " + _BC_2B,
+        "admin:" + _BC_2Y,
+        '{"password": "' + _BC_2A + '"}',
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "bcrypt_password_hash"
+        ]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].provider == "generic"
+        assert matched[0].confidence >= 0.90
+        span = text[matched[0].span_start : matched[0].span_end]
+        assert len(span) == 60
+
+
+def test_bcrypt_password_hash_severity_is_medium_because_it_is_not_a_credential():
+    """Deliberate and load-bearing. A bcrypt digest grants nothing when
+    presented to anything — it is a verifier. Escalating it to high or critical
+    would tell an operator to treat a crackable artifact as an active
+    compromise, and the description and recommendation must not imply one
+    either."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    pattern = next(p for p in PATTERN_REGISTRY if p.id == "bcrypt_password_hash")
+    assert pattern.severity == "medium"
+    assert "hash" in pattern.description.lower()
+    assert "not a usable" in pattern.description.lower()
+    assert "hash" in pattern.recommendation.lower()
+
+    matched = [
+        f for f in scan(_BC_2B, min_confidence=0.01)
+        if f.type == "bcrypt_password_hash"
+    ]
+    assert matched[0].severity == "medium"
+
+
+def test_bcrypt_password_hash_true_negatives():
+    """The format is fully fixed: '$2' + one of four letters + '$' + exactly two
+    cost digits + '$' + exactly 53 characters."""
+    for neg in (
+        "$2c$" + "12$" + _BC_A,
+        "$3b$" + "12$" + _BC_A,
+        "$2b$" + "1$" + _BC_A,
+        "$2b$" + "120$" + _BC_A,
+        "$2b$" + "ab$" + _BC_A,
+        "$2b$" + "12$" + _BC_A[:-1],
+        "$2b$" + "12$" + _BC_A + "x",
+        # Other modular-crypt families are not bcrypt.
+        "$5$" + "rounds=5000$usesomesillystri$KqJWpanXZHKq2BOB43TSaYhEWsQ1Lr5QN",
+        "$argon2id$" + "v=19$m=65536,t=3,p=4$c29tZXNhbHQ$RdescudvJCsgt3ub",
+        # Prose naming the prefix is not a hash.
+        "bcrypt hashes start with $2b$ and are 60 characters long.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "bcrypt_password_hash"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_bcrypt_published_sample_scores_as_a_test_value():
+    """The canonical published sample appears verbatim in passlib's own
+    documentation and is reproduced across the ecosystem. confidence_base 0.95
+    sits above the 0.85 FP-wordlist gate, so it is pinned as a known_test_value
+    and lands at ~0.15 rather than becoming a permanent finding in tutorials."""
+    published = "$2b$12$" + "R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW"
+    matched = [
+        f for f in scan("password_hash = " + published, min_confidence=0.01)
+        if f.type == "bcrypt_password_hash"
+    ]
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_bcrypt_password_hash_finds_every_hash_in_a_leaked_table():
+    """The carrier that matters most: a dump or a fixture with a row per user.
+    Every hash must be reported, because each is a separate account exposure."""
+    table = (
+        "alice," + _BC_2B + "\n"
+        "bob," + _BC_2Y + "\n"
+        "carol," + _BC_2A + "\n"
+    )
+    matched = [
+        f for f in scan(table, min_confidence=0.01)
+        if f.type == "bcrypt_password_hash"
+    ]
+    assert len(matched) == 3
+    assert {table[f.span_start : f.span_end] for f in matched} == {
+        _BC_2B, _BC_2Y, _BC_2A,
+    }

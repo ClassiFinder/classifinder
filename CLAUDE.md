@@ -28,7 +28,7 @@ docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
   - `redactor.py` — `redact(text, findings, style) -> (redacted_text, redaction_map)`
   - `entropy.py` — Shannon entropy calculator
   - `patterns/registry.py` — `PATTERN_REGISTRY` list and `SecretPattern` dataclass
-  - `patterns/{cloud,payment,vcs,comms,database,generic,ai,devops,data,identity}.py` — 318 secret detection patterns
+  - `patterns/{cloud,payment,vcs,comms,database,generic,ai,devops,data,identity}.py` — 328 secret detection patterns
   - `patterns/prompt_injection.py` — 14 prompt-injection markers (4 phase-1 high-precision + 6 phase-2 medium-precision + 4 SAFE-MCP-derived); `provider="prompt_injection"`. Each pattern carries `safe_mcp_ids: list[str]` cross-referencing the SAFE-MCP technique catalog (CC-BY-4.0); this field surfaces on every `Finding`.
 - `app/key_store.py` — Turso-backed API key lifecycle (generate, lookup, rotate)
 - `app/feedback_store.py` — Anonymous feedback persistence + aggregate queries
