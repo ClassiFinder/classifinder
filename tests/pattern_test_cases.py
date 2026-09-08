@@ -63,6 +63,13 @@ _GRRT_PREFIX_CASES = "GR" + "1348941"
 _GRRT_CASES = _GRRT_PREFIX_CASES + "C6YcZVddc8kjtdU-yWYD"
 _GRRT_CASES_2 = _GRRT_PREFIX_CASES + "hQ2p_Vn8ZsKdT3mLxRb9"
 
+# GitLab session cookies. The anchor is the literal first-party cookie NAME,
+# not a token prefix; the value is an optional deployment prefix plus a
+# 32-character lowercase-hex session id.
+_GLS_NAME_CASES = "_gitlab" + "_session="
+_GLS_ID_CASES = "5cf865011acc4f85f7d4842bfbb94ecf"
+_GLS_ID_CASES_2 = "9b41d7e0c2a34f6d81be57cc0f3ad219"
+
 
 
 # ── 2026-09-07 batch ──────────────────────────────────────────────────────
@@ -4868,6 +4875,43 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _GRRT_PREFIX_CASES + "C6YcZVddc8kjtdU-yWYDextra",
             # The runner authentication token is a different credential.
             "glrt-" + "C6YcZVddc8kjtdU-yWYD",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # GitLab session cookie — anchored on the literal first-party cookie NAME
+    # '_gitlab_session=' (docs.gitlab.com/development/cookies/), then GitLab's
+    # optional configurable session-cookie token prefix and a 32-character
+    # lowercase-hex session id. The prefix branch is exercised because
+    # GitLab.com's Cells deployment sets one ('cell2-'); omitting it would
+    # miss every value on a prefixed instance. Literals are concatenated so
+    # no contiguous cookie assignment is committed to source.
+    # Source: https://gitlab.com/gitlab-com/gl-infra/production-engineering/-/issues/25621
+    "gitlab_session_cookie": {
+        "positives": [
+            "Cookie: " + _GLS_NAME_CASES + _GLS_ID_CASES,
+            "Set-Cookie: " + _GLS_NAME_CASES + "cell2-" + _GLS_ID_CASES_2
+            + "; path=/; HttpOnly",
+            "curl -H 'Cookie: " + _GLS_NAME_CASES + _GLS_ID_CASES_2 + "'"
+            " https://gitlab.example.com/api/v4/user",
+        ],
+        "negatives": [
+            # The body is exactly 32 lowercase-hex characters.
+            _GLS_NAME_CASES + _GLS_ID_CASES[:-1],
+            _GLS_NAME_CASES + _GLS_ID_CASES.upper(),
+            _GLS_NAME_CASES + _GLS_ID_CASES[:-1] + "g",
+            # The catalogue placeholder is not hex, so it cannot even reach
+            # the known-test-value path.
+            _GLS_NAME_CASES + "x" * 32,
+            # The cookie name is an exact literal.
+            "gitlab" + "_session=" + _GLS_ID_CASES,
+            "_gitlab" + "_sess=" + _GLS_ID_CASES,
+            "_github" + "_session=" + _GLS_ID_CASES,
+            # Prose naming the cookie is not an assignment.
+            "The _gitlab" + "_session cookie is HttpOnly and SameSite=None.",
+            # Other GitLab credentials belong to their own patterns.
+            "glpat-" + "C6YcZVddc8kjtdU-yWYD",
+            "glft-" + "C6YcZVddc8kjtdU-yWYD",
         ],
         "min_confidence": 0.90,
     },

@@ -10389,6 +10389,182 @@ def test_gitlab_runner_registration_token_redaction_covers_the_whole_token():
     assert "gitlab-runner register" in redacted_text
 
 
+# --- GitLab session cookie ----------------------------------------------------
+# The anchor here is NOT a token prefix — it is the literal first-party cookie
+# name '_gitlab_session=', documented at docs.gitlab.com/development/cookies/ as
+# the cookie Rails uses to track a signed-in GitLab session. GitLab's own issue
+# tracker (gitlab-org/gitlab#343374) says an actor holding it "is able to gain
+# access to the user's account and impersonate them for the duration of the
+# session timeout", which is what sets severity high.
+#
+# The value is an OPTIONAL configurable prefix followed by a 32-character
+# lowercase-hex session id. The prefix is GitLab's
+# gitlab_rails['session_store_session_cookie_token_prefix'] — empty by default,
+# set per cell on GitLab.com's Cells deployment. The concrete example below is
+# GitLab's own, from gl-infra/production-engineering#25621, split so no
+# contiguous cookie assignment is committed to source.
+# Source: https://gitlab.com/gitlab-com/gl-infra/production-engineering/-/issues/25621
+_GLS_NAME = "_gitlab" + "_session="
+_GLS_ID = "5cf865011acc4f85f7d4842bfbb94ecf"      # GitLab's published example
+_GLS_ID_2 = "9b41d7e0c2a34f6d81be57cc0f3ad219"
+_GLS = _GLS_NAME + _GLS_ID
+_GLS_CELL = _GLS_NAME + "cell2-" + _GLS_ID        # GitLab.com Cells form
+_GLS_GDK = _GLS_NAME + "some_new_prefix_" + _GLS_ID_2  # GDK's documented prefix
+
+
+def test_gitlab_session_cookie_true_positives():
+    """Detected in the carriers a session cookie actually leaks through: a
+    pasted request header, a Set-Cookie response line, a curl reproduction and
+    a HAR entry — with and without the deployment prefix."""
+    for text in (
+        _GLS,
+        _GLS_CELL,
+        _GLS_GDK,
+        "Cookie: " + _GLS,
+        "Set-Cookie: " + _GLS_CELL + "; path=/; secure; HttpOnly; SameSite=None",
+        "curl -H 'Cookie: " + _GLS + "' https://gitlab.example.com/api/v4/user",
+        '{"name": "Cookie", "value": "' + _GLS_NAME + _GLS_ID_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        matched = [f for f in findings if f.type == "gitlab_session_cookie"]
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "gitlab"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_gitlab_session_cookie_captures_the_whole_prefixed_value():
+    """The span must be the FULL cookie value, prefix included. A greedy
+    prefix that swallowed hex, or a lazy one that started the span mid-value,
+    would both redact only part of the credential."""
+    findings = scan("Cookie: " + _GLS_CELL, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "gitlab_session_cookie"]
+    assert len(matched) == 1
+    span = "Cookie: " + _GLS_CELL
+    assert span[matched[0].span_start:matched[0].span_end] == "cell2-" + _GLS_ID
+
+    # And with no prefix configured — the default — the span is the bare id.
+    findings = scan("Cookie: " + _GLS, min_confidence=0.01)
+    matched = [f for f in findings if f.type == "gitlab_session_cookie"]
+    assert len(matched) == 1
+    span = "Cookie: " + _GLS
+    assert span[matched[0].span_start:matched[0].span_end] == _GLS_ID
+
+
+def test_gitlab_session_cookie_does_not_truncate_a_longer_hex_run():
+    """The trailing lookahead exists so a longer hex value cannot be silently
+    clipped to a 32-character 'match' that redaction would then leave half
+    exposed."""
+    long_id = _GLS_ID + "deadbeefcafe1234"
+    text = "Cookie: " + _GLS_NAME + long_id
+    matched = [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "gitlab_session_cookie"
+    ]
+    assert len(matched) == 1
+    assert text[matched[0].span_start:matched[0].span_end] == long_id
+
+
+def test_gitlab_session_cookie_true_negatives():
+    """The cookie name is an exact literal and the body is exactly 32
+    LOWERCASE hex characters. Nothing shorter, longer, re-cased, non-hex or
+    belonging to another cookie may match."""
+    for neg in (
+        # Body width is exact — 31 fails.
+        _GLS_NAME + _GLS_ID[:-1],
+        # Uppercase hex is not GitLab's form.
+        _GLS_NAME + _GLS_ID.upper(),
+        # Non-hex characters in the body.
+        _GLS_NAME + _GLS_ID[:-1] + "g",
+        _GLS_NAME + "z" * 32,
+        # The catalogue placeholder mask is not hex, so it never even reaches
+        # the known-test-value path — the body class rejects it outright.
+        _GLS_NAME + "x" * 32,
+        # The cookie name is exact: no leading underscore, truncated, or a
+        # different product's session cookie.
+        "gitlab" + "_session=" + _GLS_ID,
+        "_gitlab" + "_sess=" + _GLS_ID,
+        "_github" + "_session=" + _GLS_ID,
+        "_gitlab" + "_session_id=" + _GLS_ID,
+        # Prose naming the cookie is not an assignment.
+        "The _gitlab" + "_session cookie is HttpOnly and SameSite=None.",
+        "Set the _gitlab" + "_session token prefix per cell.",
+        # An empty or truncated value.
+        _GLS_NAME,
+        _GLS_NAME + "; path=/",
+        # A prefix longer than the 24-character bound it allows.
+        _GLS_NAME + "p" * 25 + _GLS_ID,
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "gitlab_session_cookie"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_gitlab_session_cookie_does_not_collide_with_gitlab_tokens():
+    """GitLab's twelve other registered credentials are all 'gl*-' prefixed
+    tokens, so there is no shape overlap — but a bug report routinely pastes a
+    session cookie and a PAT in the same buffer, and each must still be
+    attributed to its own pattern with its own remediation."""
+    pat = "glpat-" + "C6YcZVddc8kjtdU-yWYD"
+    feed = "glft-" + "C6YcZVddc8kjtdU-yWYD"
+    for value, expected in (
+        (_GLS, "gitlab_session_cookie"),
+        (_GLS_CELL, "gitlab_session_cookie"),
+        (pat, "gitlab_pat"),
+        (feed, "gitlab_feed_token"),
+    ):
+        findings = scan(value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+    # Together in one pasted reproduction, both are still found separately.
+    mixed = (
+        "curl -H 'PRIVATE-TOKEN: " + pat + "'"
+        " -H 'Cookie: " + _GLS + "' https://gitlab.example.com/api/v4/user"
+    )
+    types = sorted(f.type for f in scan(mixed, min_confidence=0.01))
+    assert types == ["gitlab_pat", "gitlab_session_cookie"]
+
+
+def test_gitlab_session_cookie_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never gets a chance to price a redacted cookie down. The hex
+    masks are registered as known_test_values instead and must land at
+    ~0.15."""
+    for mask in (
+        "0" * 32,
+        "a" * 32,
+        "f" * 32,
+        "0123456789abcdef" * 2,
+        "deadbeef" * 4,
+    ):
+        matched = [
+            f for f in scan("Cookie: " + _GLS_NAME + mask, min_confidence=0.01)
+            if f.type == "gitlab_session_cookie"
+        ]
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_gitlab_session_cookie_redaction_leaves_the_carrier_readable():
+    """Redaction must remove the whole cookie value — the credential is the
+    value, not the name — while leaving the surrounding header intact so the
+    reader can still tell what was scrubbed."""
+    from app.engine.redactor import redact
+
+    line = "Cookie: " + _GLS_CELL + "; path=/; HttpOnly"
+    findings = scan(line, min_confidence=0.01)
+    redacted_text, _ = redact(line, findings, style="label")
+    assert _GLS_ID not in redacted_text
+    assert "cell2-" + _GLS_ID not in redacted_text
+    assert "_gitlab" + "_session=" in redacted_text
+    assert "HttpOnly" in redacted_text
+
+
 # --- Grafana Cloud access-policy token ----------------------------------------
 # 'glc_' per Grafana's own access-policy-token documentation, then a base64
 # body with optional padding. The body is base64 of a small JSON envelope, so
