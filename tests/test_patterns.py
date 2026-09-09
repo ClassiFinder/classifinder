@@ -13180,3 +13180,210 @@ def test_bcrypt_password_hash_finds_every_hash_in_a_leaked_table():
     assert {table[f.span_start : f.span_end] for f in matched} == {
         _BC_2B, _BC_2Y, _BC_2A,
     }
+
+
+# --- Fly.io macaroon access token ---------------------------------------------
+# 'fm2_' is a vendor literal Fly.io added ON PURPOSE so its tokens are easy to
+# find: its own macaroon repository states that each macaroon "is MsgPack-
+# encoded, then base64'd, then has `fm2_` prepended so it's easy to grep for
+# them, then joined with commas". That last clause is why several macaroons can
+# share one 'Authorization: FlyV1 …' header and each must still be matched.
+#
+# Fly publishes no real token and no length, and annotates its own worked
+# examples "(Except way longer)", so every literal below is SYNTHETIC — base64
+# of chained SHA-512 digests over a documented seed — and the prefix is split so
+# no contiguous token literal is committed to source.
+# Source: https://github.com/superfly/macaroon/blob/main/macaroon-thought.md
+_FLY_M_PREFIX = "fm2" + "_"
+_FLY_M_BODY = (
+    "n2Qd6tj3TxR/SBWV63XWEHt+tbrUq6WhZ7JfVIi1kJ8Qdl7UoM/M2VKRzwMuHOuDCUNT"
+    "bT8rIdZa7JQc0LsJtiTLVxTghnjKd+s+sRii5G66e7Bt1EOoQ2IB4jsfmFkaF+19xrVZ"
+    "bsF65yWYXNYBOj4TXsgAFEaEeazhwFn4DkjZhLATzk8Q5ynHcYqttRyWtIZlZNIj1FHW"
+    "LsOVTCSG0U/+Bv2NwKysx1QKE1AhNVGz18Gv8iH4/XB2aGQdeFI3"
+)
+_FLY_M_BODY_2 = (
+    "2XdbYe4AtGrucncRzOSCfWrXU9W0CstThiZwkB+QZ5M8c1+CO0Bj7QLDz6x2zxCkUlvY"
+    "RTSVrJbOKvAiGp/V5i5lUeOBUpwyYRE1sVTICYTGD/SwEUwhxW0gXHazNGbVa445plWW"
+    "HO+V00c+xVCK1GB5G3RwtyjEp7CleWS3aMAZYMO74DckRuWtSG3aNAQAf/jWlpc4wFT4"
+    "EYuhO+JpJK496w64J/YrbptIrYOgbxspFP+o0ZP5BxSwgP/j+F3X"
+)
+# A body carrying two '=' pad characters — 97 bytes of MsgPack, so base64
+# pads twice. Padding is where a naive right guard silently loses characters.
+_FLY_M_BODY_PAD2 = (
+    "QE1A4Vpm793d1N0zTHf7zECWn1Wmg0XjfHsQoWllwjUbWew2vWiF2o+79W1YMin0etFv"
+    "wFNUZ9XOtGsjcM2ynT8dlFYQTN42C/X5emt3n+AqLimyUKW+od/Kub0gAuALmA=="
+)
+# Exactly 100 body characters — the documented floor, so it must be DETECTED,
+# while 99 must not be. Anything else means the bound is off by one.
+_FLY_M_BODY_100 = (
+    "ypvRahrTlcY+N5Jo94Sq/3ii2IP6Ns0neoIhgjW4wR2veq5DygQ5s4zDXMSa7/z/kJbC"
+    "X9v9Roq6wES9fREoEftAGd4wj1URkBKR"
+)
+_FLY_M = _FLY_M_PREFIX + _FLY_M_BODY
+_FLY_M_2 = _FLY_M_PREFIX + _FLY_M_BODY_2
+
+
+def test_fly_macaroon_access_token_true_positives():
+    """Detected in the carriers a macaroon actually leaks through: a bare
+    token, an env assignment, the 'Authorization: FlyV1 …' header Fly itself
+    documents, a CI variable and a JSON config blob."""
+    for text in (
+        _FLY_M,
+        "FLY_API_TOKEN=" + _FLY_M,
+        "export FLY_API_TOKEN=" + _FLY_M_2,
+        "Authorization: FlyV1 " + _FLY_M,
+        "flyctl deploy -t " + _FLY_M_2,
+        '{"access_token": "' + _FLY_M + '"}',
+        _FLY_M_PREFIX + _FLY_M_BODY_PAD2,
+        _FLY_M_PREFIX + _FLY_M_BODY_100,
+    ):
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "fly_macaroon_access_token"
+        ]
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "fly"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_fly_macaroon_comma_joined_header_yields_one_finding_per_macaroon():
+    """Fly's own encoding note ends '…then joined with commas'. A single
+    header therefore carries SEVERAL separate credentials, and revoking only
+    the first leaves the rest live — so each comma-separated segment has to
+    surface as its own finding with its own span."""
+    header = "Authorization: FlyV1 " + _FLY_M + "," + _FLY_M_2
+    matched = [
+        f for f in scan(header, min_confidence=0.01)
+        if f.type == "fly_macaroon_access_token"
+    ]
+    assert len(matched) == 2
+    spans = {header[f.span_start:f.span_end] for f in matched}
+    assert spans == {_FLY_M, _FLY_M_2}
+
+
+def test_fly_macaroon_captures_the_whole_token_including_padding():
+    """The body quantifier is greedy and unbounded and the right guard omits
+    '=', so neither a long macaroon nor a padded one can be clipped to a
+    partial 'match' that redaction would then leave half exposed."""
+    for body in (_FLY_M_BODY, _FLY_M_BODY_PAD2, _FLY_M_BODY_100):
+        token = _FLY_M_PREFIX + body
+        text = "FLY_API_TOKEN=" + token
+        matched = [
+            f for f in scan(text, min_confidence=0.01)
+            if f.type == "fly_macaroon_access_token"
+        ]
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == token
+
+
+def test_fly_macaroon_body_floor_is_exactly_100():
+    """100 body characters is the documented floor: it must be detected, and
+    99 must not be. An off-by-one here is a silent miss on the shortest real
+    macaroons."""
+    hit = scan(_FLY_M_PREFIX + _FLY_M_BODY_100, min_confidence=0.01)
+    assert [f.type for f in hit if f.type == "fly_macaroon_access_token"]
+
+    miss = scan(_FLY_M_PREFIX + _FLY_M_BODY_100[:99], min_confidence=0.01)
+    assert not [f for f in miss if f.type == "fly_macaroon_access_token"]
+
+
+def test_fly_macaroon_vendor_toy_examples_are_structurally_unmatchable():
+    """Fly's docs print 'fm2_Zm9vCg==,fm2_YmFyCg==' and immediately annotate it
+    '(Except way longer)'. Those eight-character bodies are far below the
+    floor, so they can never reach scoring — which is why they need no
+    known_test_values entry."""
+    text = "Authorization: FlyV1 fm2" + "_Zm9vCg==,fm2" + "_YmFyCg=="
+    assert not [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "fly_macaroon_access_token"
+    ]
+
+
+def test_fly_macaroon_true_negatives():
+    """The prefix is an exact four-character literal and the body is standard
+    base64 at or above the floor. Nothing else may match."""
+    for neg in (
+        # Below the floor.
+        _FLY_M_PREFIX + _FLY_M_BODY[:99],
+        _FLY_M_PREFIX + "A" * 99,
+        _FLY_M_PREFIX,
+        # The prefix is exact and case-sensitive. The older fm1a_ / fm1r_
+        # macaroon forms have NO first-party evidence and are deliberately
+        # out of scope — shipping them on a catalogue's say-so would be
+        # asserting a format nobody published.
+        "fm1a" + "_" + _FLY_M_BODY,
+        "fm1r" + "_" + _FLY_M_BODY,
+        "FM2" + "_" + _FLY_M_BODY,
+        "fm2" + "-" + _FLY_M_BODY,
+        "fm3" + "_" + _FLY_M_BODY,
+        # base64url is not Fly's encoding: the body is standard base64.
+        _FLY_M_PREFIX + "-" * 100,
+        _FLY_M_PREFIX + "_" * 100,
+        # Prose naming the prefix is not a token.
+        "Pass an existing token starting with fm2" + "_ to --from-existing.",
+        "Macaroons are prefixed fm2" + "_ so they are easy to grep for.",
+    ):
+        matched = [
+            f for f in scan(neg, min_confidence=0.01)
+            if f.type == "fly_macaroon_access_token"
+        ]
+        assert matched == [], "wrongly matched: " + neg[:70]
+
+
+def test_fly_macaroon_is_not_carved_out_of_a_base64url_blob():
+    """'_' is outside the STANDARD base64 alphabet but inside base64url, so
+    'fm2_' can legitimately occur mid-payload in somebody else's base64url
+    blob. The left guard exists to stop a token being carved out of one."""
+    blob = "eyJhbGciOiJIUzI1NiJ9fm2" + "_" + _FLY_M_BODY
+    assert not [
+        f for f in scan(blob, min_confidence=0.01)
+        if f.type == "fly_macaroon_access_token"
+    ]
+
+
+def test_fly_macaroon_does_not_collide_with_the_fo1_deploy_token():
+    """Both Fly formats are live and registered side by side. 'fo1_' is the
+    older opaque deploy token, 'fm2_' the macaroon; neither regex may claim
+    the other's value, and a machine carrying both must report both."""
+    fo1 = "fo1_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm"
+    for value, expected in ((_FLY_M, "fly_macaroon_access_token"),
+                            (fo1, "fly_api_token")):
+        findings = scan(value, min_confidence=0.01)
+        assert len(findings) == 1, [f.type for f in findings]
+        assert findings[0].type == expected
+
+    mixed = "FLY_API_TOKEN=" + fo1 + "\nFLY_MACAROON=" + _FLY_M
+    types = sorted(f.type for f in scan(mixed, min_confidence=0.01))
+    assert types == ["fly_api_token", "fly_macaroon_access_token"]
+
+
+def test_fly_macaroon_masked_placeholders_score_as_test_values():
+    """confidence_base 0.97 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never gets a chance to price a redacted token down. The
+    minimum-width single-character masks are registered as known_test_values
+    instead and must land at ~0.15."""
+    for mask in ("A" * 100, "a" * 100, "0" * 100, "x" * 100):
+        matched = [
+            f for f in scan(_FLY_M_PREFIX + mask, min_confidence=0.01)
+            if f.type == "fly_macaroon_access_token"
+        ]
+        assert len(matched) == 1, "not detected: " + mask[:12]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_fly_macaroon_redaction_covers_every_macaroon_in_the_header():
+    """Redaction must remove BOTH comma-joined macaroons while leaving the
+    'FlyV1' scheme readable, so the reader can still tell what was scrubbed."""
+    from app.engine.redactor import redact
+
+    header = "Authorization: FlyV1 " + _FLY_M + "," + _FLY_M_2
+    findings = scan(header, min_confidence=0.01)
+    redacted_text, _ = redact(header, findings, style="label")
+    assert _FLY_M not in redacted_text
+    assert _FLY_M_2 not in redacted_text
+    assert _FLY_M_BODY[-20:] not in redacted_text
+    assert _FLY_M_BODY_2[-20:] not in redacted_text
+    assert "Authorization: FlyV1 " in redacted_text
