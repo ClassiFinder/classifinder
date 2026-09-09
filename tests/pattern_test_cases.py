@@ -70,6 +70,28 @@ _GLS_NAME_CASES = "_gitlab" + "_session="
 _GLS_ID_CASES = "5cf865011acc4f85f7d4842bfbb94ecf"
 _GLS_ID_CASES_2 = "9b41d7e0c2a34f6d81be57cc0f3ad219"
 
+# Fly.io macaroon access tokens. 'fm2_' is a vendor literal Fly.io added
+# expressly so the tokens are easy to grep for; the body is standard base64 of
+# a MsgPack macaroon. Fly publishes no real token and its own examples are
+# deliberately toy-sized, so every body here is SYNTHETIC — base64 of chained
+# SHA-512 digests over a documented seed — and the prefix is split so no
+# contiguous token literal is committed to source.
+_FLY_M_PREFIX_CASES = "fm2" + "_"
+_FLY_M_BODY_CASES = (
+    "n2Qd6tj3TxR/SBWV63XWEHt+tbrUq6WhZ7JfVIi1kJ8Qdl7UoM/M2VKRzwMuHOuDCUNT"
+    "bT8rIdZa7JQc0LsJtiTLVxTghnjKd+s+sRii5G66e7Bt1EOoQ2IB4jsfmFkaF+19xrVZ"
+    "bsF65yWYXNYBOj4TXsgAFEaEeazhwFn4DkjZhLATzk8Q5ynHcYqttRyWtIZlZNIj1FHW"
+    "LsOVTCSG0U/+Bv2NwKysx1QKE1AhNVGz18Gv8iH4/XB2aGQdeFI3"
+)
+_FLY_M_BODY_CASES_2 = (
+    "2XdbYe4AtGrucncRzOSCfWrXU9W0CstThiZwkB+QZ5M8c1+CO0Bj7QLDz6x2zxCkUlvY"
+    "RTSVrJbOKvAiGp/V5i5lUeOBUpwyYRE1sVTICYTGD/SwEUwhxW0gXHazNGbVa445plWW"
+    "HO+V00c+xVCK1GB5G3RwtyjEp7CleWS3aMAZYMO74DckRuWtSG3aNAQAf/jWlpc4wFT4"
+    "EYuhO+JpJK496w64J/YrbptIrYOgbxspFP+o0ZP5BxSwgP/j+F3X"
+)
+_FLY_M_CASES = _FLY_M_PREFIX_CASES + _FLY_M_BODY_CASES
+_FLY_M_CASES_2 = _FLY_M_PREFIX_CASES + _FLY_M_BODY_CASES_2
+
 
 
 # ── 2026-09-07 batch ──────────────────────────────────────────────────────
@@ -516,6 +538,35 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "negatives": [
             "fo1_short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Fly.io macaroon access token — the 'fm2_' prefix Fly.io's own macaroon
+    # repository says is prepended "so it's easy to grep for them", then the
+    # standard-base64 body of a MsgPack macaroon. Registered ALONGSIDE the
+    # 'fo1_' deploy token above, not replacing it: both formats are live.
+    # Source: https://github.com/superfly/macaroon/blob/main/macaroon-thought.md
+    "fly_macaroon_access_token": {
+        "positives": [
+            "FLY_API_TOKEN=" + _FLY_M_CASES,
+            "Authorization: FlyV1 " + _FLY_M_CASES + "," + _FLY_M_CASES_2,
+            "flyctl auth token " + _FLY_M_CASES_2,
+        ],
+        "negatives": [
+            # Below the 100-character body floor.
+            _FLY_M_PREFIX_CASES + _FLY_M_BODY_CASES[:99],
+            # Fly's own documented examples are deliberately toy-sized.
+            "Authorization: FlyV1 fm2" + "_Zm9vCg==,fm2" + "_YmFyCg==",
+            # The prefix is an exact literal; the older fm1a_/fm1r_ macaroon
+            # forms have no first-party evidence and are out of scope.
+            "fm1a" + "_" + _FLY_M_BODY_CASES,
+            "fm2" + "-" + _FLY_M_BODY_CASES,
+            "FM2" + "_" + _FLY_M_BODY_CASES,
+            # The sibling fo1_ deploy token belongs to fly_api_token.
+            "fo1_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm",
+            # Prose naming the prefix is not a token.
+            "Pass an existing token starting with fm2" + "_ to --from-existing.",
         ],
         "min_confidence": 0.90,
     },
