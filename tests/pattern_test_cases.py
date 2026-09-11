@@ -151,6 +151,14 @@ _BCRYPT_2B = "$2b$" + "12$" + _BCRYPT_BODY_A
 _BCRYPT_2Y = "$2y$" + "10$" + _BCRYPT_BODY_B
 _BCRYPT_2A = "$2a$" + "08$" + _BCRYPT_BODY_C
 
+# ── 2026-09-11 ────────────────────────────────────────────────────────────
+# Pangea service tokens: 'pts_' + exactly 32 lowercase alphanumerics. Every
+# body is SYNTHETIC (SHA-512 over the seed 'classifinder-pangea-synthetic-<n>')
+# and the prefix is split so no contiguous token literal is committed.
+_PTS_PREFIX_CASES = "pts" + "_"
+_PTS_CASES = _PTS_PREFIX_CASES + "4repactiyhcrn3jv8arqhwfxdcdi11l4"
+_PTS_CASES_2 = _PTS_PREFIX_CASES + "t2izpght2q50vrjnqwghec0dw6qllnt0"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -5600,6 +5608,35 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "$5$rounds=5000$" + "usesomesillystri$KqJWpanXZHKq2BOB43TSaYhEWsQ1Lr5QNyPCDH887P9",
             # Prose naming the prefix is not a hash.
             "bcrypt hashes start with $2b$ and are 60 characters long.",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-11 ───────────────────────────────────────────────────────
+    # Pangea service token — 'pts_' + exactly 32 lowercase alphanumerics. The
+    # vendor's own MCP README fixes the width ('pts_' + 32 zeros); Pangea's
+    # docs render real tokens, elided, as lowercase alnum.
+    # Source: https://github.com/pangeacyber/pangea-mcp-server/blob/main/README.md
+    "pangea_service_token": {
+        "positives": [
+            "PANGEA_TOKEN=" + _PTS_CASES,
+            'export PANGEA_AUDIT_TOKEN="' + _PTS_CASES_2 + '"',
+            '"PANGEA_VAULT_TOKEN": "' + _PTS_CASES + '",',
+        ],
+        "negatives": [
+            # The body is exactly 32 characters.
+            _PTS_CASES[:-1],
+            _PTS_CASES + "a",
+            # Pangea's docs elide real tokens; an elision is not a token.
+            "pts" + "_qbzbij...ajvp3j",
+            # The body is lowercase and the prefix is exact.
+            _PTS_PREFIX_CASES + "4REPACTIYHCRN3JV8ARQHWFXDCDI11L4",
+            "PTS" + "_" + "4repactiyhcrn3jv8arqhwfxdcdi11l4",
+            # The vault item ID and config ID are identifiers, not secrets.
+            "pvi" + "_" + "4repactiyhcrn3jv8arqhwfxdcdi11l4",
+            "pci" + "_" + "4repactiyhcrn3jv8arqhwfxdcdi11l4",
+            # Must not be carved out of the tail of an English plural.
+            "prompts" + "_" + "4repactiyhcrn3jv8arqhwfxdcdi11l4",
         ],
         "min_confidence": 0.90,
     },
