@@ -13387,3 +13387,176 @@ def test_fly_macaroon_redaction_covers_every_macaroon_in_the_header():
     assert _FLY_M_BODY[-20:] not in redacted_text
     assert _FLY_M_BODY_2[-20:] not in redacted_text
     assert "Authorization: FlyV1 " in redacted_text
+
+
+# --- Pangea service token -----------------------------------------------------
+# 'pts_' is the prefix of a Pangea service token, the bearer credential for
+# Pangea's security APIs (Vault, Secure Audit Log, AI Guard, Redact and the
+# rest). Pangea's own docs render real tokens only in elided form — for
+# example 'pts_qbzbij...ajvp3j', lowercase alphanumerics — while the vendor's
+# pangea-mcp-server README sets PANGEA_VAULT_TOKEN to 'pts_' plus exactly
+# thirty-two zeros, which fixes the body width at 32.
+#
+# Every literal below is SYNTHETIC — lowercase-alnum bodies taken from SHA-512
+# over the seed 'classifinder-pangea-synthetic-<n>' — and the prefix is split so
+# no contiguous token literal is committed to source.
+# Source: https://github.com/pangeacyber/pangea-mcp-server/blob/main/README.md
+_PTS_PREFIX = "pts" + "_"
+_PTS_BODY = "irefze0alh7vn9y8i1vadzpyz18kjlcm"
+_PTS_BODY_2 = "3zntrlgw53kytytrhepdmrczzvo2ct7q"
+_PTS = _PTS_PREFIX + _PTS_BODY
+_PTS_2 = _PTS_PREFIX + _PTS_BODY_2
+
+
+def _pangea(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "pangea_service_token"
+    ]
+
+
+def test_pangea_service_token_true_positives():
+    """Detected in the carriers a Pangea token actually leaks through: bare,
+    the PANGEA_*_TOKEN env family the SDKs and MCP server read, a bearer
+    header, a Python config and the MCP client JSON block."""
+    for text in (
+        _PTS,
+        "PANGEA_TOKEN=" + _PTS,
+        'export PANGEA_AUDIT_TOKEN="' + _PTS_2 + '"',
+        "PANGEA_AI_GUARD_TOKEN=" + _PTS_2,
+        '"PANGEA_VAULT_TOKEN": "' + _PTS + '",',
+        "Authorization: Bearer " + _PTS,
+        'token = os.getenv("PANGEA_TOKEN", "' + _PTS_2 + '")',
+        '{"pangea_token": "' + _PTS + '"}',
+        "  pangea_token: '" + _PTS_2 + "'",
+    ):
+        matched = _pangea(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "pangea"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_pangea_service_token_span_is_exactly_the_token():
+    """The span must be the whole 36-character token — not the quote, not the
+    variable name — so redaction removes all of it and nothing else."""
+    for text in (
+        "PANGEA_TOKEN=" + _PTS,
+        'PANGEA_AUDIT_TOKEN="' + _PTS + '"',
+        "Authorization: Bearer " + _PTS + "\r\n",
+    ):
+        matched = _pangea(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == _PTS
+        assert len(_PTS) == 36
+
+
+def test_pangea_service_token_body_width_is_exactly_32():
+    """Thirty-two body characters is the width the vendor's own README
+    fixes. 32 is detected; 31 and 33 are not — an unbounded body would let a
+    longer lowercase run be clipped to a 32-character window and half
+    redacted."""
+    assert len(_pangea(_PTS_PREFIX + _PTS_BODY)) == 1
+    assert _pangea(_PTS_PREFIX + _PTS_BODY[:31]) == []
+    assert _pangea(_PTS_PREFIX + _PTS_BODY + "z") == []
+    assert _pangea(_PTS_PREFIX + _PTS_BODY + "7") == []
+
+
+def test_pangea_service_token_true_negatives():
+    """The prefix is an exact lowercase literal and the body is exactly 32
+    lowercase alphanumerics. Nothing else may match."""
+    for neg in (
+        # Pangea's own docs elide real tokens; an elision is not a token.
+        "PANGEA_AUDIT_TOKEN=" + "pts" + "_qbzbij...ajvp3j",
+        # Placeholders people write in READMEs are far too short.
+        "PANGEA_TOKEN=" + "pts" + "_tokenvaluehere",
+        "PANGEA_TOKEN=" + "pts" + "_...",
+        _PTS_PREFIX,
+        # The body is lowercase; Pangea does not mint mixed or upper case.
+        _PTS_PREFIX + _PTS_BODY.upper(),
+        _PTS_PREFIX + _PTS_BODY[:16] + _PTS_BODY[16:].upper(),
+        # The prefix is exact and case-sensitive.
+        "PTS" + "_" + _PTS_BODY,
+        "pts" + "-" + _PTS_BODY,
+        "pts" + _PTS_BODY,
+        # An underscore inside the body breaks the width.
+        _PTS_PREFIX + _PTS_BODY[:16] + "_" + _PTS_BODY[16:],
+        # Pangea's vault item ID and config ID share the shape but are
+        # IDENTIFIERS, not secrets, and are deliberately out of scope.
+        "PANGEA_VAULT_ITEM_ID=" + "pvi" + "_" + _PTS_BODY,
+        "PANGEA_AUDIT_CONFIG_ID=" + "pci" + "_" + _PTS_BODY,
+        # Prose naming the prefix is not a token.
+        "Pangea service tokens start with pts" + "_ and are bearer tokens.",
+    ):
+        assert _pangea(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_pangea_service_token_is_not_carved_out_of_a_longer_identifier():
+    """'pts_' is only four characters and ends plenty of English plurals —
+    counts_, prompts_, receipts_, scripts_. The left guard stops a token being
+    carved out of the tail of one; the right guard stops a 32-character
+    window being cut from a longer run."""
+    for neg in (
+        "counts" + "_" + _PTS_BODY,
+        "prompts" + "_" + _PTS_BODY,
+        "receipts" + "_" + _PTS_BODY,
+        "scripts" + "_" + _PTS_BODY,
+        "x" + _PTS,
+        "9" + _PTS,
+        "my_" + _PTS,
+        _PTS + "_backup",
+        _PTS + "X",
+    ):
+        assert _pangea(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_pangea_service_token_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The vendor's own all-zero
+    README value and the common single-character masks are registered as
+    known_test_values instead and must land at ~0.15."""
+    for mask in ("0" * 32, "x" * 32, "a" * 32):
+        matched = _pangea("PANGEA_TOKEN=" + _PTS_PREFIX + mask)
+        assert len(matched) == 1, "not detected: " + mask[:12]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_pangea_service_token_vendor_mcp_block_claims_only_the_token():
+    """The vendor's MCP README block sets three sibling values of identical
+    shape. Only PANGEA_VAULT_TOKEN is a credential; the pvi_ item ID and pci_
+    config ID are identifiers and must never be reported as this pattern."""
+    zeros = "0" * 32
+    block = (
+        '"env": {\n'
+        '  "PANGEA_VAULT_TOKEN": "' + _PTS_PREFIX + zeros + '",\n'
+        '  "PANGEA_VAULT_ITEM_ID": "' + "pvi" + "_" + zeros + '",\n'
+        '  "PANGEA_AUDIT_CONFIG_ID": "' + "pci" + "_" + zeros + '"\n'
+        "}"
+    )
+    matched = _pangea(block)
+    assert len(matched) == 1
+    assert block[matched[0].span_start:matched[0].span_end] == _PTS_PREFIX + zeros
+    assert matched[0].is_likely_test_value is True
+
+
+def test_pangea_service_token_does_not_collide():
+    """A bare token is reported once, as this pattern and nothing else — no
+    generic or sibling pattern claims it at a higher confidence."""
+    findings = scan(_PTS, min_confidence=0.01)
+    assert [f.type for f in findings] == ["pangea_service_token"]
+
+
+def test_pangea_service_token_redaction_keeps_the_variable_name():
+    """Redaction must remove both tokens while leaving the env names
+    readable, so the reader can still tell which Pangea service leaked."""
+    from app.engine.redactor import redact
+
+    text = "PANGEA_AUDIT_TOKEN=" + _PTS + "\nPANGEA_VAULT_TOKEN=" + _PTS_2
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PTS_BODY not in redacted_text
+    assert _PTS_BODY_2 not in redacted_text
+    assert "PANGEA_AUDIT_TOKEN=" in redacted_text
+    assert "PANGEA_VAULT_TOKEN=" in redacted_text
