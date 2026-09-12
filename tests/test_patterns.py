@@ -13560,3 +13560,174 @@ def test_pangea_service_token_redaction_keeps_the_variable_name():
     assert _PTS_BODY_2 not in redacted_text
     assert "PANGEA_AUDIT_TOKEN=" in redacted_text
     assert "PANGEA_VAULT_TOKEN=" in redacted_text
+
+
+# --- Guardsquare AppSweep API key ----------------------------------------------
+# 'gs_appsweep_' is the prefix of a Guardsquare AppSweep API key, the credential
+# the AppSweep Gradle plugin, GitHub Action and Bitrise step use to upload an
+# Android build for mobile-app security scanning. It is set in build.gradle /
+# build.gradle.kts (appsweep { apiKey = "..." }) or read from the
+# APPSWEEP_API_KEY environment variable.
+#
+# THE 7_32 SPLIT IS EMPIRICAL. Three independent real keys found in unrelated
+# public Android repos (distinct SHA-256 digests) all measured exactly
+# 'gs_appsweep_' + 7 alnum + '_' + 32 alnum = 52 characters. Guardsquare's docs
+# confirm the product and the APPSWEEP_API_KEY name but do not print the format.
+#
+# Every literal below is SYNTHETIC — base62 bodies taken from SHA-512 over the
+# seed 'classifinder-guardsquare-synthetic-<n>' — and the prefix is split so no
+# contiguous key literal is committed to source.
+# Source: https://github.com/Guardsquare/appsweep-action
+_GSAS_PREFIX = "gs" + "_" + "appsweep" + "_"
+_GSAS_HEAD = "WcxV1cp"
+_GSAS_TAIL = "oaFnbzTD3DAxC7JhbHOiGnmrux8kFzwm"
+_GSAS_HEAD_2 = "FM3foj2"
+_GSAS_TAIL_2 = "eIqX6tXLRVTLyPPQ9DqprjlbsdtoFCHF"
+_GSAS = _GSAS_PREFIX + _GSAS_HEAD + "_" + _GSAS_TAIL
+_GSAS_2 = _GSAS_PREFIX + _GSAS_HEAD_2 + "_" + _GSAS_TAIL_2
+
+
+def _appsweep(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "guardsquare_appsweep_api_key"
+    ]
+
+
+def test_guardsquare_appsweep_api_key_true_positives():
+    """Detected in the carriers an AppSweep key actually leaks through: bare,
+    the Groovy and Kotlin DSL appsweep {} blocks, the APPSWEEP_API_KEY env var,
+    a secrets.defaults.properties / gradle.properties line, a CI YAML env block
+    and JSON."""
+    for text in (
+        _GSAS,
+        "APPSWEEP_API_KEY=" + _GSAS,
+        'export APPSWEEP_API_KEY="' + _GSAS_2 + '"',
+        'appsweep {\n    apiKey = "' + _GSAS + '"\n}',
+        'appsweep {\n    apiKey "' + _GSAS_2 + '"\n}',
+        'appsweep {\n    apiKey.set("' + _GSAS + '")\n}',
+        "appsweepApiKey=" + _GSAS_2,
+        "env:\n  APPSWEEP_API_KEY: " + _GSAS,
+        '{"appsweep_api_key": "' + _GSAS_2 + '"}',
+    ):
+        matched = _appsweep(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "guardsquare"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_guardsquare_appsweep_api_key_span_is_exactly_the_key():
+    """The span must be the whole 52-character key — not the quote, not the
+    property name — so redaction removes all of it and nothing else."""
+    for text in (
+        "APPSWEEP_API_KEY=" + _GSAS,
+        'apiKey = "' + _GSAS + '"',
+        "APPSWEEP_API_KEY=" + _GSAS + "\r\n",
+    ):
+        matched = _appsweep(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == _GSAS
+        assert len(_GSAS) == 52
+
+
+def test_guardsquare_appsweep_api_key_segment_widths_are_exact():
+    """Seven then thirty-two is the measured shape. Each segment one short or
+    one long matches nothing at all — a looser body would let a longer run be
+    clipped to a 52-character window and half redacted."""
+    assert len(_appsweep(_GSAS_PREFIX + _GSAS_HEAD + "_" + _GSAS_TAIL)) == 1
+    assert _appsweep(_GSAS_PREFIX + _GSAS_HEAD[:6] + "_" + _GSAS_TAIL) == []
+    assert _appsweep(_GSAS_PREFIX + _GSAS_HEAD + "Q" + "_" + _GSAS_TAIL) == []
+    assert _appsweep(_GSAS_PREFIX + _GSAS_HEAD + "_" + _GSAS_TAIL[:31]) == []
+    assert _appsweep(_GSAS_PREFIX + _GSAS_HEAD + "_" + _GSAS_TAIL + "Q") == []
+    assert _appsweep(_GSAS_PREFIX + _GSAS_HEAD + "_" + _GSAS_TAIL + "7") == []
+
+
+def test_guardsquare_appsweep_api_key_true_negatives():
+    """The prefix is an exact lowercase literal and the body is exactly
+    7 alnum + '_' + 32 alnum. Placeholders and third-party catalog examples
+    of other shapes must not match."""
+    for neg in (
+        # The vendor's own README placeholder.
+        "APPSWEEP_API_KEY=" + _GSAS_PREFIX + "SOME_API_KEY",
+        'apiKey = "' + _GSAS_PREFIX + "SOME_API_KEY" + '"',
+        _GSAS_PREFIX,
+        _GSAS_PREFIX + "...",
+        # Synthetic catalog-style shapes that are NOT the measured format:
+        # an 8_23 split and a 24-character body with no separator.
+        _GSAS_PREFIX + "Ab3dEf7h" + "_" + "Jk2mNp4qRs6tUv8wXy0zAbC",
+        _GSAS_PREFIX + "q1W2e3R4t5Y6u7I8o9P0a1S2",
+        # The separator is a single underscore at a fixed position.
+        _GSAS_PREFIX + _GSAS_HEAD + _GSAS_TAIL,
+        _GSAS_PREFIX + _GSAS_HEAD + "-" + _GSAS_TAIL,
+        _GSAS_PREFIX + _GSAS_HEAD + "_" + _GSAS_TAIL[:16] + "_" + _GSAS_TAIL[16:31],
+        # The prefix is exact and case-sensitive.
+        "GS" + "_" + "APPSWEEP" + "_" + _GSAS_HEAD + "_" + _GSAS_TAIL,
+        "gs" + "-" + "appsweep" + "-" + _GSAS_HEAD + "_" + _GSAS_TAIL,
+        "gs" + "_" + "appsweep" + _GSAS_HEAD + "_" + _GSAS_TAIL,
+        "appsweep" + "_" + _GSAS_HEAD + "_" + _GSAS_TAIL,
+        # A CI reference to a stored secret is not a key.
+        "appsweep_api_key: ${{ secrets.APPSWEEP_API_KEY }}",
+        # Prose naming the prefix is not a key.
+        "AppSweep API keys start with gs" + "_appsweep_ and are 52 characters.",
+    ):
+        assert _appsweep(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_guardsquare_appsweep_api_key_is_not_carved_out_of_a_longer_token():
+    """Both guards carry the body charset plus '_' and '-', so a key is never
+    carved out of the middle of a longer identifier or base64url run."""
+    for neg in (
+        "x" + _GSAS,
+        "9" + _GSAS,
+        "my_" + _GSAS,
+        "key-" + _GSAS,
+        _GSAS + "_backup",
+        _GSAS + "-old",
+        _GSAS + "X",
+    ):
+        assert _appsweep(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_guardsquare_appsweep_api_key_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values instead and must land at ~0.15."""
+    for ch in ("x", "X", "0", "a"):
+        mask = _GSAS_PREFIX + ch * 7 + "_" + ch * 32
+        matched = _appsweep("APPSWEEP_API_KEY=" + mask)
+        assert len(matched) == 1, "not detected: " + mask[:20]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_guardsquare_appsweep_api_key_does_not_collide():
+    """A bare key, and the same key behind APPSWEEP_API_KEY= and apiKey =,
+    is reported once, as this pattern and nothing else — no generic pattern
+    claims it alongside."""
+    for text in (
+        _GSAS,
+        "APPSWEEP_API_KEY=" + _GSAS,
+        'appsweep {\n    apiKey = "' + _GSAS + '"\n}',
+        '{"apiKey": "' + _GSAS + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["guardsquare_appsweep_api_key"], text[:40]
+
+
+def test_guardsquare_appsweep_api_key_redaction_keeps_the_property_name():
+    """Redaction must remove both keys while leaving the property names
+    readable, so the reader can still tell where the key was configured."""
+    from app.engine.redactor import redact
+
+    text = (
+        "APPSWEEP_API_KEY=" + _GSAS + "\n"
+        'appsweep {\n    apiKey = "' + _GSAS_2 + '"\n}'
+    )
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _GSAS_TAIL not in redacted_text
+    assert _GSAS_TAIL_2 not in redacted_text
+    assert "APPSWEEP_API_KEY=" in redacted_text
+    assert "apiKey = " in redacted_text

@@ -159,6 +159,16 @@ _PTS_PREFIX_CASES = "pts" + "_"
 _PTS_CASES = _PTS_PREFIX_CASES + "4repactiyhcrn3jv8arqhwfxdcdi11l4"
 _PTS_CASES_2 = _PTS_PREFIX_CASES + "t2izpght2q50vrjnqwghec0dw6qllnt0"
 
+# ── 2026-09-12 ────────────────────────────────────────────────────────────
+# Guardsquare AppSweep API keys: 'gs_appsweep_' + 7 alnum + '_' + 32 alnum.
+# Every body is SYNTHETIC (SHA-512 over the seed
+# 'classifinder-guardsquare-synthetic-<n>', base62-encoded) and the prefix is
+# split so no contiguous key literal is committed.
+_GSAS_PREFIX_CASES = "gs" + "_" + "appsweep" + "_"
+_GSAS_TAIL_CASES = "NFG4bxHBL41qoohjzIFbMzAljU9CmcB9"
+_GSAS_CASES = _GSAS_PREFIX_CASES + "YFBwTBE" + "_" + _GSAS_TAIL_CASES
+_GSAS_CASES_2 = _GSAS_PREFIX_CASES + "kopm9jm" + "_" + "t3NDsW8hED5fM5z8VZ7aw1383YWXT9Yh"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -5637,6 +5647,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "pci" + "_" + "4repactiyhcrn3jv8arqhwfxdcdi11l4",
             # Must not be carved out of the tail of an English plural.
             "prompts" + "_" + "4repactiyhcrn3jv8arqhwfxdcdi11l4",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-12 ───────────────────────────────────────────────────────
+    # Guardsquare AppSweep API key — 'gs_appsweep_' + 7 alnum + '_' + 32
+    # alnum, 52 characters. The 7_32 split was measured on three independent
+    # real keys in unrelated Android build files; no vendor prose states it.
+    # Source: https://github.com/Guardsquare/appsweep-action
+    "guardsquare_appsweep_api_key": {
+        "positives": [
+            "APPSWEEP_API_KEY=" + _GSAS_CASES,
+            'appsweep {\n    apiKey = "' + _GSAS_CASES_2 + '"\n}',
+            'appsweep {\n    apiKey "' + _GSAS_CASES + '"\n}',
+        ],
+        "negatives": [
+            # The vendor's own placeholder.
+            _GSAS_PREFIX_CASES + "SOME_API_KEY",
+            # Both segments are fixed-width.
+            _GSAS_CASES[:-1],
+            _GSAS_CASES + "a",
+            _GSAS_PREFIX_CASES + "YFBwTB" + "_" + _GSAS_TAIL_CASES,
+            _GSAS_PREFIX_CASES + "YFBwTBEq" + "_" + _GSAS_TAIL_CASES,
+            # The prefix is exact and case-sensitive.
+            "GS" + "_" + "APPSWEEP" + "_" + "YFBwTBE" + "_" + _GSAS_TAIL_CASES,
+            "gs" + "-" + "appsweep" + "-" + "YFBwTBE" + "_" + _GSAS_TAIL_CASES,
         ],
         "min_confidence": 0.90,
     },
