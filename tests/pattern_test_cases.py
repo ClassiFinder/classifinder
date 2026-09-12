@@ -5655,7 +5655,7 @@ PATTERN_TEST_CASES: dict[str, dict] = {
     # Guardsquare AppSweep API key — 'gs_appsweep_' + 7 alnum + '_' + 32
     # alnum, 52 characters. The 7_32 split was measured on three independent
     # real keys in unrelated Android build files; no vendor prose states it.
-    # Source: https://github.com/ProNoob1029/Power-Play-Scorer/blob/HEAD/app/build.gradle
+    # Source: https://github.com/Guardsquare/appsweep-action
     "guardsquare_appsweep_api_key": {
         "positives": [
             "APPSWEEP_API_KEY=" + _GSAS_CASES,

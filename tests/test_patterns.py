@@ -13577,7 +13577,7 @@ def test_pangea_service_token_redaction_keeps_the_variable_name():
 # Every literal below is SYNTHETIC — base62 bodies taken from SHA-512 over the
 # seed 'classifinder-guardsquare-synthetic-<n>' — and the prefix is split so no
 # contiguous key literal is committed to source.
-# Source: https://github.com/ProNoob1029/Power-Play-Scorer/blob/HEAD/app/build.gradle
+# Source: https://github.com/Guardsquare/appsweep-action
 _GSAS_PREFIX = "gs" + "_" + "appsweep" + "_"
 _GSAS_HEAD = "WcxV1cp"
 _GSAS_TAIL = "oaFnbzTD3DAxC7JhbHOiGnmrux8kFzwm"
