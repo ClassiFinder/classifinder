@@ -13731,3 +13731,167 @@ def test_guardsquare_appsweep_api_key_redaction_keeps_the_property_name():
     assert _GSAS_TAIL_2 not in redacted_text
     assert "APPSWEEP_API_KEY=" in redacted_text
     assert "apiKey = " in redacted_text
+
+
+# --- Axiom API token -----------------------------------------------------------
+# 'xaat-' is the prefix of an Axiom API token and 'xapt-' of the deprecated
+# Axiom personal token. Both are bearer credentials for Axiom's ingest and query
+# APIs, read from AXIOM_TOKEN (and NEXT_PUBLIC_AXIOM_TOKEN in next-axiom apps).
+#
+# The prefixes are the vendor's own: axiom-go internal/config/token.go checks
+# strings.HasPrefix(token, "xaat-") / "xapt-", and axiom-js warns that 'xapt-'
+# personal tokens are deprecated in favour of 'xaat-' API tokens. The body
+# layout is the vendor's too: axiom-go's config_test.go masks both tokens as
+# the prefix + 'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', and Cloudflare's Workers
+# "Export to Axiom" page prints the same 8-4-4-4-12 mask. 41 characters total.
+#
+# Every literal below is SYNTHETIC — SHA-256 over the seed
+# 'classifinder-axiom-synthetic-<n>', laid out 8-4-4-4-12 — and the prefix is
+# split so no contiguous token literal is committed to source. The bodies are
+# deliberately NOT v4-shaped (the version nibble is not 4): no vendor source
+# says the body is strictly v4, so the pattern must not require it.
+# Source: https://github.com/axiomhq/axiom-go/blob/main/internal/config/token.go
+_XAAT_BODY = "db0f9404-1d04-ba1e-a048-a7b8d06a322a"
+_XAAT_BODY_2 = "c4930bea-6fe5-899b-6a65-d683ff72541a"
+_XAPT_BODY = "d513c027-33c1-93e2-70df-4e6fc8009542"
+_XAAT = "xa" + "at-" + _XAAT_BODY
+_XAAT_2 = "xa" + "at-" + _XAAT_BODY_2
+_XAPT = "xa" + "pt-" + _XAPT_BODY
+
+
+def _axiom(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "axiom_api_token"
+    ]
+
+
+def test_axiom_api_token_true_positives():
+    """Detected in the carriers an Axiom token actually leaks through: bare,
+    AXIOM_TOKEN / NEXT_PUBLIC_AXIOM_TOKEN env lines, a Wrangler / CI YAML env
+    block, an OTLP Authorization header, a JS client constructor and JSON."""
+    for text in (
+        _XAAT,
+        _XAPT,
+        "AXIOM_TOKEN=" + _XAAT,
+        'NEXT_PUBLIC_AXIOM_TOKEN="' + _XAAT_2 + '"',
+        "export AXIOM_TOKEN=" + _XAPT,
+        "env:\n  AXIOM_TOKEN: " + _XAAT_2,
+        "Authorization: Bearer " + _XAAT,
+        "const axiom = new Axiom({ token: '" + _XAAT_2 + "' });",
+        '{"axiom_token": "' + _XAPT + '"}',
+    ):
+        matched = _axiom(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "axiom"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_axiom_api_token_span_is_exactly_the_token():
+    """The span must be the whole 41-character token — prefix included, no
+    quote, no variable name — so redaction removes all of it."""
+    for text, tok in (
+        ("AXIOM_TOKEN=" + _XAAT, _XAAT),
+        ('token: "' + _XAPT + '"', _XAPT),
+        ("AXIOM_TOKEN=" + _XAAT_2 + "\r\n", _XAAT_2),
+    ):
+        matched = _axiom(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+        assert len(tok) == 41
+
+
+def test_axiom_api_token_true_negatives():
+    """The prefix is one of two exact lowercase literals and the body is a
+    full canonical lowercase dashed UUID."""
+    for neg in (
+        # Truncated or undashed bodies.
+        "xa" + "at-" + _XAAT_BODY[:-1],
+        "xa" + "at-" + _XAAT_BODY.replace("-", ""),
+        "xa" + "at-" + _XAAT_BODY[:8] + _XAAT_BODY[8:].replace("-", "", 1),
+        # Uppercase hex is not what Axiom mints.
+        "xa" + "at-" + _XAAT_BODY.upper(),
+        # Only 'xaat-' and 'xapt-' are vendor prefixes.
+        "xa" + "it-" + _XAAT_BODY,
+        "xa" + "bt-" + _XAAT_BODY,
+        "XA" + "AT-" + _XAAT_BODY,
+        "xa" + "at_" + _XAAT_BODY,
+        "xa" + "at" + _XAAT_BODY,
+        # The bare UUID with no prefix is not claimed by this pattern.
+        _XAAT_BODY,
+        "AXIOM_TOKEN=" + _XAAT_BODY,
+        # The vendor's own masks do not match (X is not hex).
+        "xa" + "at-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+        "xa" + "pt-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+        # A CI reference to a stored secret is not a token.
+        "AXIOM_TOKEN: ${{ secrets.AXIOM_TOKEN }}",
+        # Prose naming the prefix is not a token.
+        "Axiom API tokens start with xa" + "at- and personal tokens with xa" + "pt-.",
+    ):
+        assert _axiom(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_axiom_api_token_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a token is never cut out of the
+    middle of a longer identifier or hyphenated run."""
+    for neg in (
+        "x" + _XAAT,
+        "9" + _XAAT,
+        "my_" + _XAAT,
+        "key-" + _XAAT,
+        _XAAT + "-1d04",
+        _XAAT + "_old",
+        _XAAT + "f",
+        _XAAT + "Z",
+    ):
+        assert _axiom(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_axiom_api_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The nil and all-f UUID masks are
+    registered as known_test_values and must land at ~0.15."""
+    for prefix in ("xa" + "at-", "xa" + "pt-"):
+        for body in (
+            "00000000-0000-0000-0000-000000000000",
+            "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        ):
+            mask = prefix + body
+            matched = _axiom("AXIOM_TOKEN=" + mask)
+            assert len(matched) == 1, "not detected: " + mask
+            assert matched[0].is_likely_test_value is True
+            assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_axiom_api_token_does_not_collide():
+    """The UUID body is the same shape the context-gated heroku / hubspot /
+    wise UUID patterns look for. A token — bare, behind AXIOM_TOKEN= or api_key=,
+    or on a line that also carries those vendors' keywords — is reported once,
+    as this pattern and nothing else."""
+    for text in (
+        _XAAT,
+        "AXIOM_TOKEN=" + _XAAT,
+        "api_key=" + _XAAT,
+        '{"token": "' + _XAPT + '"}',
+        "heroku api_key=" + _XAAT,
+        "hubspot_api_key: " + _XAAT,
+        "wise_api_token=" + _XAPT,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["axiom_api_token"], text[:40]
+
+
+def test_axiom_api_token_redaction_keeps_the_variable_name():
+    """Redaction must remove both tokens while leaving the variable names
+    readable, so the reader can still tell where the token was configured."""
+    from app.engine.redactor import redact
+
+    text = "AXIOM_TOKEN=" + _XAAT + "\n" + 'NEXT_PUBLIC_AXIOM_TOKEN="' + _XAPT + '"'
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _XAAT_BODY not in redacted_text
+    assert _XAPT_BODY not in redacted_text
+    assert "AXIOM_TOKEN=" in redacted_text
+    assert "NEXT_PUBLIC_AXIOM_TOKEN=" in redacted_text

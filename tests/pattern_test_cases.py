@@ -169,6 +169,15 @@ _GSAS_TAIL_CASES = "NFG4bxHBL41qoohjzIFbMzAljU9CmcB9"
 _GSAS_CASES = _GSAS_PREFIX_CASES + "YFBwTBE" + "_" + _GSAS_TAIL_CASES
 _GSAS_CASES_2 = _GSAS_PREFIX_CASES + "kopm9jm" + "_" + "t3NDsW8hED5fM5z8VZ7aw1383YWXT9Yh"
 
+# ── 2026-09-13 ────────────────────────────────────────────────────────────
+# Axiom tokens: 'xaat-' (API token) / 'xapt-' (deprecated personal token) + a
+# lowercase dashed UUID. Every body is SYNTHETIC (SHA-256 over the seed
+# 'classifinder-axiom-synthetic-<n>', laid out 8-4-4-4-12) and the prefix is
+# split so no contiguous token literal is committed.
+_XAAT_CASES = "xa" + "at-" + "db0f9404-1d04-ba1e-a048-a7b8d06a322a"
+_XAAT_CASES_2 = "xa" + "at-" + "c4930bea-6fe5-899b-6a65-d683ff72541a"
+_XAPT_CASES = "xa" + "pt-" + "d513c027-33c1-93e2-70df-4e6fc8009542"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -5673,6 +5682,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # The prefix is exact and case-sensitive.
             "GS" + "_" + "APPSWEEP" + "_" + "YFBwTBE" + "_" + _GSAS_TAIL_CASES,
             "gs" + "-" + "appsweep" + "-" + "YFBwTBE" + "_" + _GSAS_TAIL_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-13 ───────────────────────────────────────────────────────
+    # Axiom API token — 'xaat-' (or the deprecated personal 'xapt-') + a
+    # lowercase dashed UUID, 41 characters. Prefixes from axiom-go's own
+    # internal/config/token.go; the 8-4-4-4-12 layout from the vendor's
+    # config_test.go masks and Cloudflare's Workers docs.
+    # Source: https://github.com/axiomhq/axiom-go/blob/main/internal/config/config_test.go
+    "axiom_api_token": {
+        "positives": [
+            "AXIOM_TOKEN=" + _XAAT_CASES,
+            'NEXT_PUBLIC_AXIOM_TOKEN="' + _XAAT_CASES_2 + '"',
+            "AXIOM_TOKEN=" + _XAPT_CASES,
+        ],
+        "negatives": [
+            # The body is a full canonical UUID.
+            _XAAT_CASES[:-1],
+            "xa" + "at-" + "db0f94041d04ba1ea048a7b8d06a322a",
+            # Only the two vendor prefixes, exact and lowercase.
+            "xa" + "it-" + "db0f9404-1d04-ba1e-a048-a7b8d06a322a",
+            "XA" + "AT-" + "db0f9404-1d04-ba1e-a048-a7b8d06a322a",
+            # Must not be carved out of a longer hyphenated run.
+            "x" + _XAAT_CASES,
+            _XAAT_CASES + "-1d04",
         ],
         "min_confidence": 0.90,
     },
