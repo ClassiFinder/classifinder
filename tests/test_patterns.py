@@ -13895,3 +13895,172 @@ def test_axiom_api_token_redaction_keeps_the_variable_name():
     assert _XAPT_BODY not in redacted_text
     assert "AXIOM_TOKEN=" in redacted_text
     assert "NEXT_PUBLIC_AXIOM_TOKEN=" in redacted_text
+
+
+# --- Nylas v3 API key ----------------------------------------------------------
+# 'nyk_v0_' is the prefix of a Nylas v3 API key, the bearer credential for the
+# Nylas v3 email / calendar / contacts API ('Authorization: Bearer <API_KEY>'),
+# usually read from NYLAS_API_KEY. It acts as the whole Nylas application, i.e.
+# every connected account (grant) that application holds.
+#
+# The prefix is the vendor's own: Nylas's CLI and SDK documentation spell the
+# key 'nyk_v0_...' and the CLI format-validates on that prefix; GitGuardian's
+# public nylas_api_key detector lists it as prefixed. The 64-character
+# [A-Za-z0-9] body was measured on independent public samples. 71 characters
+# in total.
+#
+# Every literal below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-nylas-synthetic-<n>', base62-encoded — and the prefix is split
+# so no contiguous key literal is committed to source.
+# Source: https://developer.nylas.com/docs/reference/api/manage-api-keys/
+_NYK_PREFIX = "ny" + "k_" + "v0_"
+_NYK_BODY = "rk3odf3WsLCZziWh9FcgUQPGGr2eSX52gva05tpD4YS1R2s8nqhO2z9yeXakIlAp"
+_NYK_BODY_2 = "WfmkPx96dMlX37ST6iEAbsjuyL49exabndiXq7wViWh9uiCAauUXtAJqqYsGQb9f"
+_NYK_BODY_3 = "0duQjnnFSiRzmw8fKLXnTGG5wblFU7PHxpaTlbPZvDmf0ctyMMNbdbT086AvckdB"
+_NYK = _NYK_PREFIX + _NYK_BODY
+_NYK_2 = _NYK_PREFIX + _NYK_BODY_2
+_NYK_3 = _NYK_PREFIX + _NYK_BODY_3
+
+
+def _nylas(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "nylas_api_key"
+    ]
+
+
+def test_nylas_api_key_true_positives():
+    """Detected in the carriers a Nylas key actually leaks through: bare, a
+    NYLAS_API_KEY env line, an export, a CI YAML env block, a Bearer header,
+    SDK constructors (Node / Python) and JSON."""
+    for text in (
+        _NYK,
+        "NYLAS_API_KEY=" + _NYK,
+        'NYLAS_API_KEY="' + _NYK_2 + '"',
+        "export NYLAS_API_KEY=" + _NYK_3,
+        "env:\n  NYLAS_API_KEY: " + _NYK_2,
+        "Authorization: Bearer " + _NYK,
+        "const nylas = new Nylas({ apiKey: '" + _NYK_3 + "' });",
+        'nylas = Client(api_key="' + _NYK + '")',
+        '{"nylas_api_key": "' + _NYK_2 + '"}',
+    ):
+        matched = _nylas(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "nylas"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_nylas_api_key_span_is_exactly_the_key():
+    """The span must be the whole 71-character key — prefix included, no
+    quote, no variable name — so redaction removes all of it."""
+    for text, key in (
+        ("NYLAS_API_KEY=" + _NYK, _NYK),
+        ('apiKey: "' + _NYK_2 + '"', _NYK_2),
+        ("NYLAS_API_KEY=" + _NYK_3 + "\r\n", _NYK_3),
+    ):
+        matched = _nylas(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == key
+        assert len(key) == 71
+
+
+def test_nylas_api_key_true_negatives():
+    """The prefix is one exact lowercase literal and the body is exactly 64
+    alphanumerics."""
+    for neg in (
+        # Truncated body, and a body carrying a non-alnum character.
+        _NYK_PREFIX + _NYK_BODY[:-1],
+        _NYK_PREFIX + _NYK_BODY[:20],
+        _NYK_PREFIX + _NYK_BODY[:32] + "_" + _NYK_BODY[33:],
+        _NYK_PREFIX + _NYK_BODY[:32] + "-" + _NYK_BODY[33:],
+        # Only the exact lowercase 'nyk_v0_' prefix.
+        "NY" + "K_" + "V0_" + _NYK_BODY,
+        "ny" + "k_" + "v1_" + _NYK_BODY,
+        "ny" + "k_" + "v0" + _NYK_BODY,
+        "ny" + "k-" + "v0-" + _NYK_BODY,
+        # A docs-typo placeholder prefix is not the vendor's key.
+        "ny" + "l_" + "v0_" + _NYK_BODY,
+        "ny" + "l_" + "v0_your_key_here",
+        # The bare body with no prefix is not claimed by this pattern.
+        _NYK_BODY,
+        # Elided docs placeholders do not match.
+        _NYK_PREFIX + "...",
+        'NYLAS_API_KEY="' + _NYK_PREFIX + '..."',
+        _NYK_PREFIX + "your_api_key_here",
+        # A CI reference to a stored secret is not a key.
+        "NYLAS_API_KEY: ${{ secrets.NYLAS_API_KEY }}",
+        # Prose naming the prefix is not a key.
+        "Nylas v3 API keys start with ny" + "k_" + "v0_ and are bearer tokens.",
+    ):
+        assert _nylas(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_nylas_api_key_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a key is never cut out of the middle
+    of a longer identifier or base64url run, and a 65-character body matches
+    nothing rather than being truncated. The leading guard also keeps it off
+    the 'nyk_' inside a 'snyk_' identifier."""
+    for neg in (
+        "s" + _NYK,
+        "9" + _NYK,
+        "my_" + _NYK,
+        "key-" + _NYK,
+        _NYK + "Q",
+        _NYK + "7",
+        _NYK + "_old",
+        _NYK + "-x",
+    ):
+        assert _nylas(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_nylas_api_key_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for ch in ("x", "X", "0"):
+        mask = _NYK_PREFIX + ch * 64
+        matched = _nylas("NYLAS_API_KEY=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_nylas_api_key_does_not_collide():
+    """A key — bare, behind NYLAS_API_KEY= or api_key=, in a Bearer header, or
+    on a line that also names Snyk — is reported once, as this pattern and
+    nothing else (the generic env / high-entropy fallbacks are deduplicated
+    away)."""
+    for text in (
+        _NYK,
+        "NYLAS_API_KEY=" + _NYK,
+        "api_key=" + _NYK_2,
+        "Authorization: Bearer " + _NYK_3,
+        '{"token": "' + _NYK_2 + '"}',
+        "snyk_token_note nylas_key=" + _NYK,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["nylas_api_key"], text[:40]
+
+
+def test_nylas_api_key_does_not_break_snyk():
+    """The 'nyk_' substring inside Snyk identifiers must stay Snyk's: a Snyk
+    token line produces no Nylas finding."""
+    text = "SNYK_TOKEN=3f2b8c1d-5e4a-4b7c-9d0e-1a2b3c4d5e6f"
+    assert _nylas(text) == []
+    assert "snyk_api_token" in [f.type for f in scan(text, min_confidence=0.01)]
+
+
+def test_nylas_api_key_redaction_keeps_the_variable_name():
+    """Redaction must remove both keys while leaving the variable names
+    readable, so the reader can still tell where the key was configured."""
+    from app.engine.redactor import redact
+
+    text = "NYLAS_API_KEY=" + _NYK + "\n" + "const nylas = new Nylas({ apiKey: '" + _NYK_2 + "' });"
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _NYK_BODY not in redacted_text
+    assert _NYK_BODY_2 not in redacted_text
+    assert "NYLAS_API_KEY=" in redacted_text
+    assert "apiKey: " in redacted_text
