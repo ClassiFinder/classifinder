@@ -178,6 +178,15 @@ _XAAT_CASES = "xa" + "at-" + "db0f9404-1d04-ba1e-a048-a7b8d06a322a"
 _XAAT_CASES_2 = "xa" + "at-" + "c4930bea-6fe5-899b-6a65-d683ff72541a"
 _XAPT_CASES = "xa" + "pt-" + "d513c027-33c1-93e2-70df-4e6fc8009542"
 
+# ── 2026-09-14 ────────────────────────────────────────────────────────────
+# Nylas v3 API keys: 'nyk_v0_' + 64 alnum. Every body is SYNTHETIC (SHA-512
+# over the seed 'classifinder-nylas-synthetic-<n>', base62-encoded) and the
+# prefix is split so no contiguous key literal is committed.
+_NYK_PREFIX_CASES = "ny" + "k_" + "v0_"
+_NYK_BODY_CASES = "rk3odf3WsLCZziWh9FcgUQPGGr2eSX52gva05tpD4YS1R2s8nqhO2z9yeXakIlAp"
+_NYK_CASES = _NYK_PREFIX_CASES + _NYK_BODY_CASES
+_NYK_CASES_2 = _NYK_PREFIX_CASES + "WfmkPx96dMlX37ST6iEAbsjuyL49exabndiXq7wViWh9uiCAauUXtAJqqYsGQb9f"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -5708,6 +5717,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer hyphenated run.
             "x" + _XAAT_CASES,
             _XAAT_CASES + "-1d04",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-14 ───────────────────────────────────────────────────────
+    # Nylas v3 API key — 'nyk_v0_' + 64 alnum, 71 characters. Prefix from the
+    # vendor's own CLI/SDK docs; the 64-character body measured on
+    # independent public samples. The vendor's v3 reference documents the key
+    # as a bearer token.
+    # Source: https://developer.nylas.com/docs/reference/api/manage-api-keys/
+    "nylas_api_key": {
+        "positives": [
+            "NYLAS_API_KEY=" + _NYK_CASES,
+            'NYLAS_API_KEY="' + _NYK_CASES_2 + '"',
+            "Authorization: Bearer " + _NYK_CASES,
+        ],
+        "negatives": [
+            # The body is exactly 64 characters.
+            _NYK_CASES[:-1],
+            _NYK_CASES + "Q",
+            # The prefix is exact and case-sensitive.
+            "ny" + "l_" + "v0_" + _NYK_BODY_CASES,
+            "NY" + "K_" + "V0_" + _NYK_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "s" + _NYK_CASES,
+            _NYK_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
