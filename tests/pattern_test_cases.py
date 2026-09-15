@@ -56,6 +56,18 @@ _LWA_HARNESS_BODY_2 = (
 _LWA_PREFIX_LITERAL = "Atza" + "|"
 _LWA_REFRESH_PREFIX_LITERAL = "Atzr" + "|"
 
+# ── 2026-09-15 ────────────────────────────────────────────────────────────
+# Cloudflare scannable API tokens: 'cfut_' / 'cfat_' + 40 alnum + 8 hex. The
+# body is SYNTHETIC (SHA-512 over the seed 'classifinder-cloudflare-synthetic-4',
+# base62-encoded) and the 8-hex tail is SHA-256 over the same seed, NOT a valid
+# CRC32. The prefix is split so no contiguous token literal is committed —
+# Cloudflare is a GitHub secret-scanning partner.
+_CFUT_PREFIX_CASES = "cf" + "ut_"
+_CFAT_PREFIX_CASES = "cf" + "at_"
+_CF_BODY_CASES = "v0nn2giVcwySONs5UbnOGZccbsZ0fPjJhHhw7MOx" + "7d82bb93"
+_CFUT_CASES = _CFUT_PREFIX_CASES + _CF_BODY_CASES
+_CFAT_CASES = _CFAT_PREFIX_CASES + _CF_BODY_CASES
+
 # GitLab runner registration tokens. 'GR1348941' is a literal vendor constant
 # (GitLab's RUNNERS_TOKEN_PREFIX); the bodies are 20 urlsafe-base64 characters.
 # Split so no contiguous registration-token literal is committed to source.
@@ -1213,6 +1225,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "negatives": [
             "v1.0-short",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-15 ───────────────────────────────────────────────────────
+    # Cloudflare scannable API token — 'cfut_' (user) / 'cfat_' (account-owned)
+    # + 40 alnum + 8-hex checksum, 53 characters. Vendor-documented format.
+    # Source: https://developers.cloudflare.com/cloudflare-one/data-loss-prevention/dlp-profiles/predefined-profiles/
+    "cloudflare_scannable_api_token": {
+        "positives": [
+            "CLOUDFLARE_API_TOKEN=" + _CFUT_CASES,
+            'CF_API_TOKEN="' + _CFAT_CASES + '"',
+            "Authorization: Bearer " + _CFUT_CASES,
+        ],
+        "negatives": [
+            # The token is exactly 53 characters.
+            _CFUT_CASES[:-1],
+            _CFUT_CASES + "a",
+            # The prefix is exact and case-sensitive; 'cfk_' is a separate format.
+            "CF" + "UT_" + _CF_BODY_CASES,
+            "cf" + "k_" + _CF_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "x" + _CFAT_CASES,
+            _CFUT_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
