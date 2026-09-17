@@ -15452,3 +15452,209 @@ def test_netbird_personal_access_token_redaction_keeps_the_variable_name():
     assert _NBP_BODY_2 not in redacted_text
     assert "NB_API_TOKEN=" in redacted_text
     assert "NETBIRD_API_TOKEN=" in redacted_text
+
+
+# --- Google Gemini / GCP Express Mode auth key --------------------------------
+# 'AQ.Ab' opens a Google Gemini API AUTH key — the credential that replaces the
+# 'AIza' standard key. It is bound to a Google Cloud service account, so requests
+# made with it run under that identity. Google AI Studio has issued auth keys for
+# every new key since 2026-05-28, and the Gemini API rejects standard keys from
+# September 2026. GCP Express Mode issues the same credential.
+#
+# Width and charset come from Google's own detector (osv-scalibr's GCP Express
+# Mode detector: `AQ\.Ab8R[a-zA-Z0-9_-]{46}`, maxKeyLen 53). The '8R' segment is
+# single-sourced and predates the 2026 AI Studio rollout, so it is folded into
+# the body: same 53-character width, and every key Google's narrower regex
+# matches also matches this one. The credential class and its rollout dates are
+# documented at https://ai.google.dev/gemini-api/docs/api-key.
+#
+# Every literal below is SYNTHETIC — urlsafe-base64 of SHA-512 over the seed
+# 'classifinder-gemini-synthetic-<n>', truncated to 48 — and the prefix is split
+# so no contiguous key literal is committed to source.
+# Source: https://github.com/google/osv-scalibr/blob/v0.5.2/veles/secrets/gcpexpressmode/detector.go
+_AQ_PREFIX = "AQ" + "." + "Ab"
+_AQ_BODY = "zFfneCRXS17YT8CN8scb2xPGuL3rStgeZEdKP4h0svi8jO3W"
+_AQ_BODY_2 = "7k9_An5vQToQJjfL1-uc4CZMI0MDuXGgfrViemMZMC-P9elh"
+_AQ_BODY_3 = "wRNs1SclqaWv7T5m2hR6Ih62xeauA7_fmM6BKIHzCfPFZR9J"
+_AQ_BODY_4 = "mH9X859exXCyHlxqeoosUqK24pxeMygeKJb5tx91fy--reVD"
+_AQ = _AQ_PREFIX + _AQ_BODY
+_AQ_2 = _AQ_PREFIX + _AQ_BODY_2
+_AQ_3 = _AQ_PREFIX + _AQ_BODY_3
+_AQ_4 = _AQ_PREFIX + _AQ_BODY_4
+
+
+def _gemini_auth(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "google_gemini_auth_key"
+    ]
+
+
+def test_google_gemini_auth_key_true_positives():
+    """Detected in the carriers a Gemini auth key actually leaks through: bare,
+    a GEMINI_API_KEY / GOOGLE_API_KEY env line, an export, a CI YAML env block,
+    the x-goog-api-key header, SDK constructors (Python / Node) and JSON."""
+    for text in (
+        _AQ,
+        "GEMINI_API_KEY=" + _AQ,
+        'GOOGLE_API_KEY="' + _AQ_2 + '"',
+        "export GEMINI_API_KEY=" + _AQ_3,
+        "env:\n  GEMINI_API_KEY: " + _AQ_4,
+        "x-goog-api-key: " + _AQ,
+        'client = genai.Client(api_key="' + _AQ_2 + '")',
+        "const ai = new GoogleGenAI({ apiKey: '" + _AQ_3 + "' });",
+        '{"gemini_api_key": "' + _AQ_4 + '"}',
+    ):
+        matched = _gemini_auth(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "google"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_google_gemini_auth_key_accepts_googles_own_narrower_form():
+    """Google's own osv-scalibr detector pins 'AQ.Ab8R' + 46. That literal is
+    single-sourced, so the '8R' is folded into the body — which means every key
+    Google's narrower regex matches must still match here, at full width."""
+    narrow = _AQ_PREFIX + "8R" + _AQ_BODY[:46]
+    assert len(narrow) == 53
+    matched = _gemini_auth("GEMINI_API_KEY=" + narrow)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+
+
+def test_google_gemini_auth_key_span_is_exactly_the_key():
+    """The span must be the whole 53-character key — the dotted prefix included,
+    no quote, no variable name — so redaction removes all of it."""
+    for text, key in (
+        ("GEMINI_API_KEY=" + _AQ, _AQ),
+        ('apiKey: "' + _AQ_2 + '"', _AQ_2),
+        ("GOOGLE_API_KEY=" + _AQ_3 + "\r\n", _AQ_3),
+    ):
+        matched = _gemini_auth(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == key
+        assert len(key) == 53
+
+
+def test_google_gemini_auth_key_true_negatives():
+    """The prefix is one exact case-sensitive literal carrying a dot at offset
+    2, and the body is exactly 48 base64url characters."""
+    for neg in (
+        # Truncated or over-long body.
+        _AQ_PREFIX + _AQ_BODY[:-1],
+        _AQ_PREFIX + _AQ_BODY[:20],
+        # The body charset is base64url — no '.', '+' or '/'.
+        _AQ_PREFIX + _AQ_BODY[:24] + "." + _AQ_BODY[25:],
+        _AQ_PREFIX + _AQ_BODY[:24] + "+" + _AQ_BODY[25:],
+        _AQ_PREFIX + _AQ_BODY[:24] + "/" + _AQ_BODY[25:],
+        # Only the exact 'AQ.Ab' prefix, dot included.
+        "aq" + "." + "ab" + _AQ_BODY,
+        "AQ" + "." + "AB" + _AQ_BODY,
+        "AQ" + "Ab" + _AQ_BODY,
+        "AQ" + "-" + "Ab" + _AQ_BODY,
+        "AQ" + "." + "Ac" + _AQ_BODY,
+        # The bare body with no prefix is not claimed by this pattern.
+        _AQ_BODY,
+        # Elided docs placeholders do not match.
+        _AQ_PREFIX + "...",
+        'GEMINI_API_KEY="' + _AQ_PREFIX + '..."',
+        _AQ_PREFIX + "your_api_key_here",
+        # A CI reference to a stored secret is not a key.
+        "GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}",
+        # Prose naming the prefix is not a key.
+        "Gemini auth keys now start with AQ" + "." + "Ab instead of AIza.",
+    ):
+        assert _gemini_auth(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_google_gemini_auth_key_is_not_carved_out_of_a_longer_token():
+    """The leading guard refuses [A-Za-z0-9_.-] and the trailing guard refuses
+    the body charset, so a key is never cut out of a longer identifier, dotted
+    token or base64url run, and a 49-character body matches nothing rather than
+    being truncated to 48."""
+    for neg in (
+        "x" + _AQ,
+        "9" + _AQ,
+        "my_" + _AQ,
+        "key-" + _AQ,
+        "v1." + _AQ,
+        "ya29." + _AQ,
+        _AQ + "Q",
+        _AQ + "7",
+        _AQ + "_old",
+        _AQ + "-x",
+    ):
+        assert _gemini_auth(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_google_gemini_auth_key_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for ch in ("x", "X", "0"):
+        mask = _AQ_PREFIX + ch * 48
+        matched = _gemini_auth("GEMINI_API_KEY=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_google_gemini_auth_key_does_not_collide():
+    """A key — bare, behind GEMINI_API_KEY= or GOOGLE_API_KEY=, or in the
+    x-goog-api-key header — is reported once, as this pattern and nothing else
+    (the generic env / high-entropy fallbacks are deduplicated away)."""
+    for text in (
+        _AQ,
+        "GEMINI_API_KEY=" + _AQ,
+        "GOOGLE_API_KEY=" + _AQ_2,
+        "api_key=" + _AQ_3,
+        "x-goog-api-key: " + _AQ_4,
+        '{"token": "' + _AQ_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["google_gemini_auth_key"], text[:40]
+
+
+def test_google_gemini_auth_key_is_disjoint_from_the_aiza_standard_key():
+    """The two Google key forms must stay separate findings with separate
+    names: the remediation differs (an auth key is bound to a service account),
+    so an operator needs to be told which one leaked. gcp_api_key is unchanged
+    and still matches only 'AIza'."""
+    aiza = "AIza" + "SyD" + "x" * 32
+    assert _gemini_auth(aiza) == []
+
+    both = "GOOGLE_API_KEY=" + _AQ + "\nFIREBASE_KEY=" + aiza
+    types = {f.type for f in scan(both, min_confidence=0.01)}
+    assert "google_gemini_auth_key" in types
+    assert "gcp_api_key" in types
+
+
+def test_google_gemini_auth_key_does_not_disturb_the_other_aq_patterns():
+    """The only other 'AQ' literals in the registry are the AWS session-token
+    'AQoD' marker and Yandex's 'AQVN' service-account key. Both require an
+    alphanumeric where this pattern requires a literal dot, so neither can be
+    claimed by it and neither loses its own finding."""
+    yandex = "YC_API_KEY=" + "AQVN" + "x7Kd2pQm7vTzL0nBcHf4WsYeR1jUaG6oPiN3"
+    assert _gemini_auth(yandex) == []
+    assert "yandex_cloud_api_key" in [f.type for f in scan(yandex, min_confidence=0.01)]
+
+
+def test_google_gemini_auth_key_redaction_keeps_the_variable_name():
+    """Redaction must remove both keys while leaving the variable names
+    readable, so the reader can still tell where the key was configured."""
+    from app.engine.redactor import redact
+
+    text = (
+        "GEMINI_API_KEY=" + _AQ + "\n"
+        "const ai = new GoogleGenAI({ apiKey: '" + _AQ_2 + "' });"
+    )
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _AQ not in redacted_text
+    assert _AQ_2 not in redacted_text
+    assert _AQ_BODY not in redacted_text
+    assert _AQ_BODY_2 not in redacted_text
+    assert "GEMINI_API_KEY=" in redacted_text
+    assert "apiKey:" in redacted_text
