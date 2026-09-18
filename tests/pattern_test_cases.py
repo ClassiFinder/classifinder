@@ -279,6 +279,21 @@ _AQ_CASES = _AQ_PREFIX_CASES + _AQ_BODY_CASES
 _AQ_CASES_2 = _AQ_PREFIX_CASES + "7k9_An5vQToQJjfL1-uc4CZMI0MDuXGgfrViemMZMC-P9elh"
 
 
+# ── 2026-09-18 ────────────────────────────────────────────────────────────
+# Bitwarden Secrets Manager access tokens: '0.' + UUID + '.' + 30 alnum + ':'
+# + 16-byte base64 key. Every part is SYNTHETIC (seed
+# 'classifinder-bitwarden-synthetic-<n>') and tokens are assembled from parts
+# so no contiguous token literal is committed.
+_BWS_UUID_CASES = "04cc77e4-62c1-4b2d-b932-c102bcde74c1"
+_BWS_SECRET_CASES = "1JXzgnOAM5lDzCMhQp4ADRLfYQpm14"
+_BWS_KEY_CASES = "Nr2mQblxnHuSkpm3KU6Rzw=="
+_BWS_CASES = "0" + "." + _BWS_UUID_CASES + "." + _BWS_SECRET_CASES + ":" + _BWS_KEY_CASES
+_BWS_CASES_2 = (
+    "0" + "." + "e9dbca51-e35a-4806-9727-e6904ec6730d" + "."
+    + "I28TcvAwbZZPhySDqMfrEJ7ZINUbMS" + ":" + "+0jugEIHjgl6PD3GO2dBjw=="
+)
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -6129,6 +6144,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "x" + _AQ_CASES,
             "v1." + _AQ_CASES,
             _AQ_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-09-18 ───────────────────────────────────────────────────────
+    # Bitwarden Secrets Manager access token — '0.' + UUID + '.' + 30 alnum +
+    # ':' + 24-char base64 key, 94 characters. Structure per the vendor's own
+    # sdk-internal access_token.rs parser.
+    # Source: https://bitwarden.com/help/access-tokens/
+    "bitwarden_secrets_manager_access_token": {
+        "positives": [
+            "BWS_ACCESS_TOKEN=" + _BWS_CASES,
+            'BWS_ACCESS_TOKEN="' + _BWS_CASES_2 + '"',
+            "access_token: " + _BWS_CASES,
+        ],
+        "negatives": [
+            # The key half must be a padded 16-byte base64 value.
+            _BWS_CASES[:-2],
+            # Version must be '0'.
+            "1" + _BWS_CASES[1:],
+            # Client secret is exactly 30 characters.
+            "0." + _BWS_UUID_CASES + "." + _BWS_SECRET_CASES[:-1] + ":" + _BWS_KEY_CASES,
+            # Must not be carved out of a longer run.
+            "1" + _BWS_CASES,
+            _BWS_CASES + "A",
         ],
         "min_confidence": 0.90,
     },
