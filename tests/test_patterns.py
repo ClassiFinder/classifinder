@@ -15831,3 +15831,101 @@ def test_bitwarden_sm_access_token_redaction_removes_both_halves():
     assert "+0jugEIHjgl6PD3GO2dBjw==" not in redacted_text
     assert "BWS_ACCESS_TOKEN=" in redacted_text
     assert "access_token: " in redacted_text
+
+
+# --- Helicone API key ---------------------------------------------------------
+# Helicone (LLM observability / AI gateway) API keys. The format is the vendor's
+# own: Helicone's worker defines HELICONE_API_KEY_REGEX as 'sk-helicone-',
+# 'pk-helicone-', 'sk-helicone-eu-' and 'pk-helicone-eu-' followed by four
+# dash-separated groups of 7 [a-z0-9], plus a generalized form with an optional
+# '-cp' segment and a rate-limited list with an '-rl' segment. The legacy bare
+# 'sk-' + 4x7 form has no anchor and is deliberately not matched.
+#
+# Every body below is SYNTHETIC (SHA-512 over the seed
+# 'classifinder-helicone-synthetic-<n>', mapped to [a-z0-9]) and the prefix is
+# split so no contiguous key literal is committed.
+# Source: https://github.com/Helicone/helicone/blob/main/worker/src/lib/util/apiKeyRegex.ts
+_HELI = "helicone"
+_HELI_B1 = "htdw94h-fs42zvx-b7qmtjk-x7reiqv"
+_HELI_B2 = "v0xlhmg-ixmo8e7-6pjwb1x-n7j8bfo"
+_HELI_B3 = "59k1ah1-4q46la8-gahr3pj-63e47r9"
+_HELI_SK = "sk" + "-" + _HELI + "-" + _HELI_B1
+_HELI_PK = "pk" + "-" + _HELI + "-" + _HELI_B2
+
+
+def _helicone(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "helicone_api_key"
+    ]
+
+
+def test_helicone_api_key_true_positives():
+    """Every vendor-listed prefix variant, in the carriers a key leaks through."""
+    for text in (
+        _HELI_SK,
+        _HELI_PK,
+        "HELICONE_API_KEY=" + _HELI_SK,
+        'HELICONE_API_KEY="' + _HELI_PK + '"',
+        "Helicone-Auth: Bearer " + _HELI_SK,
+        '{"helicone_api_key": "' + _HELI_SK + '"}',
+        "sk" + "-" + _HELI + "-eu-" + _HELI_B3,
+        "pk" + "-" + _HELI + "-eu-" + _HELI_B3,
+        "sk" + "-" + _HELI + "-rl-" + _HELI_B3,
+        "pk" + "-" + _HELI + "-eu-rl-" + _HELI_B3,
+        "sk" + "-" + _HELI + "-cp-" + _HELI_B3,
+    ):
+        matched = _helicone(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "helicone"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_helicone_api_key_span_covers_the_whole_key():
+    matched = _helicone("HELICONE_API_KEY=" + _HELI_SK)
+    assert len(matched) == 1
+    assert matched[0].span_start == len("HELICONE_API_KEY=")
+    assert matched[0].span_end == len("HELICONE_API_KEY=") + len(_HELI_SK)
+
+
+def test_helicone_api_key_true_negatives():
+    """Exactly four groups of exactly 7 lowercase alphanumerics, with the
+    helicone anchor; nothing shorter, longer, upper-cased or unanchored."""
+    for neg in (
+        _HELI_SK[:-1],
+        _HELI_SK + "q",
+        _HELI_SK + "-abc1234",
+        "sk" + "-" + _HELI + "-" + _HELI_B1.upper(),
+        "sk" + "-" + _HELI + "-" + "htdw94h-fs42zvx-b7qmtjk",
+        "sk" + "-" + _HELI + "-" + "htdw94h_fs42zvx_b7qmtjk_x7reiqv",
+        "sk" + "-" + _HELI + "-us-" + _HELI_B1,
+        "rk" + "-" + _HELI + "-" + _HELI_B1,
+        # The legacy bare 'sk-' form has no anchor.
+        "sk" + "-" + _HELI_B1,
+        "x" + _HELI_SK,
+        "my_" + _HELI_SK,
+    ):
+        assert _helicone(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_helicone_api_key_does_not_collide_with_other_sk_patterns():
+    """No other sk-prefixed vendor pattern (OpenAI, Langfuse, OpenRouter...)
+    may fire on a Helicone key; only the generic env fallback may co-occur."""
+    findings = scan("HELICONE_API_KEY=" + _HELI_SK, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "helicone_api_key" in types
+    assert types <= {"helicone_api_key", "generic_api_key_env"}, types
+
+
+def test_helicone_api_key_masked_placeholders_score_as_test_values():
+    for mask in (
+        "sk" + "-" + _HELI + "-" + "-".join(["x" * 7] * 4),
+        "pk" + "-" + _HELI + "-" + "-".join(["x" * 7] * 4),
+        "sk" + "-" + _HELI + "-" + "-".join(["0" * 7] * 4),
+    ):
+        matched = _helicone("HELICONE_API_KEY=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
