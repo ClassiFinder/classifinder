@@ -16126,3 +16126,168 @@ def test_plane_api_token_redaction_keeps_the_variable_name():
     assert _PLANE_BODY_2 not in redacted_text
     assert "PLANE_API_TOKEN=" in redacted_text
     assert "X-API-Key: " in redacted_text
+
+
+# --- Ory session token ---------------------------------------------------------
+# 'ory_st_' is the prefix of an Ory session token, issued by Ory Network and the
+# self-hosted Ory Kratos identity server for API / native-app logins and
+# presented as 'X-Session-Token: <token>' or 'Authorization: Bearer <token>'.
+# Whoever holds it is the logged-in user until the session ends.
+#
+# The format is the vendor's end to end: Ory's token-formats page gives the
+# 'ory_st_' prefix, and Ory Kratos (Apache-2.0) session/session.go mints the
+# token as OrySessionToken + randx.MustString(32, randx.AlphaNum), AlphaNum
+# being [a-zA-Z0-9]. 39 characters in total.
+#
+# Every literal below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-ory-synthetic-<n>', base62-encoded — and the prefix is split
+# so no contiguous token literal is committed to source.
+# Source: https://www.ory.com/docs/security-compliance/token-formats
+_ORY_ST_PREFIX = "ory" + "_st_"
+_ORY_ST_BODY = "qmeIbACBIWXBt3rUpmaKxd2cuh5BB5m3"
+_ORY_ST_BODY_2 = "y5NwfcFzjBLuFpSU7VCAP52ke30J4Mdv"
+_ORY_ST_BODY_3 = "oQuhGAIdKX3A6zFUqxrjSCNij7BB5JLD"
+_ORY_ST = _ORY_ST_PREFIX + _ORY_ST_BODY
+_ORY_ST_2 = _ORY_ST_PREFIX + _ORY_ST_BODY_2
+_ORY_ST_3 = _ORY_ST_PREFIX + _ORY_ST_BODY_3
+
+
+def _ory_st(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "ory_session_token"
+    ]
+
+
+def test_ory_session_token_true_positives():
+    """Detected in the carriers an Ory session token actually leaks through:
+    bare, an env line, an X-Session-Token header, a Bearer header, a curl
+    command, SDK calls and JSON."""
+    for text in (
+        _ORY_ST,
+        "ORY_SESSION_TOKEN=" + _ORY_ST,
+        'SESSION_TOKEN="' + _ORY_ST_2 + '"',
+        "X-Session-Token: " + _ORY_ST_3,
+        "Authorization: Bearer " + _ORY_ST,
+        "curl -H 'X-Session-Token: " + _ORY_ST_2 + "' https://example.projects.oryapis.com/sessions/whoami",
+        "await ory.toSession({ xSessionToken: '" + _ORY_ST_3 + "' })",
+        '{"session_token": "' + _ORY_ST + '", "session": {"active": true}}',
+    ):
+        matched = _ory_st(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "ory"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_ory_session_token_span_is_exactly_the_token():
+    """The span must be the whole 39-character token — prefix included, no
+    quote, no header name — so redaction removes all of it."""
+    for text, tok in (
+        ("ORY_SESSION_TOKEN=" + _ORY_ST, _ORY_ST),
+        ('"session_token": "' + _ORY_ST_2 + '"', _ORY_ST_2),
+        ("X-Session-Token: " + _ORY_ST_3 + "\r\n", _ORY_ST_3),
+    ):
+        matched = _ory_st(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+        assert len(tok) == 39
+
+
+def test_ory_session_token_true_negatives():
+    """The prefix is one exact lowercase literal and the body is exactly 32
+    alphanumerics; sibling Ory prefixes are separate formats."""
+    for neg in (
+        # Truncated body, and a body carrying a non-alnum character.
+        _ORY_ST_PREFIX + _ORY_ST_BODY[:-1],
+        _ORY_ST_PREFIX + _ORY_ST_BODY[:16],
+        _ORY_ST_PREFIX + _ORY_ST_BODY[:16] + "_" + _ORY_ST_BODY[17:],
+        _ORY_ST_PREFIX + _ORY_ST_BODY[:16] + "-" + _ORY_ST_BODY[17:],
+        # Only the exact lowercase 'ory_st_' prefix.
+        "ORY" + "_ST_" + _ORY_ST_BODY,
+        "ory" + "-st-" + _ORY_ST_BODY,
+        "ory" + "_st" + _ORY_ST_BODY,
+        # Sibling Ory token prefixes are not session tokens.
+        "ory" + "_lo_" + _ORY_ST_BODY,
+        "ory" + "_at_" + _ORY_ST_BODY,
+        "ory" + "_pat_" + _ORY_ST_BODY,
+        # The bare body with no prefix is not claimed by this pattern.
+        _ORY_ST_BODY,
+        # Elided docs placeholders do not match.
+        _ORY_ST_PREFIX + "...",
+        _ORY_ST_PREFIX + "your_session_token",
+        "X-Session-Token: " + _ORY_ST_PREFIX + "<token>",
+        # Prose naming the prefix is not a token.
+        "Ory session tokens start with ory" + "_st_ and are opaque.",
+    ):
+        assert _ory_st(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_ory_session_token_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a token is never cut out of the
+    middle of a longer identifier or base64url run (e.g. the 'ory_st_' tail of
+    'factory_st_...'), and a 33-character body matches nothing rather than
+    being truncated."""
+    for neg in (
+        "fact" + _ORY_ST,
+        "artifact" + _ORY_ST,
+        "9" + _ORY_ST,
+        "my_" + _ORY_ST,
+        "key-" + _ORY_ST,
+        _ORY_ST + "Q",
+        _ORY_ST + "7",
+        _ORY_ST + "_old",
+        _ORY_ST + "-x",
+    ):
+        assert _ory_st(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_ory_session_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for ch in ("x", "X", "0"):
+        mask = _ORY_ST_PREFIX + ch * 32
+        matched = _ory_st("X-Session-Token: " + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_ory_session_token_does_not_collide():
+    """A token — bare, behind an env var, in an X-Session-Token or Bearer
+    header, or in JSON — is reported once, as this pattern and nothing else
+    (the generic high-entropy and bearer fallbacks are deduplicated away)."""
+    for text in (
+        _ORY_ST,
+        "ORY_SESSION_TOKEN=" + _ORY_ST,
+        "api_key=" + _ORY_ST_2,
+        "X-Session-Token: " + _ORY_ST_3,
+        "Authorization: Bearer " + _ORY_ST_3,
+        '{"token": "' + _ORY_ST_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["ory_session_token"], text[:40]
+
+
+def test_ory_session_token_does_not_break_artifactory():
+    """The only other 'ory_' literal in the registry is inside
+    'artifactory_reference_token'; an Artifactory line produces no Ory
+    finding."""
+    text = "ARTIFACTORY_ACCESS_TOKEN=cmVmdGtuOjAxOjE3MDAwMDAwMDA6" + "Q" * 31
+    assert _ory_st(text) == []
+
+
+def test_ory_session_token_redaction_keeps_the_header_name():
+    """Redaction must remove both tokens while leaving the header / variable
+    names readable, so the reader can still tell where the token was used."""
+    from app.engine.redactor import redact
+
+    text = "ORY_SESSION_TOKEN=" + _ORY_ST + "\n" + "X-Session-Token: " + _ORY_ST_2
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _ORY_ST_BODY not in redacted_text
+    assert _ORY_ST_BODY_2 not in redacted_text
+    assert "ORY_SESSION_TOKEN=" in redacted_text
+    assert "X-Session-Token: " in redacted_text
