@@ -304,6 +304,16 @@ _HELI_BODY_CASES = "htdw94h-fs42zvx-b7qmtjk-x7reiqv"
 _HELI_CASES = _HELI_SK_CASES + _HELI_BODY_CASES
 _HELI_CASES_2 = "pk" + "-" + "helicone" + "-eu-" + "v0xlhmg-ixmo8e7-6pjwb1x-n7j8bfo"
 
+# ── 2026-09-26 ────────────────────────────────────────────────────────────
+# Plane workspace API tokens: 'plane_api_' + uuid4().hex (32 lowercase hex).
+# Every body is SYNTHETIC (SHA-512 over the seed
+# 'classifinder-plane-synthetic-<n>', truncated to 32 hex chars) and the prefix
+# is split so no contiguous token literal is committed.
+_PLANE_PREFIX_CASES = "pl" + "ane_" + "api_"
+_PLANE_BODY_CASES = "fc1f11490de60f5a91eb434767bff6c5"
+_PLANE_CASES = _PLANE_PREFIX_CASES + _PLANE_BODY_CASES
+_PLANE_CASES_2 = _PLANE_PREFIX_CASES + "e248ccdd022f2ec2b66e61d38b537e28"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -6203,6 +6213,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer run.
             "x" + _HELI_CASES,
             _HELI_CASES + "-abc1234",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-26 ───────────────────────────────────────────────────────
+    # Plane workspace API token — 'plane_api_' + uuid4().hex, 42 characters.
+    # Straight from the vendor's own APIToken model, whose generate_token()
+    # default returns 'plane_api_' + uuid4().hex.
+    # Source: https://github.com/makeplane/plane/blob/preview/apps/api/plane/db/models/api.py
+    "plane_api_token": {
+        "positives": [
+            "PLANE_API_TOKEN=" + _PLANE_CASES,
+            'PLANE_API_TOKEN="' + _PLANE_CASES_2 + '"',
+            "X-API-Key: " + _PLANE_CASES,
+        ],
+        "negatives": [
+            # The body is exactly 32 lowercase hex characters.
+            _PLANE_CASES[:-1],
+            _PLANE_CASES + "a",
+            _PLANE_PREFIX_CASES + _PLANE_BODY_CASES.upper(),
+            # The prefix is exact and lowercase.
+            "PL" + "ANE_" + "API_" + _PLANE_BODY_CASES,
+            "pl" + "ane-" + "api-" + _PLANE_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "x" + _PLANE_CASES,
+            _PLANE_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
