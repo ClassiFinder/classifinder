@@ -323,6 +323,15 @@ _ORY_ST_BODY_CASES = "qmeIbACBIWXBt3rUpmaKxd2cuh5BB5m3"
 _ORY_ST_CASES = _ORY_ST_PREFIX_CASES + _ORY_ST_BODY_CASES
 _ORY_ST_CASES_2 = _ORY_ST_PREFIX_CASES + "y5NwfcFzjBLuFpSU7VCAP52ke30J4Mdv"
 
+# ── 2026-09-28 ────────────────────────────────────────────────────────────
+# Polar OAuth2 client secrets: 'polar_cs_' + 43 base62. Every body is SYNTHETIC
+# (SHA-512 over the seed 'classifinder-polar-cs-synthetic-<n>', base62-encoded)
+# and the prefix is split so no contiguous secret literal is committed.
+_POLAR_CS_PREFIX_CASES = "polar" + "_cs_"
+_POLAR_CS_BODY_CASES = "jkCxfgcIIIftFo7ySTwiEgMttK8l9AbQXvlUgNTVmkp"
+_POLAR_CS_CASES = _POLAR_CS_PREFIX_CASES + _POLAR_CS_BODY_CASES
+_POLAR_CS_CASES_2 = _POLAR_CS_PREFIX_CASES + "eRmbnKELIK7LUk00zfrX7ezQnV21nKW26UspOaCBDAj"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -6274,6 +6283,33 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "fact" + _ORY_ST_CASES,
             _ORY_ST_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-28 ───────────────────────────────────────────────────────
+    # Polar OAuth2 client secret — 'polar_cs_' + 43 base62, 52 characters.
+    # Prefix from Polar's server oauth2/constants.py (CLIENT_SECRET_PREFIX);
+    # the body from the shared kit/crypto.py generate_token (37 random + a
+    # 6-character base62 CRC32 checksum), the same as polar_pat_ / polar_oat_.
+    # Source: https://github.com/polarsource/polar/blob/main/server/polar/oauth2/constants.py
+    "polar_oauth2_client_secret": {
+        "positives": [
+            "POLAR_CLIENT_SECRET=" + _POLAR_CS_CASES,
+            'client_secret: "' + _POLAR_CS_CASES_2 + '"',
+            "client_secret=" + _POLAR_CS_CASES + "&grant_type=authorization_code",
+        ],
+        "negatives": [
+            # The body is exactly 43 characters.
+            _POLAR_CS_CASES[:-1],
+            _POLAR_CS_CASES + "Q",
+            # The prefix is exact and case-sensitive; the public client ID is
+            # not a secret.
+            "POLAR" + "_CS_" + _POLAR_CS_BODY_CASES,
+            "polar" + "_ci_" + _POLAR_CS_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "my_" + _POLAR_CS_CASES,
+            "x" + _POLAR_CS_CASES,
         ],
         "min_confidence": 0.90,
     },

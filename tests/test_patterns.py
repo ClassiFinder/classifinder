@@ -16291,3 +16291,166 @@ def test_ory_session_token_redaction_keeps_the_header_name():
     assert _ORY_ST_BODY_2 not in redacted_text
     assert "ORY_SESSION_TOKEN=" in redacted_text
     assert "X-Session-Token: " in redacted_text
+
+
+# --- Polar OAuth2 client secret -------------------------------------------------
+# 'polar_cs_' is the prefix of the client secret of an OAuth2 application
+# registered with Polar (polar.sh). It is paired with a public 'polar_ci_'
+# client ID and presented at Polar's token endpoint.
+#
+# The format is the vendor's end to end: Polar's server oauth2/constants.py
+# defines CLIENT_SECRET_PREFIX = "polar_cs_", and authorization_server.py /
+# service/oauth2_client.py mint it via kit/crypto.py generate_token(prefix=...):
+# 37 random [A-Za-z0-9] + a 6-character base62 CRC32 checksum. 52 characters
+# in total — the same generator as polar_pat_ / polar_oat_.
+#
+# Every literal below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-polar-cs-synthetic-<n>', base62-encoded — and the prefix is
+# split so no contiguous secret literal is committed to source.
+# Source: https://github.com/polarsource/polar/blob/main/server/polar/oauth2/constants.py
+_POLAR_CS_PREFIX = "polar" + "_cs_"
+_POLAR_CS_BODY = "jkCxfgcIIIftFo7ySTwiEgMttK8l9AbQXvlUgNTVmkp"
+_POLAR_CS_BODY_2 = "eRmbnKELIK7LUk00zfrX7ezQnV21nKW26UspOaCBDAj"
+_POLAR_CS_BODY_3 = "8l4JGzJFHgIsKXguLvsilS2I8jTiwoySC4TvQghR3i1"
+_POLAR_CS = _POLAR_CS_PREFIX + _POLAR_CS_BODY
+_POLAR_CS_2 = _POLAR_CS_PREFIX + _POLAR_CS_BODY_2
+_POLAR_CS_3 = _POLAR_CS_PREFIX + _POLAR_CS_BODY_3
+
+
+def _polar_cs(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "polar_oauth2_client_secret"
+    ]
+
+
+def test_polar_oauth2_client_secret_true_positives():
+    """Detected in the carriers a Polar OAuth2 client secret actually leaks
+    through: bare, env lines, a token-endpoint form body, a curl command, SDK
+    config and JSON."""
+    for text in (
+        _POLAR_CS,
+        "POLAR_CLIENT_SECRET=" + _POLAR_CS,
+        'POLAR_OAUTH_CLIENT_SECRET="' + _POLAR_CS_2 + '"',
+        "grant_type=authorization_code&client_id=polar_ci_abc&client_secret=" + _POLAR_CS_3,
+        "curl -u polar_ci_abc:" + _POLAR_CS + " https://api.polar.sh/v1/oauth2/token",
+        "clientSecret: '" + _POLAR_CS_2 + "',",
+        '{"client_id": "polar_ci_abc", "client_secret": "' + _POLAR_CS_3 + '"}',
+    ):
+        matched = _polar_cs(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "polar"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_polar_oauth2_client_secret_span_is_exactly_the_secret():
+    """The span must be the whole 52-character secret — prefix included, no
+    quote, no variable name — so redaction removes all of it."""
+    for text, tok in (
+        ("POLAR_CLIENT_SECRET=" + _POLAR_CS, _POLAR_CS),
+        ('"client_secret": "' + _POLAR_CS_2 + '"', _POLAR_CS_2),
+        ("client_secret=" + _POLAR_CS_3 + "&scope=openid", _POLAR_CS_3),
+    ):
+        matched = _polar_cs(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+        assert len(tok) == 52
+
+
+def test_polar_oauth2_client_secret_true_negatives():
+    """The prefix is one exact lowercase literal and the body is exactly 43
+    base62 characters; the public client ID and sibling prefixes are not
+    matched."""
+    for neg in (
+        # Truncated body, and a body carrying a non-alnum character.
+        _POLAR_CS_PREFIX + _POLAR_CS_BODY[:-1],
+        _POLAR_CS_PREFIX + _POLAR_CS_BODY[:20],
+        _POLAR_CS_PREFIX + _POLAR_CS_BODY[:20] + "_" + _POLAR_CS_BODY[21:],
+        _POLAR_CS_PREFIX + _POLAR_CS_BODY[:20] + "-" + _POLAR_CS_BODY[21:],
+        # Only the exact lowercase 'polar_cs_' prefix.
+        "POLAR" + "_CS_" + _POLAR_CS_BODY,
+        "polar" + "-cs-" + _POLAR_CS_BODY,
+        "polar" + "_cs" + _POLAR_CS_BODY,
+        # The public client ID and other OAuth2 prefixes are not this secret.
+        "polar" + "_ci_" + _POLAR_CS_BODY,
+        "polar" + "_crt_" + _POLAR_CS_BODY,
+        # The bare body with no prefix is not claimed by this pattern.
+        _POLAR_CS_BODY,
+        # Elided docs placeholders do not match.
+        _POLAR_CS_PREFIX + "...",
+        _POLAR_CS_PREFIX + "your_client_secret",
+        "POLAR_CLIENT_SECRET=" + _POLAR_CS_PREFIX + "<secret>",
+        # Prose naming the prefix is not a secret.
+        "Polar client secrets start with polar" + "_cs_ and are 52 characters.",
+    ):
+        assert _polar_cs(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_polar_oauth2_client_secret_is_not_carved_out_of_a_longer_token():
+    """The leading guard refuses [0-9A-Za-z_] and the trailing guard refuses
+    [0-9A-Za-z], so a secret is never cut out of the middle of a longer
+    identifier and a 44-character body matches nothing rather than being
+    truncated."""
+    for neg in (
+        "x" + _POLAR_CS,
+        "9" + _POLAR_CS,
+        "my_" + _POLAR_CS,
+        _POLAR_CS + "Q",
+        _POLAR_CS + "7",
+    ):
+        assert _polar_cs(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_polar_oauth2_client_secret_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for ch in ("x", "X", "0"):
+        mask = _POLAR_CS_PREFIX + ch * 43
+        matched = _polar_cs("POLAR_CLIENT_SECRET=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_polar_oauth2_client_secret_does_not_collide():
+    """A secret — bare, behind an env var, in a form body or in JSON — is
+    reported once, as this pattern and nothing else (the generic env and
+    high-entropy fallbacks are deduplicated away)."""
+    for text in (
+        _POLAR_CS,
+        "POLAR_CLIENT_SECRET=" + _POLAR_CS,
+        "api_key=" + _POLAR_CS_2,
+        "client_secret=" + _POLAR_CS_3,
+        '{"secret": "' + _POLAR_CS_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["polar_oauth2_client_secret"], text[:40]
+
+
+def test_polar_oauth2_client_secret_does_not_cross_match_sibling_polar_tokens():
+    """polar_pat_ / polar_oat_ / polar_cs_ share one generator but are separately
+    revocable credentials; each is claimed by its own pattern only."""
+    for prefix, expected in (
+        ("polar" + "_pat_", "polar_personal_access_token"),
+        ("polar" + "_oat_", "polar_organization_access_token"),
+        ("polar" + "_cs_", "polar_oauth2_client_secret"),
+    ):
+        types = [f.type for f in scan(prefix + _POLAR_CS_BODY, min_confidence=0.01)]
+        assert types == [expected], prefix
+
+
+def test_polar_oauth2_client_secret_redaction_keeps_the_variable_name():
+    """Redaction must remove both secrets while leaving the variable names
+    readable, so the reader can still tell where the secret was used."""
+    from app.engine.redactor import redact
+
+    text = "POLAR_CLIENT_SECRET=" + _POLAR_CS + "\n" + "client_secret: " + _POLAR_CS_2
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _POLAR_CS_BODY not in redacted_text
+    assert _POLAR_CS_BODY_2 not in redacted_text
+    assert "POLAR_CLIENT_SECRET=" in redacted_text
+    assert "client_secret: " in redacted_text
