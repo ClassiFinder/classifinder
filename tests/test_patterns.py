@@ -14064,3 +14064,175 @@ def test_nylas_api_key_redaction_keeps_the_variable_name():
     assert _NYK_BODY_2 not in redacted_text
     assert "NYLAS_API_KEY=" in redacted_text
     assert "apiKey: " in redacted_text
+
+
+# --- Matrix Synapse access / refresh token ------------------------------------
+# 'syt_' is the prefix of an access token minted by Synapse, the reference Matrix
+# homeserver; 'syr_' is its refresh token. Both are
+#   <prefix><unpadded base64 of the user's localpart>_<20 letters>_<6 base62>
+# where the 20 letters come from a letters-only CSPRNG string and the last six
+# characters are a base62 CRC32 padded to width 6 (a CRC32 is always < 62**6).
+# The localpart segment is variable-width; the fixed 20 + 6 tail anchors it.
+#
+# Every random / check segment below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-matrix-synthetic-<n>' — the checks are deliberately not valid
+# CRCs, and the prefix is split so no contiguous token literal is committed.
+# Format per the vendor's own Synapse source (cited as format evidence only):
+# Source: https://github.com/element-hq/synapse/blob/develop/synapse/handlers/auth.py
+_SYT_PREFIX = "sy" + "t_"
+_SYR_PREFIX = "sy" + "r_"
+_SY_RAND = "xgGllUhqsEgYBTfEGQAy"
+_SY_RAND_2 = "ZdfPCMvgYpSGXSSRelRB"
+_SY_RAND_3 = "IAyklHybfFBbHeTOjUgU"
+_SY_RAND_4 = "LGTSWiRnfqvVQyMimRwC"
+_SYT = _SYT_PREFIX + "YWxpY2U_" + _SY_RAND + "_KiLdVo"            # @alice
+_SYT_2 = _SYT_PREFIX + "bWF0cml4LWJvdA_" + _SY_RAND_2 + "_03geHB"  # @matrix-bot
+_SYT_3 = _SYT_PREFIX + "dGVzdC51c2VyXzE_" + _SY_RAND_3 + "_cUhpjC"  # @test.user_1
+_SYT_SLASH = _SYT_PREFIX + "em/Dqw_" + _SY_RAND_4 + "_B1o01a"      # non-ASCII localpart
+_SYT_PLUS = _SYT_PREFIX + "YcK+_" + _SY_RAND_2 + "_mgdSpi"         # non-ASCII localpart
+_SYR = _SYR_PREFIX + "Ym9i_" + _SY_RAND_3 + "_ybmFfS"              # @bob refresh token
+
+
+def _matrix(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "matrix_synapse_access_token"
+    ]
+
+
+def test_matrix_synapse_access_token_true_positives():
+    """Detected in the carriers a Synapse token actually leaks through: bare,
+    env lines, a Bearer header, an access_token query string, bot configs (YAML
+    / JSON), SDK constructors and a login-response body — for both 'syt_'
+    access tokens and 'syr_' refresh tokens, and for localparts whose standard
+    base64 carries '/' or '+'."""
+    for text in (
+        _SYT,
+        "MATRIX_ACCESS_TOKEN=" + _SYT,
+        'export MATRIX_TOKEN="' + _SYT_2 + '"',
+        "Authorization: Bearer " + _SYT_3,
+        "https://matrix.example.org/_matrix/client/v3/sync?access_token=" + _SYT,
+        "matrix:\n  homeserver: https://matrix.example.org\n  access_token: " + _SYT_2,
+        '{"user_id": "@alice:example.org", "access_token": "' + _SYT + '"}',
+        "client = AsyncClient(homeserver, user_id); client.access_token = '" + _SYT_3 + "'",
+        "const client = sdk.createClient({ baseUrl, accessToken: '" + _SYT_SLASH + "' });",
+        "MATRIX_ACCESS_TOKEN=" + _SYT_PLUS,
+        '{"refresh_token": "' + _SYR + '", "expires_in_ms": 300000}',
+    ):
+        matched = _matrix(text)
+        assert len(matched) == 1, "not detected: " + text[:80]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "matrix"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_matrix_synapse_access_token_span_is_exactly_the_token():
+    """The span must be the whole token — prefix, localpart, random part and
+    check — with no quote, variable name or trailing query parameter."""
+    for text, tok in (
+        ("MATRIX_ACCESS_TOKEN=" + _SYT, _SYT),
+        ('accessToken: "' + _SYT_SLASH + '"', _SYT_SLASH),
+        ("?access_token=" + _SYT_2 + "&since=s72594_4483_1934", _SYT_2),
+        ('"refresh_token":"' + _SYR + '"', _SYR),
+        ("MATRIX_TOKEN=" + _SYT_3 + "\r\n", _SYT_3),
+    ):
+        matched = _matrix(text)
+        assert len(matched) == 1, text[:60]
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_matrix_synapse_access_token_true_negatives():
+    """The prefix is an exact lowercase literal, the random part exactly 20
+    letters (no digits) and the check exactly 6 base62 characters; the
+    localpart segment cannot be empty."""
+    for neg in (
+        # Wrong random-part width, or a digit inside it.
+        _SYT_PREFIX + "YWxpY2U_" + _SY_RAND[:-1] + "_KiLdVo",
+        _SYT_PREFIX + "YWxpY2U_" + _SY_RAND + "Q_KiLdVo",
+        _SYT_PREFIX + "YWxpY2U_" + _SY_RAND[:-1] + "7_KiLdVo",
+        # Wrong check width.
+        _SYT_PREFIX + "YWxpY2U_" + _SY_RAND + "_KiLdV",
+        _SYT_PREFIX + "YWxpY2U_" + _SY_RAND + "_KiLdVoQ",
+        # Missing or empty localpart segment.
+        _SYT_PREFIX + _SY_RAND + "_KiLdVo",
+        _SYT_PREFIX + "_" + _SY_RAND + "_KiLdVo",
+        # Only the exact lowercase prefixes; login tokens etc. are not claimed.
+        "SY" + "T_" + "YWxpY2U_" + _SY_RAND + "_KiLdVo",
+        "sy" + "l_" + "YWxpY2U_" + _SY_RAND + "_KiLdVo",
+        "sy" + "t-" + "YWxpY2U_" + _SY_RAND + "_KiLdVo",
+        # Elided docs placeholders do not match.
+        _SYT_PREFIX + "...",
+        "MATRIX_ACCESS_TOKEN=" + _SYT_PREFIX + "YWxpY2U_...",
+        "access_token: " + _SYT_PREFIX + "<base64 localpart>_<random>_<crc>",
+        # A CI reference to a stored secret is not a token.
+        "MATRIX_ACCESS_TOKEN: ${{ secrets.MATRIX_ACCESS_TOKEN }}",
+        # Prose naming the prefix is not a token.
+        "Synapse access tokens start with sy" + "t_ and refresh tokens with sy" + "r_.",
+        # Identifiers that merely start with 'syt_' / 'syr_'.
+        "sy" + "t_config_loader_enabled_flag",
+        "sy" + "r_record_count_total_value",
+    ):
+        assert _matrix(neg) == [], "wrongly matched: " + neg[:80]
+
+
+def test_matrix_synapse_access_token_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a token is never cut out of the
+    middle of a longer identifier, and an over-long check segment matches
+    nothing rather than being truncated."""
+    for neg in (
+        "ea" + _SYT,
+        "9" + _SYT,
+        "my_" + _SYT,
+        "key-" + _SYT,
+        _SYT + "Q",
+        _SYT + "7",
+        _SYT + "_old",
+        _SYT + "-x",
+    ):
+        assert _matrix(neg) == [], "wrongly matched: " + neg[:80]
+
+
+def test_matrix_synapse_access_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks for
+    the localparts docs and tutorials use are registered as known_test_values
+    and must land at ~0.15."""
+    for prefix in (_SYT_PREFIX, _SYR_PREFIX):
+        for b64 in ("YWxpY2U", "Ym9i", "YWRtaW4"):  # alice / bob / admin
+            for ch in ("x", "X"):
+                mask = prefix + b64 + "_" + ch * 20 + "_" + ch * 6
+                matched = _matrix("MATRIX_ACCESS_TOKEN=" + mask)
+                assert len(matched) == 1, "not detected: " + mask
+                assert matched[0].is_likely_test_value is True
+                assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_matrix_synapse_access_token_does_not_collide():
+    """A token — bare, behind an env var or api_key=, in a Bearer header, or in
+    JSON — is reported once, as this pattern and nothing else (the generic env
+    / high-entropy fallbacks are deduplicated away)."""
+    for text in (
+        _SYT,
+        "MATRIX_ACCESS_TOKEN=" + _SYT,
+        "api_key=" + _SYT_2,
+        "Authorization: Bearer " + _SYT_3,
+        '{"token": "' + _SYR + '"}',
+        "SECRET_TOKEN=" + _SYT_SLASH,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["matrix_synapse_access_token"], text[:50]
+
+
+def test_matrix_synapse_access_token_redaction_keeps_the_variable_name():
+    """Redaction must remove both tokens while leaving the variable names
+    readable, so the reader can still tell where the token was configured."""
+    from app.engine.redactor import redact
+
+    text = "MATRIX_ACCESS_TOKEN=" + _SYT + "\n" + '{"refresh_token": "' + _SYR + '"}'
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _SY_RAND not in redacted_text
+    assert _SY_RAND_3 not in redacted_text
+    assert "MATRIX_ACCESS_TOKEN=" in redacted_text
+    assert '"refresh_token": ' in redacted_text

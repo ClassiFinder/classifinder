@@ -188,6 +188,18 @@ _NYK_CASES = _NYK_PREFIX_CASES + _NYK_BODY_CASES
 _NYK_CASES_2 = _NYK_PREFIX_CASES + "WfmkPx96dMlX37ST6iEAbsjuyL49exabndiXq7wViWh9uiCAauUXtAJqqYsGQb9f"
 
 
+# ── 2026-09-30 ────────────────────────────────────────────────────────────
+# Matrix Synapse access / refresh tokens: 'syt_' / 'syr_' + unpadded base64
+# localpart + '_' + 20 letters + '_' + 6 base62. Every random/check segment is
+# SYNTHETIC (SHA-512 over the seed 'classifinder-matrix-synthetic-<n>') and
+# the prefix is split so no contiguous token literal is committed.
+_SYT_PREFIX_CASES = "sy" + "t_"
+_SYR_PREFIX_CASES = "sy" + "r_"
+_SYT_TAIL_CASES = "_xgGllUhqsEgYBTfEGQAy_KiLdVo"
+_SYT_CASES = _SYT_PREFIX_CASES + "YWxpY2U" + _SYT_TAIL_CASES
+_SYR_CASES = _SYR_PREFIX_CASES + "bWF0cml4LWJvdA" + "_ZdfPCMvgYpSGXSSRelRB_03geHB"
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -5743,6 +5755,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "s" + _NYK_CASES,
             _NYK_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-09-30 ───────────────────────────────────────────────────────
+    # Matrix Synapse access token ('syt_') and refresh token ('syr_'):
+    # <prefix><unpadded base64 localpart>_<20 letters>_<6 base62 CRC>.
+    # Format per the vendor's own Synapse homeserver, generate_access_token /
+    # generate_refresh_token.
+    # Source: https://github.com/element-hq/synapse/blob/develop/synapse/handlers/auth.py
+    "matrix_synapse_access_token": {
+        "positives": [
+            "MATRIX_ACCESS_TOKEN=" + _SYT_CASES,
+            "Authorization: Bearer " + _SYT_CASES,
+            '{"refresh_token": "' + _SYR_CASES + '"}',
+        ],
+        "negatives": [
+            # The random part is exactly 20 letters and the check exactly 6.
+            _SYT_CASES[:-1],
+            _SYT_CASES + "Q",
+            _SYT_PREFIX_CASES + "YWxpY2U_xgGllUhqsEgYBTfEGQA1_KiLdVo",
+            # Only the exact lowercase 'syt_' / 'syr_' prefixes.
+            "SY" + "T_" + "YWxpY2U" + _SYT_TAIL_CASES,
+            "sy" + "l_" + "YWxpY2U" + _SYT_TAIL_CASES,
+            # Must not be carved out of a longer identifier.
+            "ea" + _SYT_CASES,
+            _SYT_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
