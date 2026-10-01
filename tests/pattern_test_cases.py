@@ -346,6 +346,15 @@ _PHA_CASES = _PHA_PREFIX_CASES + _PHOA_BODY_CASES
 _PHR_CASES = _PHR_PREFIX_CASES + _PHOA_BODY_CASES_2
 
 
+# ── 2026-10-01 ────────────────────────────────────────────────────────────
+# Polar OAuth2 access / refresh tokens: 'polar_at_u_' / 'polar_at_o_' /
+# 'polar_rt_u_' / 'polar_rt_o_' + exactly 43 base62. Bodies are SYNTHETIC
+# (SHA-512 over 'classifinder-polar-oauth2-synthetic-<n>', checks not valid
+# CRCs) and the prefix is split so no contiguous token literal is committed.
+_POLAR_AT_U_CASES = "polar_" + "at_u_" + "uME09qTk6QNcBmGZ6EJaa03o2BA17FGipMj2HV7rmlG"
+_POLAR_RT_O_CASES = "polar_" + "rt_o_" + "M7ZZXnKB5l9KuOG0Lrjg5AgRNXddk5xeovpogkS2na9"
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -6369,6 +6378,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _PHR_CASES + "-x",
             # The access token is a separate pattern.
             _PHA_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-10-01 ───────────────────────────────────────────────────────
+    # Polar OAuth2 access token ('polar_at_u_' / 'polar_at_o_') and refresh
+    # token ('polar_rt_u_' / 'polar_rt_o_') + 43 base62 (37 random + 6 CRC).
+    # Format per the vendor's own server, server/polar/oauth2/constants.py.
+    # Source: https://github.com/polarsource/polar/blob/main/server/polar/oauth2/constants.py
+    "polar_oauth2_access_token": {
+        "positives": [
+            "POLAR_ACCESS_TOKEN=" + _POLAR_AT_U_CASES,
+            "Authorization: Bearer " + _POLAR_AT_U_CASES,
+            '{"refresh_token": "' + _POLAR_RT_O_CASES + '"}',
+        ],
+        "negatives": [
+            # The body is exactly 43 base62 characters.
+            _POLAR_AT_U_CASES[:-1],
+            _POLAR_AT_U_CASES + "Q",
+            _POLAR_AT_U_CASES[:30] + "-" + _POLAR_AT_U_CASES[31:],
+            # Only the four exact subject-type prefixes.
+            "polar_" + "at_x_" + _POLAR_AT_U_CASES[11:],
+            "POLAR_" + "AT_U_" + _POLAR_AT_U_CASES[11:],
+            # Must not be carved out of a longer identifier.
+            "my" + _POLAR_AT_U_CASES,
         ],
         "min_confidence": 0.90,
     },
