@@ -200,6 +200,18 @@ _SYT_CASES = _SYT_PREFIX_CASES + "YWxpY2U" + _SYT_TAIL_CASES
 _SYR_CASES = _SYR_PREFIX_CASES + "bWF0cml4LWJvdA" + "_ZdfPCMvgYpSGXSSRelRB_03geHB"
 
 
+# ── 2026-10-02 ────────────────────────────────────────────────────────────
+# Deno Deploy access tokens: 'ddo_' (organization) / 'ddp_' (personal) + 36
+# alphanumerics. Bodies are SYNTHETIC (SHA-512 over the seed
+# 'classifinder-deno-synthetic-<n>', base62) and the prefix is split so no
+# contiguous token literal is committed.
+_DDO_PREFIX_CASES = "dd" + "o_"
+_DDP_PREFIX_CASES = "dd" + "p_"
+_DD_BODY_CASES = "mwhGAaqdRK2EWoMbIjAQxDxcvPtJKlLQfoGh"
+_DDO_CASES = _DDO_PREFIX_CASES + _DD_BODY_CASES
+_DDP_CASES = _DDP_PREFIX_CASES + "6dxnq7F68k2QO0hIPXaohoXWOAKFs0kEMYQw"
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -5781,6 +5793,31 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "ea" + _SYT_CASES,
             _SYT_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-10-02 ───────────────────────────────────────────────────────
+    # Deno Deploy access token: 'ddo_' organization token / 'ddp_' personal
+    # access token + exactly 36 [A-Za-z0-9] (40 characters in total).
+    # Format per the vendor's own Subhosting API authentication docs.
+    # Source: https://docs.deno.com/subhosting/api/authentication/
+    "deno_deploy_access_token": {
+        "positives": [
+            "DENO_DEPLOY_TOKEN=" + _DDO_CASES,
+            "Authorization: Bearer " + _DDO_CASES,
+            'const accessToken = "' + _DDP_CASES + '";',
+        ],
+        "negatives": [
+            # The body is exactly 36 alphanumerics.
+            _DDO_CASES[:-1],
+            _DDO_CASES + "Q",
+            _DDO_PREFIX_CASES + _DD_BODY_CASES[:20] + "-" + _DD_BODY_CASES[21:],
+            # Only the exact lowercase 'ddo_' / 'ddp_' prefixes.
+            "DD" + "O_" + _DD_BODY_CASES,
+            "dd" + "x_" + _DD_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "a" + _DDO_CASES,
+            _DDO_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
