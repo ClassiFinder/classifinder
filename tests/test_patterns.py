@@ -14236,3 +14236,159 @@ def test_matrix_synapse_access_token_redaction_keeps_the_variable_name():
     assert _SY_RAND_3 not in redacted_text
     assert "MATRIX_ACCESS_TOKEN=" in redacted_text
     assert '"refresh_token": ' in redacted_text
+
+
+# --- Deno Deploy access token -------------------------------------------------
+# 'ddo_' is the prefix of a Deno Deploy organization access token (the bearer
+# credential for the Deno Deploy / Subhosting REST API); 'ddp_' is the personal
+# access token deployctl reads from DENO_DEPLOY_TOKEN. Both are the prefix +
+# exactly 36 [A-Za-z0-9], 40 characters in total.
+#
+# Every body below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-deno-synthetic-<n>', base62 — and the prefix is split so no
+# contiguous token literal is committed.
+# Format per the vendor's own Subhosting API authentication docs:
+# Source: https://docs.deno.com/subhosting/api/authentication/
+_DDO_PREFIX = "dd" + "o_"
+_DDP_PREFIX = "dd" + "p_"
+_DD_BODY = "mwhGAaqdRK2EWoMbIjAQxDxcvPtJKlLQfoGh"
+_DD_BODY_2 = "6dxnq7F68k2QO0hIPXaohoXWOAKFs0kEMYQw"
+_DD_BODY_3 = "fbnGbNVZgbuOslb7aUaaGcU32wMbs4StuZyg"
+_DD_BODY_4 = "7RpUCWUxMq7Id3LVZempDwRWFQADzE2YUouy"
+_DDO = _DDO_PREFIX + _DD_BODY
+_DDO_2 = _DDO_PREFIX + _DD_BODY_2
+_DDP = _DDP_PREFIX + _DD_BODY_3
+_DDP_2 = _DDP_PREFIX + _DD_BODY_4
+
+
+def _deno(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "deno_deploy_access_token"
+    ]
+
+
+def test_deno_deploy_access_token_true_positives():
+    """Detected in the carriers a Deno Deploy token leaks through: bare, env
+    lines, a Bearer header, GitHub Actions / deployctl invocations, SDK
+    constructors and JSON — for both 'ddo_' organization tokens and 'ddp_'
+    personal access tokens."""
+    for text in (
+        _DDO,
+        "DENO_DEPLOY_TOKEN=" + _DDO,
+        'export DEPLOY_ACCESS_TOKEN="' + _DDO_2 + '"',
+        "Authorization: Bearer " + _DDO,
+        'curl -H "Authorization: Bearer ' + _DDO_2 + '" https://api.deno.com/v2/apps',
+        "deployctl deploy --project=my-app --token=" + _DDP + " main.ts",
+        'const accessToken = Deno.env.get("DEPLOY_TOKEN") ?? "' + _DDO + '";',
+        "env:\n  DENO_DEPLOY_TOKEN: " + _DDP_2,
+        '{"token": "' + _DDP + '", "org": "acme"}',
+    ):
+        matched = _deno(text)
+        assert len(matched) == 1, "not detected: " + text[:80]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "deno"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_deno_deploy_access_token_span_is_exactly_the_token():
+    """The span must be the whole 40-character token, with no quote, variable
+    name or trailing argument."""
+    for text, tok in (
+        ("DENO_DEPLOY_TOKEN=" + _DDO, _DDO),
+        ('"Bearer ' + _DDO_2 + '"', _DDO_2),
+        ("--token=" + _DDP + " main.ts", _DDP),
+        ("DEPLOY_TOKEN=" + _DDP_2 + "\r\n", _DDP_2),
+    ):
+        matched = _deno(text)
+        assert len(matched) == 1, text[:60]
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+        assert len(tok) == 40
+
+
+def test_deno_deploy_access_token_true_negatives():
+    """The prefix is an exact lowercase 'ddo_' / 'ddp_' literal and the body
+    exactly 36 alphanumerics."""
+    for neg in (
+        # Wrong body width, or a non-alphanumeric inside it.
+        _DDO_PREFIX + _DD_BODY[:-1],
+        _DDO_PREFIX + _DD_BODY[:20] + "-" + _DD_BODY[21:],
+        _DDO_PREFIX + _DD_BODY[:20] + "_" + _DD_BODY[21:],
+        _DDO_PREFIX + _DD_BODY[:20] + "+" + _DD_BODY[21:],
+        # Only the exact lowercase prefixes.
+        "DD" + "O_" + _DD_BODY,
+        "dd" + "x_" + _DD_BODY,
+        "dd" + "o-" + _DD_BODY,
+        "d" + "o_" + _DD_BODY,
+        # Elided docs placeholders do not match.
+        _DDO_PREFIX + "...",
+        "DENO_DEPLOY_TOKEN=" + _DDP_PREFIX + "<your-token>",
+        # A CI reference to a stored secret is not a token.
+        "DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}",
+        # Prose naming the prefixes is not a token.
+        "Organization tokens start with dd" + "o_ and personal tokens with dd" + "p_.",
+        # Identifiers that merely start with 'ddo_' / 'ddp_'.
+        "dd" + "o_config_loader_enabled_flag_values",
+    ):
+        assert _deno(neg) == [], "wrongly matched: " + neg[:80]
+
+
+def test_deno_deploy_access_token_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a token is never cut out of the
+    middle of a longer identifier, and an over-long body matches nothing
+    rather than being truncated."""
+    for neg in (
+        "a" + _DDO,
+        "9" + _DDO,
+        "my_" + _DDO,
+        "key-" + _DDO,
+        _DDO + "Q",
+        _DDO + "7",
+        _DDO + "_old",
+        _DDO + "-x",
+    ):
+        assert _deno(neg) == [], "wrongly matched: " + neg[:80]
+
+
+def test_deno_deploy_access_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for prefix in (_DDO_PREFIX, _DDP_PREFIX):
+        for ch in ("x", "X", "0"):
+            mask = prefix + ch * 36
+            matched = _deno("DENO_DEPLOY_TOKEN=" + mask)
+            assert len(matched) == 1, "not detected: " + mask
+            assert matched[0].is_likely_test_value is True
+            assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_deno_deploy_access_token_does_not_collide():
+    """A token — bare, behind an env var or api_key=, in a Bearer header, or in
+    JSON — is reported once, as this pattern and nothing else (the generic env
+    / high-entropy fallbacks are deduplicated away)."""
+    for text in (
+        _DDO,
+        "DENO_DEPLOY_TOKEN=" + _DDO,
+        "api_key=" + _DDO_2,
+        "Authorization: Bearer " + _DDP,
+        '{"token": "' + _DDP_2 + '"}',
+        "SECRET_TOKEN=" + _DDO,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["deno_deploy_access_token"], text[:50]
+
+
+def test_deno_deploy_access_token_redaction_keeps_the_variable_name():
+    """Redaction must remove the token while leaving the variable name
+    readable, so the reader can still tell where the token was configured."""
+    from app.engine.redactor import redact
+
+    text = "DENO_DEPLOY_TOKEN=" + _DDO + "\n" + '{"token": "' + _DDP + '"}'
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _DD_BODY not in redacted_text
+    assert _DD_BODY_3 not in redacted_text
+    assert "DENO_DEPLOY_TOKEN=" in redacted_text
+    assert '"token": ' in redacted_text
