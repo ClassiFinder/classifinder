@@ -14392,3 +14392,718 @@ def test_deno_deploy_access_token_redaction_keeps_the_variable_name():
     assert _DD_BODY_3 not in redacted_text
     assert "DENO_DEPLOY_TOKEN=" in redacted_text
     assert '"token": ' in redacted_text
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2026-09-14 — weekly batch: Bitbucket access token, Azure IoT Hub SAS token,
+# Azure SignalR connection string, Builder.io private key, Code Climate test
+# reporter ID, Django 'django-insecure-' SECRET_KEY, LaunchDarkly SDK key,
+# Power Automate webhook SAS URL, Notion 'ntn_' token.
+#
+# Every body below is an obviously synthetic alphabet / sequential run, and
+# every vendor prefix or host is split by concatenation, so no contiguous
+# token literal of a GitHub-partner shape is committed. TruffleHog was not
+# consulted for any of these patterns.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_B14_ALPHA36 = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+
+def _b14_only(text, pattern_id):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == pattern_id]
+
+
+def _b14_types(text):
+    return [f.type for f in scan(text, min_confidence=0.01)]
+
+
+# --- Bitbucket access token ('ATCTT3xFfGN0') -----------------------------------
+# Independently authored — structural analysis consistent with Atlassian's ATATT token envelope
+_ATCTT_HEAD = "ATCTT3" + "xFfGN0"
+_ATCTT_BODY = ((_B14_ALPHA36 + "_-") * 5)[:171] + "=" + "0A1B2C3D"
+_ATCTT = _ATCTT_HEAD + _ATCTT_BODY
+_ATCTT_2 = _ATCTT_HEAD + (("ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210-_") * 5)[:171] + "=" + "9F8E7D6C"
+
+
+def test_bitbucket_access_token_true_positives():
+    """Detected bare and in the carriers a Bitbucket access token leaks
+    through: env lines, an x-token-auth git remote, CI YAML and JSON."""
+    assert len(_ATCTT) == 192 and len(_ATCTT_2) == 192
+    for text in (
+        _ATCTT,
+        "BITBUCKET_ACCESS_TOKEN=" + _ATCTT,
+        "export BITBUCKET_TOKEN=" + _ATCTT_2,
+        "git clone https://x-token-auth:" + _ATCTT + "@bitbucket.org/acme/app.git",
+        "variables:\n  BB_TOKEN: '" + _ATCTT_2 + "'",
+        '{"access_token": "' + _ATCTT + '"}',
+        "Authorization: Bearer " + _ATCTT_2,
+    ):
+        matched = _b14_only(text, "bitbucket_access_token")
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "bitbucket"
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start:matched[0].span_end] in (_ATCTT, _ATCTT_2)
+
+
+def test_bitbucket_access_token_true_negatives():
+    """Exact 12-character head, exact 180-character body, guarded both sides."""
+    for neg in (
+        _ATCTT[:-1],
+        _ATCTT + "A",
+        _ATCTT + "=",
+        "ATCTT3" + "xFfGN1" + _ATCTT_BODY,
+        "ATCTT2" + "xFfGN0" + _ATCTT_BODY,
+        "atctt3" + "xffgn0" + _ATCTT_BODY,
+        "x" + _ATCTT,
+        "my_" + _ATCTT,
+        _ATCTT_HEAD + _ATCTT_BODY[:100],
+        "Bitbucket access tokens start with ATCTT" + "3xFfGN0.",
+    ):
+        assert _b14_only(neg, "bitbucket_access_token") == [], "wrongly matched: " + neg[:60]
+
+
+def test_bitbucket_access_token_masks_score_as_test_values():
+    for fill in ("X", "x", "0"):
+        mask = _ATCTT_HEAD + fill * 180
+        matched = _b14_only("BITBUCKET_ACCESS_TOKEN=" + mask, "bitbucket_access_token")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_bitbucket_access_token_does_not_collide():
+    """The ATATT3 account API token stays atlassian_api_token, and an ATCTT
+    token behind a Bitbucket keyword is reported once — not also as the
+    context-gated bitbucket_app_password or a generic catch-all."""
+    atatt = "ATATT3" + "xFfGF0" + _ATCTT_BODY
+    assert _b14_types("ATLASSIAN_API_TOKEN=" + atatt) == ["atlassian_api_token"]
+    for text in (
+        _ATCTT,
+        "BITBUCKET_TOKEN=" + _ATCTT,
+        "BITBUCKET_APP_PASSWORD=" + _ATCTT,
+        "bitbucket password: " + _ATCTT_2,
+        "api_key=" + _ATCTT,
+    ):
+        assert _b14_types(text) == ["bitbucket_access_token"], text[:40]
+
+
+# --- Azure IoT Hub SAS token ----------------------------------------------------
+# Format per https://learn.microsoft.com/azure/iot-hub/authenticate-authorize-sas
+_IOT_HOST = "myhub.azure-" + "devices.net"
+_IOT_SIG = _B14_ALPHA36 + "%2B" + "%2F" + "AbCdE" + "%3D"
+_IOT_SIG_RAW = _B14_ALPHA36 + "+/AbCdE="
+_IOT_SAS = (
+    "SharedAccessSignature sr=" + _IOT_HOST + "%2Fdevices%2Fdevice1&sig="
+    + _IOT_SIG + "&se=1767225600"
+)
+_IOT_SAS_HUB = (
+    "SharedAccessSignature sr=" + _IOT_HOST + "&sig=" + _IOT_SIG
+    + "&se=1767225600&skn=iothubowner"
+)
+
+
+def test_azure_iot_hub_sas_token_true_positives():
+    """Hub-level (with skn) and device-scoped (without skn) tokens, encoded and
+    raw signatures, bare and inside the carriers the token travels in."""
+    for text, sig in (
+        (_IOT_SAS, _IOT_SIG),
+        (_IOT_SAS_HUB, _IOT_SIG),
+        ("SharedAccessSignature sr=" + _IOT_HOST + "/devices/device1&sig=" + _IOT_SIG_RAW
+         + "&se=1767225600", _IOT_SIG_RAW),
+        ("SharedAccessSignature sr=" + _IOT_HOST + "&sig=" + _IOT_SIG[:-3]
+         + "&se=1767225600&skn=service", _IOT_SIG[:-3]),
+        ("Authorization: " + _IOT_SAS, _IOT_SIG),
+        ('IOTHUB_SAS_TOKEN="' + _IOT_SAS_HUB + '"', _IOT_SIG),
+        ("HostName=" + _IOT_HOST + ";DeviceId=device1;SharedAccessSignature=" + _IOT_SAS, _IOT_SIG),
+        ('mqtt_client.username_pw_set("' + _IOT_HOST + '/device1", "' + _IOT_SAS + '")', _IOT_SIG),
+    ):
+        matched = _b14_only(text, "azure_iot_hub_sas_token")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].confidence >= 0.90
+        # The span is the signature alone; the hub and device stay readable.
+        assert text[matched[0].span_start:matched[0].span_end] == sig
+
+
+def test_azure_iot_hub_sas_token_true_negatives():
+    for neg in (
+        # Service Bus / Event Hubs use the same scheme on another host.
+        _IOT_SAS.replace(_IOT_HOST, "contoso.servicebus.windows.net"),
+        # Signature one unit short, token without '&se=', no scheme literal.
+        _IOT_SAS.replace(_IOT_SIG, _IOT_SIG[1:]),
+        _IOT_SAS.split("&se=")[0],
+        _IOT_SAS.replace("SharedAccessSignature ", ""),
+        # The docs' elided example signature is far too short.
+        "SharedAccessSignature sr=iothubname.azure-" + "devices.net%2fdevices%2fDeviceId"
+        "&sig=kPszxZZZZZZZZZZZZZZZZZAhLT%2bV7o%3d&se=1487709501",
+        # A connection string carrying the KEY is azure_iot_key's job.
+        "HostName=" + _IOT_HOST + ";SharedAccessKeyName=iothubowner;SharedAccessKey="
+        + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456" + "AIoT" + "AbCdEf=",
+    ):
+        assert _b14_only(neg, "azure_iot_hub_sas_token") == [], "wrongly matched: " + neg[:70]
+
+
+def test_azure_iot_hub_sas_token_vendor_examples_score_as_test_values():
+    """The two complete tokens Microsoft Learn prints in its IoT Hub SAS
+    article are registered as known_test_values and land at ~0.15."""
+    for text in (
+        "SharedAccessSignature sr=myhub.azure-" + "devices.net&sig=JdyscqTpXdEJs49elIUC"
+        + "cohw2DlFDR3zfH5KqGJo4r4%3D&se=1456973447&skn=registryRead",
+        "SharedAccessSignature sr=myhub.azure-" + "devices.net%2fdevices%2fdevice1&sig="
+        + "13y8ejUk2z7PLmvtwR5R" + "qlGBOVwiq7rQR3WZ5xZX3N4%3D&se=1456971697",
+        "SharedAccessSignature sr=" + _IOT_HOST + "&sig=" + "A" * 43 + "%3D&se=1767225600",
+    ):
+        matched = _b14_only(text, "azure_iot_hub_sas_token")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_azure_iot_hub_sas_token_does_not_collide():
+    """A token is reported once, as this pattern — never as the storage SAS
+    (it has no 'sv=' date) — and a device connection string carrying an
+    'AIoT' key is still azure_iot_key, not this pattern."""
+    for text in (_IOT_SAS, _IOT_SAS_HUB, "Authorization: " + _IOT_SAS):
+        assert _b14_types(text) == ["azure_iot_hub_sas_token"], text[:50]
+    aiot = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456" + "AIoT" + "AbCdEf="
+    conn = "HostName=" + _IOT_HOST + ";DeviceId=device1;SharedAccessKey=" + aiot
+    assert _b14_types(conn) == ["azure_iot_key"]
+    storage = (
+        "https://acct.blob.core.windows.net/c/b.txt?sv=2023-11-03&ss=b&srt=o"
+        "&sp=r&se=2026-01-01T00:00:00Z&sig=" + _B14_ALPHA36 + "AbCdEfG" + "%3D"
+    )
+    assert _b14_types(storage) == ["azure_storage_sas_token"]
+
+
+# --- Azure SignalR connection string --------------------------------------------
+# Format per https://learn.microsoft.com/azure/azure-signalr/concept-connection-string
+_SIGNALR_HOST = "contoso-chat.service." + "signalr.net"
+_SIGNALR_KEY = _B14_ALPHA36 + "+/AbCdE" + "="
+_SIGNALR = "Endpoint=https://" + _SIGNALR_HOST + ";AccessKey=" + _SIGNALR_KEY + ";Version=1.0;"
+
+
+def test_azure_signalr_connection_string_true_positives():
+    """The portal's template, the optional Port / ClientEndpoint pairs,
+    lower-case key names, and the carriers ASP.NET apps use."""
+    for text in (
+        _SIGNALR,
+        _SIGNALR.replace("Endpoint=", "", 1),
+        "Endpoint=https://" + _SIGNALR_HOST + ";Port=8080;AccessKey=" + _SIGNALR_KEY + ";Version=1.0;",
+        "Endpoint=https://" + _SIGNALR_HOST + ";ClientEndpoint=https://gw.contoso.com;"
+        "AccessKey=" + _SIGNALR_KEY + ";Version=1.0;",
+        "endpoint=https://" + _SIGNALR_HOST + ";accesskey=" + _SIGNALR_KEY + ";version=1.0;",
+        'dotnet user-secrets set Azure:SignalR:ConnectionString "' + _SIGNALR + '"',
+        '{"Azure": {"SignalR": {"ConnectionString": "' + _SIGNALR + '"}}}',
+        "Azure__SignalR__ConnectionString=" + _SIGNALR,
+        'services.AddSignalR().AddAzureSignalR("' + _SIGNALR + '");',
+    ):
+        matched = _b14_only(text, "azure_signalr_connection_string")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start:matched[0].span_end] == _SIGNALR_KEY
+
+
+def test_azure_signalr_connection_string_true_negatives():
+    for neg in (
+        # The vendor's placeholder AccessKey is not valid base64.
+        "Endpoint=https://foo.service." + "signalr.net;"
+        "AccessKey=ABCDEFGHIJKLMNOPQRSTUVWEXYZ0123456789+=/;Version=1.0;",
+        # Entra ID / managed identity strings carry no key.
+        "Endpoint=https://" + _SIGNALR_HOST + ";AuthType=azure.msi;Version=1.0;",
+        "Endpoint=https://" + _SIGNALR_HOST + ";AuthType=azure.app;ClientId=00000000-0000"
+        "-0000-0000-000000000000;TenantId=00000000-0000-0000-0000-000000000000;Version=1.0;",
+        # Placeholders, a short key, a different host, no host at all.
+        "Endpoint=https://<resource_name>.service." + "signalr.net;AccessKey=<access_key>;",
+        "Endpoint=https://" + _SIGNALR_HOST + ";AccessKey=" + _B14_ALPHA36 + ";",
+        _SIGNALR.replace("service." + "signalr.net", "webpubsub.azure.com"),
+        "AccessKey=" + _SIGNALR_KEY + ";Version=1.0;",
+    ):
+        assert _b14_only(neg, "azure_signalr_connection_string") == [], "wrongly matched: " + neg[:70]
+
+
+def test_azure_signalr_connection_string_masks_score_as_test_values():
+    for fill in ("A", "a", "X", "x", "0"):
+        text = "Endpoint=https://" + _SIGNALR_HOST + ";AccessKey=" + fill * 43 + "=;Version=1.0;"
+        matched = _b14_only(text, "azure_signalr_connection_string")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_azure_signalr_connection_string_does_not_collide():
+    """A SignalR string is reported once; a storage connection string's
+    AccountKey stays azure_storage_key."""
+    for text in (
+        _SIGNALR,
+        'dotnet user-secrets set Azure:SignalR:ConnectionString "' + _SIGNALR + '"',
+    ):
+        assert _b14_types(text) == ["azure_signalr_connection_string"], text[:40]
+    account_key = ((_B14_ALPHA36 + "+/") * 3)[:86] + "=="
+    storage = (
+        "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=" + account_key
+        + ";EndpointSuffix=core.windows.net"
+    )
+    assert "azure_signalr_connection_string" not in _b14_types(storage)
+    assert "azure_storage_key" in _b14_types(storage)
+
+
+# --- Builder.io private API key -------------------------------------------------
+# Source: https://github.com/BuilderIO/builder/blob/main/packages/admin-sdk/README.md
+_BPK = "bp" + "k-" + "0123456789abcdef0123456789abcdef"
+_BPK_2 = "bp" + "k-" + "fedcba9876543210fedcba9876543210"
+
+
+def test_builder_io_private_api_key_true_positives():
+    for text in (
+        _BPK,
+        "BUILDER_PRIVATE_KEY=" + _BPK,
+        "BUILDER_API_KEY='" + _BPK_2 + "'",
+        "const admin = createAdminApiClient('" + _BPK + "');",
+        "Authorization: Bearer " + _BPK_2,
+        '{"privateKey": "' + _BPK + '"}',
+    ):
+        matched = _b14_only(text, "builder_io_private_api_key")
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start:matched[0].span_end] in (_BPK, _BPK_2)
+
+
+def test_builder_io_private_api_key_ignores_backpack_css():
+    """'bpk-' is also Skyscanner Backpack's CSS class prefix. The pinned
+    32-hex body keeps every Backpack class name out."""
+    for neg in (
+        '<button class="bp' + 'k-button bp' + 'k-button--large">Search</button>',
+        '<div class="bp' + 'k-card bp' + 'k-card--atomic">',
+        ".bp" + "k-card__header { padding: 0; }",
+        "@include bp" + "k-margin-top(md);",
+        "import BpkButton from '@skyscanner/backpack-web/bp" + "k-component-button';",
+        ".bp" + "k-link--alternate:hover { color: #fff; }",
+        "bp" + "k-0123456789abcdef",
+        "bp" + "k-badge--success bp" + "k-text--sm",
+    ):
+        assert _b14_only(neg, "builder_io_private_api_key") == [], "wrongly matched: " + neg[:60]
+
+
+def test_builder_io_private_api_key_true_negatives():
+    for neg in (
+        _BPK[:-1],
+        _BPK + "0",
+        _BPK + "--large",
+        _BPK + "__header",
+        "x" + _BPK,
+        "my-" + _BPK,
+        _BPK.upper(),
+        "bp" + "k-" + "0123456789abcdef0123456789abcdeg",
+        "bp" + "k-xxx",
+    ):
+        assert _b14_only(neg, "builder_io_private_api_key") == [], "wrongly matched: " + neg[:60]
+
+
+def test_builder_io_private_api_key_masks_score_as_test_values():
+    for fill in ("0", "f", "a"):
+        matched = _b14_only("BUILDER_PRIVATE_KEY=" + "bp" + "k-" + fill * 32, "builder_io_private_api_key")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_builder_io_private_api_key_does_not_collide():
+    for text in (_BPK, "BUILDER_PRIVATE_KEY=" + _BPK, "api_key=" + _BPK_2):
+        assert _b14_types(text) == ["builder_io_private_api_key"], text[:40]
+
+
+# --- Code Climate test reporter ID ---------------------------------------------
+# Source: https://github.com/praetorian-inc/noseyparker (np.codeclimate.1)
+_CC_ID = "0123456789abcdef" * 4
+_CC_ID_2 = "fedcba9876543210" * 4
+
+
+def test_codeclimate_reporter_id_true_positives():
+    for text, value in (
+        ("CC_TEST_REPORTER_ID=" + _CC_ID, _CC_ID),
+        ("export CC_TEST_REPORTER_ID=" + _CC_ID_2, _CC_ID_2),
+        ("env:\n  CC_TEST_REPORTER_ID: " + _CC_ID, _CC_ID),
+        ('  - CC_TEST_REPORTER_ID="' + _CC_ID_2 + '"', _CC_ID_2),
+        ("CODECLIMATE_REPO_TOKEN=" + _CC_ID + " bundle exec rspec", _CC_ID),
+        ('{"CC_TEST_REPORTER_ID": "' + _CC_ID_2 + '"}', _CC_ID_2),
+        ("CC_TEST_REPORTER_ID = '" + _CC_ID + "'", _CC_ID),
+    ):
+        matched = _b14_only(text, "codeclimate_reporter_id")
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].severity == "medium"
+        assert text[matched[0].span_start:matched[0].span_end] == value
+
+
+def test_codeclimate_reporter_id_escapes_the_fp_wordlist_test_trap():
+    """The anchor 'CC_TEST_REPORTER_ID' contains 'TEST', which is on the FP
+    wordlist, and the default FP list includes the hex-legal runs '000000' /
+    'aaaaaa'. confidence_base 0.90 sits above the 0.85 gate, so a realistic
+    value — including one that happens to contain '000000' — is never priced
+    down."""
+    with_zero_run = "0123456789abcdef" * 3 + "000000" + "123456789a"
+    assert len(with_zero_run) == 64
+    for value in (_CC_ID, _CC_ID_2, with_zero_run):
+        matched = _b14_only("CC_TEST_REPORTER_ID=" + value, "codeclimate_reporter_id")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.85
+        # And it survives the strict threshold users run with.
+        assert [f.type for f in scan("CC_TEST_REPORTER_ID=" + value, min_confidence=0.85)] == [
+            "codeclimate_reporter_id"
+        ]
+
+
+def test_codeclimate_reporter_id_true_negatives():
+    for neg in (
+        "CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}",
+        "CC_TEST_REPORTER_ID=$CC_TEST_REPORTER_ID",
+        "CC_TEST_REPORTER_ID=" + _CC_ID[:-1],
+        "CC_TEST_REPORTER_ID=" + _CC_ID + "0",
+        "CC_TEST_REPORTER_ID=" + _CC_ID.upper(),
+        "CC_TEST_REPORTER_ID_OLD=" + _CC_ID,
+        "XCC_TEST_REPORTER_ID=" + _CC_ID,
+        "cc_test_reporter_id=" + _CC_ID,
+        _CC_ID,
+        "sha256: " + _CC_ID,
+    ):
+        assert _b14_only(neg, "codeclimate_reporter_id") == [], "wrongly matched: " + neg[:60]
+
+
+def test_codeclimate_reporter_id_masks_score_as_test_values():
+    for fill in ("0", "f", "a"):
+        matched = _b14_only("CC_TEST_REPORTER_ID=" + fill * 64, "codeclimate_reporter_id")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_codeclimate_reporter_id_does_not_collide():
+    """A reporter ID in the CI carriers it appears in is reported once — not
+    also by the context-gated CircleCI / Travis / generic patterns."""
+    for text in (
+        "CC_TEST_REPORTER_ID=" + _CC_ID,
+        "# .travis.yml\nenv:\n  global:\n    - CC_TEST_REPORTER_ID=" + _CC_ID_2,
+        "# .circleci/config.yml\nenvironment:\n  CC_TEST_REPORTER_ID: " + _CC_ID,
+        "CODECLIMATE_REPO_TOKEN=" + _CC_ID_2,
+    ):
+        assert _b14_types(text) == ["codeclimate_reporter_id"], text[:60]
+
+
+# --- Django 'django-insecure-' SECRET_KEY --------------------------------------
+# Source: https://github.com/django/django/blob/main/django/core/management/utils.py
+_DJANGO_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)"
+_DJANGO_PREFIX = "django-" + "insecure-"
+_DJANGO_KEY = _DJANGO_PREFIX + _DJANGO_ALPHABET
+_DJANGO_KEY_2 = _DJANGO_PREFIX + _DJANGO_ALPHABET[::-1]
+# A body dense in the punctuation a naive [A-Za-z0-9] class would miss.
+_DJANGO_KEY_PUNCT = _DJANGO_PREFIX + ("(a)b#c$d^e&f*g+h=i-j_k!l@m%n" * 2)[:50]
+
+
+def test_django_insecure_secret_key_true_positives():
+    assert len(_DJANGO_ALPHABET) == 50 and len(_DJANGO_KEY_PUNCT) == 66
+    for text, key in (
+        (_DJANGO_KEY, _DJANGO_KEY),
+        ("SECRET_KEY = '" + _DJANGO_KEY + "'", _DJANGO_KEY),
+        ('SECRET_KEY = "' + _DJANGO_KEY_2 + '"', _DJANGO_KEY_2),
+        ("DJANGO_SECRET_KEY=" + _DJANGO_KEY_PUNCT, _DJANGO_KEY_PUNCT),
+        ("# SECURITY WARNING: keep the secret key used in production secret!\n"
+         "SECRET_KEY = '" + _DJANGO_KEY_PUNCT + "'\n", _DJANGO_KEY_PUNCT),
+        ("SECRET_KEY = os.environ.get('SECRET_KEY', '" + _DJANGO_KEY + "')", _DJANGO_KEY),
+        ('{"SECRET_KEY": "' + _DJANGO_KEY_2 + '"}', _DJANGO_KEY_2),
+    ):
+        matched = _b14_only(text, "django_insecure_secret_key")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "django"
+        assert text[matched[0].span_start:matched[0].span_end] == key
+
+
+def test_django_insecure_secret_key_body_keeps_every_punctuation_mark():
+    """Bodies containing '(', ')', '#', '$', '^' and '&' must be matched in
+    full — never truncated at the first punctuation mark."""
+    for punct in "()#$^&*!@%+=-_":
+        body = (punct + "abcdefghi") * 5
+        key = _DJANGO_PREFIX + body
+        matched = _b14_only("SECRET_KEY = '" + key + "'", "django_insecure_secret_key")
+        assert len(matched) == 1, "not detected with " + punct
+        assert matched[0].span_end - matched[0].span_start == len(key)
+
+
+def test_django_insecure_secret_key_is_priced_above_the_fp_wordlist():
+    """Every match contains 'insecure', which is on the FP wordlist.
+    confidence_base 0.95 keeps real keys out of the -0.40 penalty."""
+    for key in (_DJANGO_KEY, _DJANGO_KEY_2, _DJANGO_KEY_PUNCT):
+        matched = _b14_only("SECRET_KEY = '" + key + "'", "django_insecure_secret_key")
+        assert matched[0].confidence >= 0.90
+        assert matched[0].is_likely_test_value is False
+
+
+def test_django_insecure_secret_key_true_negatives():
+    for neg in (
+        _DJANGO_KEY[:-1],
+        _DJANGO_KEY + "a",
+        _DJANGO_KEY + "A",
+        _DJANGO_PREFIX + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMN",
+        "SECRET_KEY = '" + _DJANGO_PREFIX + "change-me-before-deploying'",
+        "SECRET_KEY = env('DJANGO_SECRET_KEY')",
+        "x" + _DJANGO_KEY,
+        "my-" + _DJANGO_KEY,
+        "Django prefixes generated keys with 'django-" + "insecure-' until you replace them.",
+    ):
+        assert _b14_only(neg, "django_insecure_secret_key") == [], "wrongly matched: " + neg[:70]
+
+
+def test_django_insecure_secret_key_masks_score_as_test_values():
+    for fill in ("x", "0", "*"):
+        matched = _b14_only("SECRET_KEY = '" + _DJANGO_PREFIX + fill * 50 + "'", "django_insecure_secret_key")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_django_insecure_secret_key_does_not_collide():
+    """SECRET_KEY = '...' is also a generic_api_key_env carrier; the specific
+    reading wins and the key is reported once."""
+    for text in (
+        "SECRET_KEY = '" + _DJANGO_KEY + "'",
+        "DJANGO_SECRET_KEY=" + _DJANGO_KEY_PUNCT,
+        "APP_SECRET=" + _DJANGO_KEY_2,
+    ):
+        assert _b14_types(text) == ["django_insecure_secret_key"], text[:50]
+
+
+# --- LaunchDarkly SDK key ('sdk-') ---------------------------------------------
+# Format per https://launchdarkly.com/docs/home/account/environment/keys
+_LD_UUID = "01234567-89ab-cdef-0123-456789abcdef"
+_LD_SDK = "sd" + "k-" + _LD_UUID
+_LD_SDK_2 = "sd" + "k-" + "fedcba98-7654-3210-fedc-ba9876543210"
+
+
+def test_launchdarkly_sdk_key_true_positives():
+    for text in (
+        _LD_SDK,
+        "LAUNCHDARKLY_SDK_KEY=" + _LD_SDK,
+        "LD_SDK_KEY='" + _LD_SDK_2 + "'",
+        'ldclient.set_config(Config("' + _LD_SDK + '"))',
+        "const client = LaunchDarkly.init('" + _LD_SDK_2 + "');",
+        '{"sdkKey": "' + _LD_SDK + '"}',
+        "  sdk_key: " + _LD_SDK_2,
+    ):
+        matched = _b14_only(text, "launchdarkly_sdk_key")
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "launchdarkly"
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start:matched[0].span_end] in (_LD_SDK, _LD_SDK_2)
+
+
+def test_launchdarkly_sdk_key_true_negatives():
+    """Only the 'sdk-' server key: the public mobile key and client-side ID,
+    the bare UUID, undashed / upper-case bodies and carved runs are out."""
+    for neg in (
+        "mo" + "b-" + _LD_UUID,
+        _LD_UUID,
+        "LAUNCHDARKLY_CLIENT_SIDE_ID=0123456789abcdef01234567",
+        "sd" + "k-" + _LD_UUID.replace("-", ""),
+        "sd" + "k-" + _LD_UUID.upper(),
+        "SD" + "K-" + _LD_UUID,
+        "sd" + "k_" + _LD_UUID,
+        "my-" + _LD_SDK,
+        "x" + _LD_SDK,
+        _LD_SDK + "-01",
+        _LD_SDK + "a",
+        "sd" + "k-" + _LD_UUID[:-1],
+    ):
+        assert _b14_only(neg, "launchdarkly_sdk_key") == [], "wrongly matched: " + neg[:60]
+
+
+def test_launchdarkly_sdk_key_masks_score_as_test_values():
+    # Carried in a client constructor: behind a LAUNCHDARKLY_*_KEY= name the
+    # context-gated launchdarkly_access_token also fires on a mask and, priced
+    # by its own entropy gate rather than pinned at 0.15, can win that span.
+    for body in (
+        "00000000-0000-0000-0000-000000000000",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    ):
+        matched = _b14_only("ldclient.init('" + "sd" + "k-" + body + "')", "launchdarkly_sdk_key")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_launchdarkly_sdk_key_does_not_collide_with_access_token():
+    """'sdk-' + a UUID is exactly 40 characters of launchdarkly_access_token's
+    context-gated [A-Za-z0-9._-]{40} body, so an SDK key behind a
+    LAUNCHDARKLY_*_KEY name used to be mislabelled a REST access token. The
+    specific reading must win; UUID-shaped heroku / hubspot patterns must not
+    claim the body either."""
+    for text in (
+        _LD_SDK,
+        "LAUNCHDARKLY_SDK_KEY=" + _LD_SDK,
+        "LAUNCHDARKLY_API_KEY=" + _LD_SDK_2,
+        "launchdarkly_token: " + _LD_SDK,
+        "LAUNCHDARKLY_ACCESS_TOKEN=" + _LD_SDK_2,
+        "heroku api_key=" + _LD_SDK,
+        "hubspot_api_key: " + _LD_SDK_2,
+    ):
+        assert _b14_types(text) == ["launchdarkly_sdk_key"], text[:50]
+    # A genuine 'api-' REST token is still launchdarkly_access_token.
+    rest = "api-" + "0123456789abcdef0123456789abcdef0123"
+    assert len(rest) == 40
+    assert "launchdarkly_access_token" in _b14_types("LAUNCHDARKLY_ACCESS_TOKEN=" + rest)
+
+
+# --- Power Automate / Logic Apps webhook SAS URL --------------------------------
+# Format per https://learn.microsoft.com/power-automate/regenerate-sas-key
+_PA_HOST = "prod-" + "12.westus.logic" + ".azure.com"
+_PA_WORKFLOW = "0123456789abcdef0123456789abcdef"
+_PA_SIG = _B14_ALPHA36 + "_-AbCdE"
+_PA_QUERY = "?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig="
+_PA_URL = (
+    "https://" + _PA_HOST + ":443/workflows/" + _PA_WORKFLOW
+    + "/triggers/manual/paths/invoke" + _PA_QUERY + _PA_SIG
+)
+
+
+def test_power_automate_webhook_sas_url_true_positives():
+    """The whole URL is the credential and the whole URL is the span, as for
+    the Slack and Teams webhook patterns."""
+    assert len(_PA_SIG) == 43
+    variants = (
+        _PA_URL,
+        _PA_URL.replace(":443", ""),
+        # A named trigger and a relative path after /paths/invoke.
+        _PA_URL.replace("/triggers/manual/", "/triggers/When_a_HTTP_request_is_received/"),
+        _PA_URL.replace("/paths/invoke?", "/paths/invoke/orders/42?"),
+        # Parameters in another order; sig first.
+        "https://" + _PA_HOST + "/workflows/" + _PA_WORKFLOW + "/triggers/manual/paths/invoke"
+        "?sig=" + _PA_SIG + "&api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0",
+        # Logic Apps (Consumption) in another region.
+        _PA_URL.replace("prod-" + "12.westus", "prod-" + "03.northeurope"),
+    )
+    for url in variants:
+        for text in (url, 'FLOW_URL="' + url + '"', "curl -X POST '" + url + "' -d @body.json",
+                     '{"webhookUrl": "' + url + '"}'):
+            matched = _b14_only(text, "power_automate_webhook_sas_url")
+            assert len(matched) == 1, "not detected: " + text[:80]
+            assert matched[0].severity == "high"
+            assert matched[0].provider == "microsoft"
+            assert matched[0].confidence >= 0.90
+            span = text[matched[0].span_start:matched[0].span_end]
+            assert span.startswith("https://") and _PA_SIG in span
+
+
+def test_power_automate_webhook_sas_url_true_negatives():
+    for neg in (
+        # The vendor's own template with placeholders.
+        "https://<region>/workflows/<workflowid>/triggers/manual/paths/invoke"
+        "?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=<value>",
+        # No signature, a short signature, an over-long signature.
+        _PA_URL.split("&sig=")[0],
+        _PA_URL[:-1],
+        _PA_URL + "A",
+        # A 31-hex or upper-case workflow id, a different host, a lookalike host.
+        _PA_URL.replace(_PA_WORKFLOW, _PA_WORKFLOW[:-1]),
+        _PA_URL.replace(_PA_WORKFLOW, _PA_WORKFLOW.upper()),
+        _PA_URL.replace(".logic" + ".azure.com", ".example.com"),
+        _PA_URL.replace(".logic" + ".azure.com:443", ".logic" + ".azure.com.evil.example"),
+        # Not an HTTP trigger invoke path.
+        _PA_URL.replace("/paths/invoke", "/run"),
+    ):
+        assert _b14_only(neg, "power_automate_webhook_sas_url") == [], "wrongly matched: " + neg[:80]
+
+
+def test_power_automate_webhook_sas_url_masks_score_as_test_values():
+    for sig in ("0" * 43, "X" * 43):
+        url = (
+            "https://prod-00.westus.logic" + ".azure.com:443/workflows/" + "0" * 32
+            + "/triggers/manual/paths/invoke" + _PA_QUERY + sig
+        )
+        matched = _b14_only("FLOW_URL=" + url, "power_automate_webhook_sas_url")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_power_automate_webhook_sas_url_does_not_collide():
+    """The URL carries 'sv=1.0' and a 'sig=' — the storage SAS needs a dated
+    'sv=', so it must stay silent — and the 43-char sig must not also surface
+    as a generic high-entropy finding."""
+    for text in (_PA_URL, 'FLOW_URL="' + _PA_URL + '"', "teams webhook: " + _PA_URL):
+        assert _b14_types(text) == ["power_automate_webhook_sas_url"], text[:60]
+
+
+def test_power_automate_webhook_sas_url_redaction_removes_the_whole_url():
+    from app.engine.redactor import redact
+
+    text = 'FLOW_URL="' + _PA_URL + '"'
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PA_SIG not in redacted_text
+    assert _PA_WORKFLOW not in redacted_text
+    assert "FLOW_URL=" in redacted_text
+
+
+# --- Notion API token ('ntn_') --------------------------------------------------
+# Source: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+_NTN_HEAD = "nt" + "n_"
+_NTN = _NTN_HEAD + "12345678901" + _B14_ALPHA36[:35]
+_NTN_2 = _NTN_HEAD + "10987654321" + "ZyXwVuTsRqPoNmLkJiHgFeDcBa987654321"
+
+
+def test_notion_api_token_ntn_true_positives():
+    assert len(_NTN) == 50 and len(_NTN_2) == 50
+    for text in (
+        _NTN,
+        "NOTION_TOKEN=" + _NTN,
+        "NOTION_API_KEY='" + _NTN_2 + "'",
+        'const notion = new Client({ auth: "' + _NTN + '" });',
+        "Authorization: Bearer " + _NTN_2,
+        "curl https://api.notion.com/v1/users -H 'Authorization: Bearer " + _NTN + "'",
+        # The accepted 33-37 range around gitleaks' 35-character tail.
+        _NTN_HEAD + "12345678901" + _B14_ALPHA36[:33],
+        _NTN_HEAD + "12345678901" + _B14_ALPHA36[:36] + "A",
+    ):
+        matched = _b14_only(text, "notion_api_token_ntn")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "notion"
+        assert matched[0].confidence >= 0.90
+
+
+def test_notion_api_token_ntn_true_negatives():
+    for neg in (
+        _NTN_HEAD + "12345678901",
+        _NTN_HEAD + "1234567890" + _B14_ALPHA36,
+        _NTN_HEAD + "12345678901" + _B14_ALPHA36[:32],
+        _NTN_HEAD + "12345678901" + _B14_ALPHA36 + "AbC",
+        "NT" + "N_" + "12345678901" + _B14_ALPHA36[:35],
+        "x" + _NTN,
+        "my_" + _NTN,
+        _NTN_HEAD + "***",
+    ):
+        assert _b14_only(neg, "notion_api_token_ntn") == [], "wrongly matched: " + neg[:70]
+
+
+def test_notion_api_token_ntn_masks_score_as_test_values():
+    for mask in (
+        _NTN_HEAD + "0" * 46,
+        _NTN_HEAD + "0" * 11 + "x" * 35,
+        _NTN_HEAD + "0" * 11 + "X" * 35,
+    ):
+        matched = _b14_only("NOTION_TOKEN=" + mask, "notion_api_token_ntn")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_notion_api_token_ntn_does_not_collide_with_legacy_secret_token():
+    """'ntn_' tokens are this pattern; legacy 'secret_' tokens stay
+    notion_api_key. Each is reported once."""
+    for text in (_NTN, "NOTION_TOKEN=" + _NTN, "notion_secret: " + _NTN_2):
+        assert _b14_types(text) == ["notion_api_token_ntn"], text[:40]
+    legacy = "secret_" + (_B14_ALPHA36 * 2)[:43]
+    assert _b14_types("NOTION_TOKEN=" + legacy) == ["notion_api_key"]

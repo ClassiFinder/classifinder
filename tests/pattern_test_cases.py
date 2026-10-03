@@ -211,6 +211,40 @@ _DD_BODY_CASES = "mwhGAaqdRK2EWoMbIjAQxDxcvPtJKlLQfoGh"
 _DDO_CASES = _DDO_PREFIX_CASES + _DD_BODY_CASES
 _DDP_CASES = _DDP_PREFIX_CASES + "6dxnq7F68k2QO0hIPXaohoXWOAKFs0kEMYQw"
 
+# ── 2026-09-14 — weekly batch ─────────────────────────────────────────────
+# Every body below is an obviously synthetic alphabet / sequential run and
+# every vendor prefix or host is split by concatenation, so no contiguous
+# token literal of a GitHub-partner shape (Atlassian, Azure, Notion,
+# LaunchDarkly, Power Automate) is committed.
+_ALPHA36_CASES = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+_ATCTT_CASES = (
+    "ATCTT3" + "xFfGN0"
+    + ((_ALPHA36_CASES + "_-") * 5)[:171] + "=" + "0A1B2C3D"
+)
+_IOT_SIG_CASES = _ALPHA36_CASES + "%2B" + "%2F" + "AbCdE" + "%3D"
+_IOT_SAS_CASES = (
+    "SharedAccessSignature sr=myhub.azure-" + "devices.net"
+    + "%2Fdevices%2Fdevice1&sig=" + _IOT_SIG_CASES + "&se=1767225600"
+)
+_SIGNALR_KEY_CASES = _ALPHA36_CASES + "+/AbCdE" + "="
+_SIGNALR_CASES = (
+    "Endpoint=https://contoso-chat.service." + "signalr.net;AccessKey="
+    + _SIGNALR_KEY_CASES + ";Version=1.0;"
+)
+_BPK_CASES = "bp" + "k-" + "0123456789abcdef0123456789abcdef"
+_CC_ID_CASES = "0123456789abcdef" * 4
+_DJANGO_CASES = (
+    "django-" + "insecure-" + "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)"
+)
+_LD_SDK_CASES = "sd" + "k-" + "01234567-89ab-cdef-0123-456789abcdef"
+_PA_URL_CASES = (
+    "https://prod-" + "12.westus.logic" + ".azure.com:443/workflows/"
+    + "0123456789abcdef0123456789abcdef"
+    + "/triggers/manual/paths/invoke?api-version=2016-06-01"
+    + "&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=" + _ALPHA36_CASES + "_-AbCdE"
+)
+_NTN_CASES = "nt" + "n_" + "12345678901" + _ALPHA36_CASES[:35]
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -5818,6 +5852,174 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "a" + _DDO_CASES,
             _DDO_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-14 — weekly batch ────────────────────────────────────────
+    # Bitbucket access token — 'ATCTT3xFfGN0' + 180 of [A-Za-z0-9_=-], the
+    # access-token sibling of the Atlassian ATATT3 envelope (192 chars).
+    # Independently authored — structural analysis consistent with Atlassian's ATATT token envelope
+    "bitbucket_access_token": {
+        "positives": [
+            _ATCTT_CASES,
+            "BITBUCKET_ACCESS_TOKEN=" + _ATCTT_CASES,
+            "git clone https://x-token-auth:" + _ATCTT_CASES + "@bitbucket.org/acme/app.git",
+        ],
+        "negatives": [
+            _ATCTT_CASES[:-1],
+            _ATCTT_CASES + "A",
+            "ATCTT3" + "xFfGN1" + _ATCTT_CASES[12:],
+            "atctt3" + "xffgn0" + _ATCTT_CASES[12:],
+            "x" + _ATCTT_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Azure IoT Hub SAS token — 'SharedAccessSignature sr=<hub>.azure-devices.net
+    # ...&sig=<43+pad>&se=<expiry>[&skn=<policy>]'.
+    # Format per https://learn.microsoft.com/azure/iot-hub/authenticate-authorize-sas
+    "azure_iot_hub_sas_token": {
+        "positives": [
+            _IOT_SAS_CASES,
+            _IOT_SAS_CASES + "&skn=device",
+            "Authorization: " + _IOT_SAS_CASES,
+        ],
+        "negatives": [
+            # Service Bus uses the same scheme on a different host.
+            _IOT_SAS_CASES.replace("azure-" + "devices.net", "servicebus.windows.net"),
+            # A truncated signature and a token without '&se='.
+            _IOT_SAS_CASES.replace(_IOT_SIG_CASES, _IOT_SIG_CASES[4:]),
+            _IOT_SAS_CASES.split("&se=")[0],
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Azure SignalR connection string — '.service.signalr.net' + 'AccessKey='.
+    # Format per https://learn.microsoft.com/azure/azure-signalr/concept-connection-string
+    "azure_signalr_connection_string": {
+        "positives": [
+            _SIGNALR_CASES,
+            'Azure__SignalR__ConnectionString="' + _SIGNALR_CASES + '"',
+            _SIGNALR_CASES.replace("Endpoint=", ""),
+        ],
+        "negatives": [
+            # The vendor's own placeholder value is not valid base64.
+            "Endpoint=https://foo.service." + "signalr.net;"
+            "AccessKey=ABCDEFGHIJKLMNOPQRSTUVWEXYZ0123456789+=/;Version=1.0;",
+            # Entra ID strings carry no key.
+            "Endpoint=https://contoso-chat.service." + "signalr.net;AuthType=azure.msi;Version=1.0;",
+            # A different host.
+            _SIGNALR_CASES.replace("service." + "signalr.net", "webpubsub.azure.com"),
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Builder.io private API key — 'bpk-' + exactly 32 lowercase hex.
+    # Source: https://github.com/BuilderIO/builder/blob/main/packages/admin-sdk/README.md
+    "builder_io_private_api_key": {
+        "positives": [
+            _BPK_CASES,
+            "BUILDER_PRIVATE_KEY=" + _BPK_CASES,
+            "createAdminApiClient('" + _BPK_CASES + "')",
+        ],
+        "negatives": [
+            # Skyscanner Backpack CSS classes share the 'bpk-' prefix.
+            '<button class="bp' + 'k-button bp' + 'k-button--large">',
+            ".bp" + "k-card__header { margin: 0; }",
+            _BPK_CASES[:-1],
+            _BPK_CASES + "--large",
+            _BPK_CASES.upper(),
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Code Climate test reporter ID — key-name anchored 64 lowercase hex.
+    # Source: https://github.com/praetorian-inc/noseyparker (np.codeclimate.1)
+    "codeclimate_reporter_id": {
+        "positives": [
+            "CC_TEST_REPORTER_ID=" + _CC_ID_CASES,
+            "  CC_TEST_REPORTER_ID: " + _CC_ID_CASES,
+            'CODECLIMATE_REPO_TOKEN="' + _CC_ID_CASES + '"',
+        ],
+        "negatives": [
+            "CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}",
+            "CC_TEST_REPORTER_ID=" + _CC_ID_CASES[:-1],
+            "CC_TEST_REPORTER_ID=" + _CC_ID_CASES + "0",
+            "CC_TEST_REPORTER_ID_OLD=" + _CC_ID_CASES,
+            _CC_ID_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Django 'django-insecure-' SECRET_KEY — 50 chars from Django's alphabet.
+    # Source: https://github.com/django/django/blob/main/django/core/management/utils.py
+    "django_insecure_secret_key": {
+        "positives": [
+            _DJANGO_CASES,
+            "SECRET_KEY = '" + _DJANGO_CASES + "'",
+            "DJANGO_SECRET_KEY=" + _DJANGO_CASES,
+        ],
+        "negatives": [
+            _DJANGO_CASES[:-1],
+            _DJANGO_CASES + "a",
+            "SECRET_KEY = 'django-" + "insecure-change-me-before-deploying'",
+            "django-" + "insecure-" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMN",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # LaunchDarkly SDK key — 'sdk-' + lowercase dashed UUID.
+    # Format per https://launchdarkly.com/docs/home/account/environment/keys
+    "launchdarkly_sdk_key": {
+        "positives": [
+            _LD_SDK_CASES,
+            "LAUNCHDARKLY_SDK_KEY=" + _LD_SDK_CASES,
+            'ldclient.set_config(Config("' + _LD_SDK_CASES + '"))',
+        ],
+        "negatives": [
+            "mo" + "b-" + "01234567-89ab-cdef-0123-456789abcdef",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            "sd" + "k-" + "0123456789abcdef0123456789abcdef",
+            "my-" + _LD_SDK_CASES,
+            _LD_SDK_CASES + "-01",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Power Automate / Logic Apps HTTP-trigger SAS URL — whole URL is the secret.
+    # Format per https://learn.microsoft.com/power-automate/regenerate-sas-key
+    "power_automate_webhook_sas_url": {
+        "positives": [
+            _PA_URL_CASES,
+            'FLOW_URL="' + _PA_URL_CASES + '"',
+            _PA_URL_CASES.replace(":443", ""),
+        ],
+        "negatives": [
+            # The vendor's template with placeholders.
+            "https://<region>/workflows/<workflowid>/triggers/manual/paths/invoke"
+            "?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=<value>",
+            _PA_URL_CASES.split("&sig=")[0],
+            _PA_URL_CASES[:-1],
+            _PA_URL_CASES.replace("0123456789abcdef0123456789abcdef", "0123456789abcdef0123456789abcde"),
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Notion API token (ntn_) — 'ntn_' + 11 digits + 33-37 alnum.
+    # Source: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+    "notion_api_token_ntn": {
+        "positives": [
+            _NTN_CASES,
+            "NOTION_TOKEN=" + _NTN_CASES,
+            'new Client({ auth: "' + _NTN_CASES + '" })',
+        ],
+        "negatives": [
+            "nt" + "n_" + "12345678901",
+            "nt" + "n_" + "1234567890" + _ALPHA36_CASES,
+            "nt" + "n_" + "12345678901" + _ALPHA36_CASES[:32],
+            "nt" + "n_" + "12345678901" + _ALPHA36_CASES + "AbC",
+            "NT" + "N_" + "12345678901" + _ALPHA36_CASES[:35],
         ],
         "min_confidence": 0.90,
     },
