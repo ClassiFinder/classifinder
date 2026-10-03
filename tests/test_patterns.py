@@ -690,6 +690,197 @@ def test_cloudflare_origin_ca_key():
     assert len(cf) == 1
 
 
+# --- Cloudflare scannable API tokens ('cfut_' / 'cfat_') (2026-09-15) ----------
+# Cloudflare's scannable API-token format: 'cfut_' (user API token) or 'cfat_'
+# (account-owned API token), then 40 alphanumerics, then an 8-character hex
+# checksum — 53 characters. Per Cloudflare's own token-formats and DLP
+# predefined-profiles documentation.
+#
+# Every literal below is SYNTHETIC — the 40-character body is SHA-512 over the
+# seed 'classifinder-cloudflare-synthetic-<n>', base62-encoded and truncated,
+# and the 8-hex tail is SHA-256 over the same seed, deliberately NOT a valid
+# CRC32 of the token. The prefix is split so no contiguous token literal is
+# committed to source (Cloudflare is a GitHub secret-scanning partner).
+# Source: https://developers.cloudflare.com/cloudflare-one/data-loss-prevention/dlp-profiles/predefined-profiles/
+_CFUT_PREFIX = "cf" + "ut_"
+_CFAT_PREFIX = "cf" + "at_"
+_CF_BODY = "w2uDt4iFeyedvSvU1QUXsVSoL8PsgrpwoIIdMNMo"
+_CF_BODY_2 = "1iGXSmeJAIdkWtL7JTi5UftwgBPJurbxWJIXkb53"
+_CF_BODY_3 = "LYVbDG4NG451NwiRWVzYKRlHiuv7GMNYoow2tXkv"
+_CF_CHK = "f8ccec12"
+_CF_CHK_2 = "df8aa011"
+_CF_CHK_3 = "8289abfb"
+_CFUT = _CFUT_PREFIX + _CF_BODY + _CF_CHK
+_CFUT_2 = _CFUT_PREFIX + _CF_BODY_2 + _CF_CHK_2
+_CFAT = _CFAT_PREFIX + _CF_BODY_3 + _CF_CHK_3
+_CFAT_UPPER_CHK = _CFAT_PREFIX + _CF_BODY + _CF_CHK.upper()
+
+
+def _cf_scannable(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "cloudflare_scannable_api_token"
+    ]
+
+
+def test_cloudflare_scannable_api_token_true_positives():
+    """Detected in the carriers a Cloudflare token actually leaks through: bare,
+    CLOUDFLARE_API_TOKEN / CF_API_TOKEN env lines, an export, a CI YAML env
+    block, a Bearer header, wrangler / Terraform config and JSON — for both
+    the user ('cfut_') and account-owned ('cfat_') prefixes."""
+    for text in (
+        _CFUT,
+        _CFAT,
+        "CLOUDFLARE_API_TOKEN=" + _CFUT,
+        'CF_API_TOKEN="' + _CFAT + '"',
+        "export CLOUDFLARE_API_TOKEN=" + _CFUT_2,
+        "env:\n  CLOUDFLARE_API_TOKEN: " + _CFAT,
+        "Authorization: Bearer " + _CFUT,
+        "curl -H 'Authorization: Bearer " + _CFAT + "' https://api.cloudflare.com/client/v4/user/tokens/verify",
+        'provider "cloudflare" {\n  api_token = "' + _CFUT_2 + '"\n}',
+        '{"cloudflare_api_token": "' + _CFAT + '"}',
+        # The vendor says only "hex" — an uppercase checksum is accepted too.
+        "CLOUDFLARE_API_TOKEN=" + _CFAT_UPPER_CHK,
+    ):
+        matched = _cf_scannable(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "cloudflare"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_cloudflare_scannable_api_token_span_is_exactly_the_token():
+    """The span must be the whole 53-character token — prefix and checksum
+    included, no quote, no variable name — so redaction removes all of it."""
+    for text, token in (
+        ("CLOUDFLARE_API_TOKEN=" + _CFUT, _CFUT),
+        ('api_token = "' + _CFAT + '"', _CFAT),
+        ("CF_API_TOKEN=" + _CFUT_2 + "\r\n", _CFUT_2),
+    ):
+        matched = _cf_scannable(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == token
+        assert len(token) == 53
+
+
+def test_cloudflare_scannable_api_token_true_negatives():
+    """The prefix is one of two exact lowercase literals, the body is exactly
+    40 alphanumerics and the checksum exactly 8 hex characters."""
+    for neg in (
+        # Truncated token, and a checksum one character short.
+        _CFUT[:-1],
+        _CFUT_PREFIX + _CF_BODY + _CF_CHK[:7],
+        _CFUT_PREFIX + _CF_BODY[:20],
+        # A checksum that is not hex.
+        _CFUT_PREFIX + _CF_BODY + "zzzzzzzz",
+        _CFAT_PREFIX + _CF_BODY + "f8ccec1g",
+        # A body carrying a non-alnum character.
+        _CFUT_PREFIX + _CF_BODY[:20] + "_" + _CF_BODY[21:] + _CF_CHK,
+        _CFUT_PREFIX + _CF_BODY[:20] + "-" + _CF_BODY[21:] + _CF_CHK,
+        # Only the exact lowercase 'cfut_' / 'cfat_' prefixes.
+        "CF" + "UT_" + _CF_BODY + _CF_CHK,
+        "CF" + "AT_" + _CF_BODY + _CF_CHK,
+        "cf" + "xt_" + _CF_BODY + _CF_CHK,
+        "cf" + "ut-" + _CF_BODY + _CF_CHK,
+        "cf" + "ut" + _CF_BODY + _CF_CHK,
+        # The sibling 'cfk_' key is a separate format, not claimed here.
+        "cf" + "k_" + _CF_BODY + _CF_CHK,
+        # The bare body + checksum with no prefix is not claimed by this pattern.
+        _CF_BODY + _CF_CHK,
+        # Docs placeholders do not match.
+        _CFUT_PREFIX + "[40 characters][checksum]",
+        _CFUT_PREFIX + "...",
+        'CLOUDFLARE_API_TOKEN="' + _CFAT_PREFIX + 'your_token_here"',
+        # A CI reference to a stored secret is not a token.
+        "CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}",
+        # Prose naming the prefixes is not a token.
+        "User API tokens start with cf" + "ut_ and account tokens with cf" + "at_.",
+    ):
+        assert _cf_scannable(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_cloudflare_scannable_api_token_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a token is never cut out of the
+    middle of a longer identifier or base64url run, and a 54-character run
+    matches nothing rather than being truncated."""
+    for neg in (
+        "x" + _CFUT,
+        "9" + _CFAT,
+        "my_" + _CFUT,
+        "key-" + _CFAT,
+        _CFUT + "a",
+        _CFUT + "7",
+        _CFAT + "Q",
+        _CFUT + "_old",
+        _CFAT + "-x",
+    ):
+        assert _cf_scannable(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_cloudflare_scannable_api_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for prefix in (_CFUT_PREFIX, _CFAT_PREFIX):
+        for mask in (
+            prefix + "x" * 40 + "0" * 8,
+            prefix + "X" * 40 + "0" * 8,
+            prefix + "0" * 48,
+        ):
+            matched = _cf_scannable("CLOUDFLARE_API_TOKEN=" + mask)
+            assert len(matched) == 1, "not detected: " + mask
+            assert matched[0].is_likely_test_value is True
+            assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_cloudflare_scannable_api_token_does_not_collide():
+    """A token — bare, behind CLOUDFLARE_API_TOKEN= / CF_API_TOKEN= /
+    api_token=, in a Bearer header, or in JSON — is reported once, as this
+    pattern and nothing else: the legacy keyword-gated cloudflare_api_token,
+    bearer_token and the generic fallbacks are all deduplicated away."""
+    for text in (
+        _CFUT,
+        "CLOUDFLARE_API_TOKEN=" + _CFUT,
+        "CF_API_TOKEN=" + _CFAT,
+        "cloudflare_api_token = " + _CFUT_2,
+        "api_token=" + _CFAT,
+        "Authorization: Bearer " + _CFUT_2,
+        '{"token": "' + _CFAT + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["cloudflare_scannable_api_token"], text[:40]
+
+
+def test_cloudflare_scannable_api_token_leaves_legacy_cloudflare_patterns_alone():
+    """The legacy 40-character keyword-gated token and the Global API Key keep
+    their own findings; the new pattern claims neither."""
+    legacy = "CF_API_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYz12345678901234"
+    assert _cf_scannable(legacy) == []
+    assert "cloudflare_api_token" in [f.type for f in scan(legacy, min_confidence=0.01)]
+
+    global_key = "CLOUDFLARE_GLOBAL_API_KEY: d3d1443e0adc9c24564c6c5676d679d47e2ca"
+    assert _cf_scannable(global_key) == []
+    assert "cloudflare_global_api_key" in [
+        f.type for f in scan(global_key, min_confidence=0.01)
+    ]
+
+
+def test_cloudflare_scannable_api_token_redaction_keeps_the_variable_name():
+    """Redaction must remove both tokens while leaving the variable names
+    readable, so the reader can still tell where the token was configured."""
+    from app.engine.redactor import redact
+
+    text = "CLOUDFLARE_API_TOKEN=" + _CFUT + "\n" + 'CF_API_TOKEN="' + _CFAT + '"'
+    findings = scan(text, min_confidence=0.01)
+    assert [f.type for f in findings] == ["cloudflare_scannable_api_token"] * 2
+    redacted_text, _redaction_map = redact(text, findings, style="label")
+    assert _CF_BODY not in redacted_text
+    assert _CF_BODY_3 not in redacted_text
+    assert "CLOUDFLARE_API_TOKEN=" in redacted_text
+    assert "CF_API_TOKEN=" in redacted_text
+
+
 # ═══════════════════════════════════════════════
 # BATCH 4 PART 1.5 — JFrog / Artifactory (2026-05-21)
 # ═══════════════════════════════════════════════
