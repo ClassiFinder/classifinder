@@ -314,6 +314,15 @@ _PLANE_BODY_CASES = "fc1f11490de60f5a91eb434767bff6c5"
 _PLANE_CASES = _PLANE_PREFIX_CASES + _PLANE_BODY_CASES
 _PLANE_CASES_2 = _PLANE_PREFIX_CASES + "e248ccdd022f2ec2b66e61d38b537e28"
 
+# ── 2026-09-27 ────────────────────────────────────────────────────────────
+# Ory session tokens: 'ory_st_' + 32 alnum. Every body is SYNTHETIC (SHA-512
+# over the seed 'classifinder-ory-synthetic-<n>', base62-encoded) and the
+# prefix is split so no contiguous token literal is committed.
+_ORY_ST_PREFIX_CASES = "ory" + "_st_"
+_ORY_ST_BODY_CASES = "qmeIbACBIWXBt3rUpmaKxd2cuh5BB5m3"
+_ORY_ST_CASES = _ORY_ST_PREFIX_CASES + _ORY_ST_BODY_CASES
+_ORY_ST_CASES_2 = _ORY_ST_PREFIX_CASES + "y5NwfcFzjBLuFpSU7VCAP52ke30J4Mdv"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -6239,6 +6248,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "x" + _PLANE_CASES,
             _PLANE_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-27 ───────────────────────────────────────────────────────
+    # Ory session token — 'ory_st_' + 32 alnum, 39 characters. Prefix from
+    # Ory's token-formats page; the body from Ory Kratos (Apache-2.0)
+    # session/session.go, randx.MustString(32, randx.AlphaNum).
+    # Source: https://www.ory.com/docs/security-compliance/token-formats
+    "ory_session_token": {
+        "positives": [
+            "ORY_SESSION_TOKEN=" + _ORY_ST_CASES,
+            "X-Session-Token: " + _ORY_ST_CASES_2,
+            "Authorization: Bearer " + _ORY_ST_CASES,
+        ],
+        "negatives": [
+            # The body is exactly 32 characters.
+            _ORY_ST_CASES[:-1],
+            _ORY_ST_CASES + "Q",
+            # The prefix is exact and case-sensitive; sibling Ory prefixes
+            # are separate formats.
+            "ORY" + "_ST_" + _ORY_ST_BODY_CASES,
+            "ory" + "_lo_" + _ORY_ST_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "fact" + _ORY_ST_CASES,
+            _ORY_ST_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
