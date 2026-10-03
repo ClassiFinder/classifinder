@@ -16454,3 +16454,159 @@ def test_polar_oauth2_client_secret_redaction_keeps_the_variable_name():
     assert _POLAR_CS_BODY_2 not in redacted_text
     assert "POLAR_CLIENT_SECRET=" in redacted_text
     assert "client_secret: " in redacted_text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PostHog OAuth access token (pha_) and refresh token (phr_) — 2026-09-29
+# ═══════════════════════════════════════════════════════════════════════════
+# PostHog's MIT server source (posthog/models/utils.py) defines
+# OAUTH_ACCESS_TOKEN_PREFIX = "pha_" and OAUTH_REFRESH_TOKEN_PREFIX = "phr_";
+# both generators return the prefix + generate_random_token(), i.e. a 256-bit
+# integer with the top bit forced on, base57-encoded (BASE62 minus 0 1 O I l).
+# 57**43 == 2**250.8 < 2**255 <= value < 2**256 < 2**256.6 == 57**44, so the
+# body is always exactly 44 characters. Every body below is SYNTHETIC
+# (SHA-512 over 'classifinder-posthog-oauth-synthetic-<n>', top bit forced,
+# base57-encoded) and each prefix is split so no contiguous token literal is
+# committed.
+# Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
+_PHA_PREFIX = "ph" + "a_"
+_PHR_PREFIX = "ph" + "r_"
+_PHOA_BODY = "nZ7XAVxkzVyPbkc3" + "akszxw38S5DFn6KVygdHMptEhaSY"
+_PHOA_BODY_2 = "s7UDLJGUh8RivZ8z" + "wYdHpNAf6PxhdoNQALPSGLqkUNNv"
+_PHOA_BODY_3 = "qaYu5yFFcGgCYTQt" + "yUJ9oqMtAY2QPbA2BNKFUVukJzJS"
+_PHA = _PHA_PREFIX + _PHOA_BODY
+_PHA_2 = _PHA_PREFIX + _PHOA_BODY_3
+_PHR = _PHR_PREFIX + _PHOA_BODY_2
+
+
+def _ph_oauth(text: str, pattern_id: str) -> list:
+    return [f for f in scan(text, min_confidence=0.01) if f.type == pattern_id]
+
+
+def test_posthog_oauth_access_token_detected():
+    """A pha_ access token behind an env var is a high-severity PostHog finding."""
+    matched = _ph_oauth("POSTHOG_ACCESS_TOKEN=" + _PHA, "posthog_oauth_access_token")
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.95
+    assert matched[0].provider == "posthog"
+    assert matched[0].severity == "high"
+
+
+def test_posthog_oauth_refresh_token_detected():
+    """A phr_ refresh token mints new access tokens for 30 days — critical."""
+    matched = _ph_oauth("POSTHOG_REFRESH_TOKEN=" + _PHR, "posthog_oauth_refresh_token")
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.95
+    assert matched[0].provider == "posthog"
+    assert matched[0].severity == "critical"
+
+
+def test_posthog_oauth_tokens_detected_bare():
+    """Prefix-anchored: no keyword context is needed."""
+    assert len(_ph_oauth(_PHA, "posthog_oauth_access_token")) == 1
+    assert len(_ph_oauth(_PHR, "posthog_oauth_refresh_token")) == 1
+
+
+def test_posthog_oauth_token_response_reports_both_tokens():
+    """A token-endpoint JSON response carries both tokens; each is reported
+    once under its own pattern, with a span covering exactly the token."""
+    text = (
+        '{"access_token": "' + _PHA + '", "token_type": "Bearer", '
+        '"expires_in": 3600, "refresh_token": "' + _PHR + '"}'
+    )
+    findings = scan(text, min_confidence=0.01)
+    by_type = {f.type: f for f in findings}
+    assert set(by_type) == {"posthog_oauth_access_token", "posthog_oauth_refresh_token"}
+    a = by_type["posthog_oauth_access_token"]
+    r = by_type["posthog_oauth_refresh_token"]
+    assert text[a.span_start:a.span_end] == _PHA
+    assert text[r.span_start:r.span_end] == _PHR
+    assert a.span_end - a.span_start == 48
+
+
+def test_posthog_oauth_access_token_wins_over_bearer_fallback():
+    """In an Authorization header the specific pattern must win the dedup
+    against the generic bearer_token fallback."""
+    findings = scan("Authorization: Bearer " + _PHA_2, min_confidence=0.01)
+    assert [f.type for f in findings] == ["posthog_oauth_access_token"]
+
+
+@pytest.mark.parametrize("prefix", ["ph" + "a_", "ph" + "r_"])
+@pytest.mark.parametrize("delta", [-1, +1])
+def test_posthog_oauth_length_is_exactly_44(prefix, delta):
+    """The forced top bit makes the base57 body exactly 44 characters; 43 and
+    45 must both miss rather than be truncated."""
+    body = _PHOA_BODY[:-1] if delta < 0 else _PHOA_BODY + "Q"
+    findings = scan("token=" + prefix + body, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "posthog_oauth_access_token" not in types
+    assert "posthog_oauth_refresh_token" not in types
+
+
+@pytest.mark.parametrize("ambiguous", ["0", "1", "O", "I", "l"])
+def test_posthog_oauth_rejects_ambiguous_characters(ambiguous):
+    """BASE57 is base62 minus 0, 1, O, I and l; the generator cannot emit them."""
+    for prefix, pid in ((_PHA_PREFIX, "posthog_oauth_access_token"),
+                        (_PHR_PREFIX, "posthog_oauth_refresh_token")):
+        text = prefix + _PHOA_BODY[:-1] + ambiguous
+        assert _ph_oauth(text, pid) == [], "accepted ambiguous " + ambiguous
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "al" + _PHA,  # 'alpha_...' — the prefix hiding inside a word
+        "gra" + _PHR,  # 'graphr_...'
+        "x-" + _PHA,
+        "X_" + _PHR,
+        _PHA + "_old",
+        _PHR + "-suffix",
+        "eyJhbGciOiJIUzI1NiJ9" + _PHA,
+    ],
+)
+def test_posthog_oauth_boundaries_reject_embedded_runs(text):
+    """Both guards refuse [A-Za-z0-9_-]: no token is carved out of a longer run."""
+    types = {f.type for f in scan(text, min_confidence=0.01)}
+    assert "posthog_oauth_access_token" not in types
+    assert "posthog_oauth_refresh_token" not in types
+
+
+@pytest.mark.parametrize("ch", ["x", "X"])
+def test_posthog_oauth_masked_placeholders_score_as_test_values(ch):
+    """The single-character masks are registered as known_test_values and land
+    at ~0.15 (0.95 base is above the 0.85 FP-wordlist gate, so the wordlist
+    never prices a placeholder down on its own)."""
+    for prefix, pid in ((_PHA_PREFIX, "posthog_oauth_access_token"),
+                        (_PHR_PREFIX, "posthog_oauth_refresh_token")):
+        matched = _ph_oauth("token=" + prefix + ch * 44, pid)
+        assert len(matched) == 1, pid
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_posthog_oauth_does_not_collide_with_sibling_posthog_patterns():
+    """pha_/phr_ never match as phc_/phx_/phs_ and vice versa, and the access
+    and refresh patterns never claim each other's tokens."""
+    types = {f.type for f in scan(_PHA, min_confidence=0.01)}
+    assert types == {"posthog_oauth_access_token"}
+    types = {f.type for f in scan(_PHR, min_confidence=0.01)}
+    assert types == {"posthog_oauth_refresh_token"}
+
+    project = "ph" + "c_" + _PHOA_BODY
+    types = {f.type for f in scan("POSTHOG_PROJECT_API_KEY=" + project, min_confidence=0.01)}
+    assert "posthog_project_api_key" in types
+    assert "posthog_oauth_access_token" not in types
+    assert "posthog_oauth_refresh_token" not in types
+
+
+def test_posthog_oauth_redaction_removes_both_tokens():
+    """Redaction removes both token bodies and keeps the field names."""
+    from app.engine.redactor import redact
+
+    text = "access_token=" + _PHA + "\nrefresh_token=" + _PHR
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PHOA_BODY not in redacted_text
+    assert _PHOA_BODY_2 not in redacted_text
+    assert "access_token=" in redacted_text
+    assert "refresh_token=" in redacted_text

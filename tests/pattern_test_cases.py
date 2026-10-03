@@ -332,6 +332,19 @@ _POLAR_CS_BODY_CASES = "jkCxfgcIIIftFo7ySTwiEgMttK8l9AbQXvlUgNTVmkp"
 _POLAR_CS_CASES = _POLAR_CS_PREFIX_CASES + _POLAR_CS_BODY_CASES
 _POLAR_CS_CASES_2 = _POLAR_CS_PREFIX_CASES + "eRmbnKELIK7LUk00zfrX7ezQnV21nKW26UspOaCBDAj"
 
+# ── 2026-09-29 ────────────────────────────────────────────────────────────
+# PostHog OAuth access (pha_) and refresh (phr_) tokens: prefix + exactly 44
+# BASE57 characters. Every body is SYNTHETIC (SHA-512 over the seed
+# 'classifinder-posthog-oauth-synthetic-<n>', top bit forced, base57-encoded
+# exactly as PostHog's generator does) and the prefix is split so no
+# contiguous token literal is committed.
+_PHA_PREFIX_CASES = "ph" + "a_"
+_PHR_PREFIX_CASES = "ph" + "r_"
+_PHOA_BODY_CASES = "nZ7XAVxkzVyPbkc3" + "akszxw38S5DFn6KVygdHMptEhaSY"
+_PHOA_BODY_CASES_2 = "s7UDLJGUh8RivZ8z" + "wYdHpNAf6PxhdoNQALPSGLqkUNNv"
+_PHA_CASES = _PHA_PREFIX_CASES + _PHOA_BODY_CASES
+_PHR_CASES = _PHR_PREFIX_CASES + _PHOA_BODY_CASES_2
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -6310,6 +6323,52 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "my_" + _POLAR_CS_CASES,
             "x" + _POLAR_CS_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-29 ───────────────────────────────────────────────────────
+    # PostHog OAuth access token — 'pha_' + exactly 44 BASE57 characters.
+    # Prefix and generator from PostHog's own MIT server source.
+    # Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
+    "posthog_oauth_access_token": {
+        "positives": [
+            "POSTHOG_ACCESS_TOKEN=" + _PHA_CASES,
+            "Authorization: Bearer " + _PHA_CASES,
+            '{"access_token": "' + _PHA_CASES + '", "token_type": "Bearer"}',
+        ],
+        "negatives": [
+            # The body is exactly 44 characters.
+            _PHA_CASES[:-1],
+            _PHA_CASES + "Q",
+            # BASE57 never emits 0, 1, O, I or l.
+            _PHA_PREFIX_CASES + _PHOA_BODY_CASES[:-1] + "0",
+            _PHA_PREFIX_CASES + _PHOA_BODY_CASES[:-1] + "l",
+            # Must not be carved out of a longer identifier ('alpha_...').
+            "al" + _PHA_CASES,
+            _PHA_CASES + "_old",
+            # The refresh token is a separate pattern.
+            _PHR_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # PostHog OAuth refresh token — 'phr_' + exactly 44 BASE57 characters.
+    # Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
+    "posthog_oauth_refresh_token": {
+        "positives": [
+            "POSTHOG_REFRESH_TOKEN=" + _PHR_CASES,
+            '{"refresh_token": "' + _PHR_CASES + '"}',
+            "grant_type=refresh_token&refresh_token=" + _PHR_CASES,
+        ],
+        "negatives": [
+            _PHR_CASES[:-1],
+            _PHR_CASES + "Q",
+            _PHR_PREFIX_CASES + _PHOA_BODY_CASES_2[:-1] + "O",
+            "gra" + _PHR_CASES,
+            _PHR_CASES + "-x",
+            # The access token is a separate pattern.
+            _PHA_CASES,
         ],
         "min_confidence": 0.90,
     },
