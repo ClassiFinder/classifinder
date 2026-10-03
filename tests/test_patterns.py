@@ -16610,3 +16610,145 @@ def test_posthog_oauth_redaction_removes_both_tokens():
     assert _PHOA_BODY_2 not in redacted_text
     assert "access_token=" in redacted_text
     assert "refresh_token=" in redacted_text
+
+
+# --- Polar OAuth2 access / refresh token --------------------------------------
+# Polar's OAuth2 server mints access tokens with the prefix 'polar_at_u_' (user
+# subject) or 'polar_at_o_' (organization subject) and refresh tokens with
+# 'polar_rt_u_' / 'polar_rt_o_'. The body comes from the same generate_token
+# helper as the shipped polar_pat_ / polar_oat_ tokens: 37 random base62
+# characters + a 6-character base62 CRC32 checksum, exactly 43 [0-9A-Za-z].
+#
+# Every body below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-polar-oauth2-synthetic-<n>' — the checks are not valid CRCs,
+# and the prefix is split so no contiguous token literal is committed.
+# Format per the vendor's own server source:
+# Source: https://github.com/polarsource/polar/blob/main/server/polar/oauth2/constants.py
+_PO_BODY = "uME09qTk6QNcBmGZ6EJaa03o2BA17FGipMj2HV7rmlG"
+_PO_BODY_2 = "M7ZZXnKB5l9KuOG0Lrjg5AgRNXddk5xeovpogkS2na9"
+_PO_BODY_3 = "YwZzpyhf5xAqcAV64zvTkbg2h0b0e3s6c5S8zRGsxyH"
+_PO_BODY_4 = "BIn4pwL7RXPuVOHblTHd7Xa6micuPiFWV3tCZNC0l6G"
+_PO_AT_U = "polar_" + "at_u_" + _PO_BODY
+_PO_AT_O = "polar_" + "at_o_" + _PO_BODY_2
+_PO_RT_U = "polar_" + "rt_u_" + _PO_BODY_3
+_PO_RT_O = "polar_" + "rt_o_" + _PO_BODY_4
+
+
+def _polar_oauth2(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "polar_oauth2_access_token"
+    ]
+
+
+def test_polar_oauth2_access_token_true_positives():
+    """All four subject-type prefixes are detected in the carriers an OAuth2
+    token leaks through: bare, env lines, a Bearer header, a token-endpoint
+    JSON response, and SDK constructors."""
+    for text in (
+        _PO_AT_U,
+        "POLAR_ACCESS_TOKEN=" + _PO_AT_U,
+        'export POLAR_OAUTH_TOKEN="' + _PO_AT_O + '"',
+        "Authorization: Bearer " + _PO_AT_O,
+        '{"access_token": "' + _PO_AT_U + '", "token_type": "Bearer"}',
+        '{"refresh_token": "' + _PO_RT_U + '", "expires_in": 864000}',
+        "polar = Polar(access_token='" + _PO_RT_O + "')",
+        "const polar = new Polar({ accessToken: '" + _PO_AT_O + "' });",
+    ):
+        matched = _polar_oauth2(text)
+        assert len(matched) == 1, "not detected: " + text[:80]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "polar"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_polar_oauth2_access_token_span_is_exactly_the_token():
+    for text, tok in (
+        ("POLAR_ACCESS_TOKEN=" + _PO_AT_U, _PO_AT_U),
+        ('"refresh_token":"' + _PO_RT_O + '"', _PO_RT_O),
+        ("Bearer " + _PO_AT_O + "\r\n", _PO_AT_O),
+        ("?token=" + _PO_RT_U + "&x=1", _PO_RT_U),
+    ):
+        matched = _polar_oauth2(text)
+        assert len(matched) == 1, text[:60]
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_polar_oauth2_access_token_true_negatives():
+    """The prefix is one of four exact lowercase literals and the body exactly
+    43 base62 characters (no '_' or '-')."""
+    for neg in (
+        # Wrong body width.
+        "polar_" + "at_u_" + _PO_BODY[:-1],
+        "polar_" + "at_u_" + _PO_BODY + "Q",
+        # Catalog-style charset: '_' / '-' in the body.
+        "polar_" + "at_u_" + _PO_BODY[:20] + "-" + _PO_BODY[21:],
+        "polar_" + "rt_o_" + _PO_BODY[:20] + "_" + _PO_BODY[21:],
+        # Unknown subject type, or no subject type at all.
+        "polar_" + "at_x_" + _PO_BODY,
+        "polar_" + "rt_a_" + _PO_BODY,
+        "polar_" + "at_" + _PO_BODY,
+        "polar_" + "rt_" + _PO_BODY,
+        # Only the exact lowercase prefix.
+        "POLAR_" + "AT_U_" + _PO_BODY,
+        "polar-" + "at-u-" + _PO_BODY,
+        # Elided docs placeholders and prose.
+        "POLAR_ACCESS_TOKEN=polar_" + "at_u_...",
+        "Polar OAuth2 access tokens start with polar_" + "at_u_ or polar_" + "at_o_.",
+        "POLAR_ACCESS_TOKEN: ${{ secrets.POLAR_ACCESS_TOKEN }}",
+    ):
+        assert _polar_oauth2(neg) == [], "wrongly matched: " + neg[:80]
+
+
+def test_polar_oauth2_access_token_is_not_carved_out_of_a_longer_token():
+    for neg in (
+        "x" + _PO_AT_U,
+        "9" + _PO_AT_U,
+        "my_" + _PO_AT_U,
+        _PO_AT_U + "Q",
+        _PO_AT_U + "7",
+    ):
+        assert _polar_oauth2(neg) == [], "wrongly matched: " + neg[:80]
+
+
+def test_polar_oauth2_access_token_masked_placeholders_score_as_test_values():
+    """Single-character masks for each of the four prefixes are registered as
+    known_test_values and must land at ~0.15."""
+    for sub in ("at_u_", "at_o_", "rt_u_", "rt_o_"):
+        for ch in ("x", "X", "0"):
+            mask = "polar_" + sub + ch * 43
+            matched = _polar_oauth2("POLAR_ACCESS_TOKEN=" + mask)
+            assert len(matched) == 1, "not detected: " + mask
+            assert matched[0].is_likely_test_value is True
+            assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_polar_oauth2_access_token_does_not_collide_with_other_polar_tokens():
+    """An OAuth2 token is reported once, as this pattern only; the shipped
+    polar_pat_ / polar_oat_ tokens are never claimed by it, and vice versa."""
+    for text in (
+        _PO_AT_U,
+        "POLAR_ACCESS_TOKEN=" + _PO_AT_O,
+        "api_key=" + _PO_RT_U,
+        "Authorization: Bearer " + _PO_RT_O,
+        '{"access_token": "' + _PO_AT_U + '"}',
+    ):
+        types = [f.type for f in scan(text, min_confidence=0.01)]
+        assert types == ["polar_oauth2_access_token"], (text[:60], types)
+    for other in ("pat_", "oat_"):
+        tok = "polar_" + other + _PO_BODY
+        types = {f.type for f in scan("POLAR_TOKEN=" + tok, min_confidence=0.01)}
+        assert "polar_oauth2_access_token" not in types
+
+
+def test_polar_oauth2_access_token_redaction_keeps_the_variable_name():
+    from app.engine.redactor import redact
+
+    text = "POLAR_ACCESS_TOKEN=" + _PO_AT_U + '\n{"refresh_token": "' + _PO_RT_O + '"}'
+    findings = _polar_oauth2(text)
+    assert len(findings) == 2
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PO_BODY not in redacted_text
+    assert _PO_BODY_4 not in redacted_text
+    assert "POLAR_ACCESS_TOKEN=" in redacted_text
