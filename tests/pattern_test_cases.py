@@ -257,6 +257,16 @@ _PA_URL_CASES = (
 )
 _NTN_CASES = "nt" + "n_" + "12345678901" + _ALPHA36_CASES[:35]
 
+# ── 2026-09-16 ────────────────────────────────────────────────────────────
+# NetBird personal access tokens: 'nbp_' + 30 base62 secret + 6 base62
+# checksum. Every body is SYNTHETIC (SHA-512 over the seed
+# 'classifinder-netbird-synthetic-<n>', base62-encoded) and the prefix is
+# split so no contiguous token literal is committed.
+_NBP_PREFIX_CASES = "nb" + "p_"
+_NBP_BODY_CASES = "DJ25SIXCMT7kWCsNFd4BtRQiLZnCpQ" + "43h6Ql"
+_NBP_CASES = _NBP_PREFIX_CASES + _NBP_BODY_CASES
+_NBP_CASES_2 = _NBP_PREFIX_CASES + "GXOUroprn2naUxTVicNxj3zfQCUs96" + "4wOxjy"
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -6056,6 +6066,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "nt" + "n_" + "12345678901" + _ALPHA36_CASES[:32],
             "nt" + "n_" + "12345678901" + _ALPHA36_CASES + "AbC",
             "NT" + "N_" + "12345678901" + _ALPHA36_CASES[:35],
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-09-16 ───────────────────────────────────────────────────────
+    # NetBird personal access token — 'nbp_' + 30 base62 secret + 6 base62
+    # CRC32 checksum, 40 characters, from the vendor's own generateNewToken().
+    # Source: https://github.com/netbirdio/netbird/blob/main/management/server/types/personal_access_token.go
+    "netbird_personal_access_token": {
+        "positives": [
+            "NB_API_TOKEN=" + _NBP_CASES,
+            'NETBIRD_API_TOKEN="' + _NBP_CASES_2 + '"',
+            "Authorization: Token " + _NBP_CASES,
+        ],
+        "negatives": [
+            # The body is exactly 36 characters.
+            _NBP_CASES[:-1],
+            _NBP_CASES + "Q",
+            # The prefix is exact and case-sensitive.
+            "NB" + "P_" + _NBP_BODY_CASES,
+            "nb" + "k_" + _NBP_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "x" + _NBP_CASES,
+            _NBP_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },

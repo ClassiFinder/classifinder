@@ -15298,3 +15298,157 @@ def test_notion_api_token_ntn_does_not_collide_with_legacy_secret_token():
         assert _b14_types(text) == ["notion_api_token_ntn"], text[:40]
     legacy = "secret_" + (_B14_ALPHA36 * 2)[:43]
     assert _b14_types("NOTION_TOKEN=" + legacy) == ["notion_api_key"]
+
+
+# --- NetBird personal access token ---------------------------------------------
+# 'nbp_' is the prefix of a NetBird personal access token (PAT), the credential
+# for the NetBird management API ('Authorization: Token nbp_...'), commonly read
+# from NB_API_TOKEN / NETBIRD_API_TOKEN. It acts as its user against peers,
+# groups, access-control policies, routes, DNS and setup keys.
+#
+# The format is the vendor's own generator: NetBird's management server defines
+# PATPrefix 'nbp_', a 30-character base62 secret and a 6-character base62 CRC32
+# checksum left-padded with "%06s" — 40 characters in total.
+#
+# Every literal below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-netbird-synthetic-<n>', base62-encoded — and the prefix is split
+# so no contiguous token literal is committed to source.
+# Source: https://github.com/netbirdio/netbird/blob/main/management/server/types/personal_access_token.go
+_NBP_PREFIX = "nb" + "p_"
+_NBP_BODY = "DJ25SIXCMT7kWCsNFd4BtRQiLZnCpQ" + "43h6Ql"
+_NBP_BODY_2 = "GXOUroprn2naUxTVicNxj3zfQCUs96" + "4wOxjy"
+_NBP_BODY_3 = "oLZcNZDmpTdNYZglWJwRYCtXoTq2b3" + "0CM3HM"
+_NBP = _NBP_PREFIX + _NBP_BODY
+_NBP_2 = _NBP_PREFIX + _NBP_BODY_2
+_NBP_3 = _NBP_PREFIX + _NBP_BODY_3
+
+
+def _netbird(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "netbird_personal_access_token"
+    ]
+
+
+def test_netbird_personal_access_token_true_positives():
+    """Detected in the carriers a NetBird PAT actually leaks through: bare, an
+    NB_API_TOKEN env line, an export, a CI YAML env block, a Token auth header,
+    a curl command, a Terraform provider block and JSON."""
+    for text in (
+        _NBP,
+        "NB_API_TOKEN=" + _NBP,
+        'NETBIRD_API_TOKEN="' + _NBP_2 + '"',
+        "export NB_API_TOKEN=" + _NBP_3,
+        "env:\n  NETBIRD_API_TOKEN: " + _NBP_2,
+        "Authorization: Token " + _NBP,
+        "curl -H 'Authorization: Token " + _NBP_3 + "' https://api.netbird.io/api/peers",
+        'provider "netbird" {\n  token = "' + _NBP + '"\n}',
+        '{"netbird_token": "' + _NBP_2 + '"}',
+    ):
+        matched = _netbird(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "netbird"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_netbird_personal_access_token_span_is_exactly_the_token():
+    """The span must be the whole 40-character token — prefix included, no
+    quote, no variable name — so redaction removes all of it."""
+    for text, token in (
+        ("NB_API_TOKEN=" + _NBP, _NBP),
+        ('token = "' + _NBP_2 + '"', _NBP_2),
+        ("NETBIRD_API_TOKEN=" + _NBP_3 + "\r\n", _NBP_3),
+    ):
+        matched = _netbird(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == token
+        assert len(token) == 40
+
+
+def test_netbird_personal_access_token_true_negatives():
+    """The prefix is one exact lowercase literal and the body is exactly 36
+    alphanumerics."""
+    for neg in (
+        # Truncated body, and a body carrying a non-alnum character.
+        _NBP_PREFIX + _NBP_BODY[:-1],
+        _NBP_PREFIX + _NBP_BODY[:30],
+        _NBP_PREFIX + _NBP_BODY[:18] + "_" + _NBP_BODY[19:],
+        _NBP_PREFIX + _NBP_BODY[:18] + "-" + _NBP_BODY[19:],
+        _NBP_PREFIX + _NBP_BODY[:18] + "+" + _NBP_BODY[19:],
+        # Only the exact lowercase 'nbp_' prefix.
+        "NB" + "P_" + _NBP_BODY,
+        "nb" + "p-" + _NBP_BODY,
+        "nb" + "k_" + _NBP_BODY,
+        "nb" + "p" + _NBP_BODY,
+        # The bare body with no prefix is not claimed by this pattern.
+        _NBP_BODY,
+        # Elided docs placeholders do not match.
+        _NBP_PREFIX + "...",
+        "Authorization: Token {token}",
+        _NBP_PREFIX + "your_token_here",
+        # A CI reference to a stored secret is not a token.
+        "NB_API_TOKEN: ${{ secrets.NB_API_TOKEN }}",
+        # Prose naming the prefix is not a token.
+        "NetBird personal access tokens start with nb" + "p_ and are 40 characters.",
+    ):
+        assert _netbird(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_netbird_personal_access_token_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a token is never cut out of the
+    middle of a longer identifier or base64url run, and a 37-character body
+    matches nothing rather than being truncated."""
+    for neg in (
+        "x" + _NBP,
+        "9" + _NBP,
+        "my_" + _NBP,
+        "key-" + _NBP,
+        _NBP + "Q",
+        _NBP + "7",
+        _NBP + "_old",
+        _NBP + "-x",
+    ):
+        assert _netbird(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_netbird_personal_access_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for ch in ("x", "X", "0"):
+        mask = _NBP_PREFIX + ch * 36
+        matched = _netbird("NB_API_TOKEN=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_netbird_personal_access_token_does_not_collide():
+    """A token — bare, behind NB_API_TOKEN= or api_token=, in a Token header or
+    in JSON — is reported once, as this pattern and nothing else (the generic
+    env / high-entropy fallbacks are deduplicated away)."""
+    for text in (
+        _NBP,
+        "NB_API_TOKEN=" + _NBP,
+        "api_token=" + _NBP_2,
+        "Authorization: Token " + _NBP_3,
+        '{"token": "' + _NBP_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["netbird_personal_access_token"], text[:40]
+
+
+def test_netbird_personal_access_token_redaction_keeps_the_variable_name():
+    """Redaction must remove both tokens while leaving the variable names
+    readable, so the reader can still tell where the token was configured."""
+    from app.engine.redactor import redact
+
+    text = "NB_API_TOKEN=" + _NBP + "\n" + 'NETBIRD_API_TOKEN="' + _NBP_2 + '"'
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _NBP_BODY not in redacted_text
+    assert _NBP_BODY_2 not in redacted_text
+    assert "NB_API_TOKEN=" in redacted_text
+    assert "NETBIRD_API_TOKEN=" in redacted_text
