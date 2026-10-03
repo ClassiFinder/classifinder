@@ -15929,3 +15929,200 @@ def test_helicone_api_key_masked_placeholders_score_as_test_values():
         assert len(matched) == 1, "not detected: " + mask
         assert matched[0].is_likely_test_value is True
         assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+# --- Plane API token -----------------------------------------------------------
+# 'plane_api_' is the prefix of a Plane workspace API token, the credential for
+# Plane's REST API ('X-API-Key: plane_api_...'), usually read from
+# PLANE_API_TOKEN. It acts as the member who minted it across every project in
+# the workspace that member can reach.
+#
+# The format is the vendor's own generator, not an inference: Plane's APIToken
+# model defines generate_token() as literally 'plane_api_' + uuid4().hex and
+# uses it as the token field's default, and Python's uuid4().hex is exactly 32
+# lowercase hex characters. 42 characters in total.
+#
+# There is deliberately NO entropy gate: a uuid4 hex body sits at ~4.0 bits per
+# character by construction, so any entropy floor would false-negative every
+# real token. The 10-character literal prefix carries the precision.
+#
+# Every literal below is SYNTHETIC — SHA-512 over the seed
+# 'classifinder-plane-synthetic-<n>', truncated to 32 hex characters — and the
+# prefix is split so no contiguous token literal is committed to source.
+# Source: https://github.com/makeplane/plane/blob/preview/apps/api/plane/db/models/api.py
+_PLANE_PREFIX = "pl" + "ane_" + "api_"
+_PLANE_BODY = "fc1f11490de60f5a91eb434767bff6c5"
+_PLANE_BODY_2 = "e248ccdd022f2ec2b66e61d38b537e28"
+_PLANE_BODY_3 = "4b7e4c7bc467ae34eec973940ac0cf3c"
+_PLANE = _PLANE_PREFIX + _PLANE_BODY
+_PLANE_2 = _PLANE_PREFIX + _PLANE_BODY_2
+_PLANE_3 = _PLANE_PREFIX + _PLANE_BODY_3
+
+
+def _plane(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "plane_api_token"
+    ]
+
+
+def test_plane_api_token_true_positives():
+    """Detected in the carriers a Plane token actually leaks through: bare, a
+    PLANE_API_TOKEN env line, an export, a CI YAML env block, the vendor's
+    X-API-Key header, a curl invocation and JSON."""
+    for text in (
+        _PLANE,
+        "PLANE_API_TOKEN=" + _PLANE,
+        'PLANE_API_TOKEN="' + _PLANE_2 + '"',
+        "export PLANE_API_TOKEN=" + _PLANE_3,
+        "env:\n  PLANE_API_TOKEN: " + _PLANE_2,
+        "X-API-Key: " + _PLANE,
+        'curl -H "X-API-Key: ' + _PLANE_2 + '" https://api.plane.so/api/v1/workspaces/acme/projects/',
+        '{"plane_api_token": "' + _PLANE_3 + '"}',
+    ):
+        matched = _plane(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "plane"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_plane_api_token_span_is_exactly_the_token():
+    """The span must be the whole 42-character token — prefix included, no
+    quote, no variable name — so redaction removes all of it."""
+    for text, token in (
+        ("PLANE_API_TOKEN=" + _PLANE, _PLANE),
+        ('"X-API-Key": "' + _PLANE_2 + '"', _PLANE_2),
+        ("PLANE_API_TOKEN=" + _PLANE_3 + "\r\n", _PLANE_3),
+    ):
+        matched = _plane(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == token
+        assert len(token) == 42
+
+
+def test_plane_api_token_true_negatives():
+    """The prefix is one exact lowercase literal and the body is exactly 32
+    LOWERCASE hex characters — uuid4().hex, nothing wider."""
+    for neg in (
+        # Truncated or over-long body.
+        _PLANE_PREFIX + _PLANE_BODY[:-1],
+        _PLANE_PREFIX + _PLANE_BODY[:8],
+        # uuid4().hex is lowercase and unhyphenated: neither an uppercase hex
+        # body nor a dashed UUID is what the vendor's generator emits.
+        _PLANE_PREFIX + _PLANE_BODY.upper(),
+        _PLANE_PREFIX + "fc1f1149-0de6-0f5a-91eb-434767bff6c5",
+        # A non-hex character in the body.
+        _PLANE_PREFIX + _PLANE_BODY[:16] + "z" + _PLANE_BODY[17:],
+        # Only the exact lowercase 'plane_api_' prefix.
+        "PL" + "ANE_" + "API_" + _PLANE_BODY,
+        "Pl" + "ane_" + "Api_" + _PLANE_BODY,
+        "pl" + "ane-" + "api-" + _PLANE_BODY,
+        "pl" + "ane_" + "apikey_" + _PLANE_BODY,
+        # The bare hex body with no prefix is not claimed by this pattern.
+        _PLANE_BODY,
+        # Elided docs placeholders do not match.
+        _PLANE_PREFIX + "...",
+        _PLANE_PREFIX + "<your_token>",
+        'PLANE_API_TOKEN="' + _PLANE_PREFIX + 'your_token_here"',
+        # A CI reference to a stored secret is not a token.
+        "PLANE_API_TOKEN: ${{ secrets.PLANE_API_TOKEN }}",
+        # Prose naming the prefix is not a token.
+        "Plane workspace API tokens start with pl" + "ane_" + "api_ and go in X-API-Key.",
+    ):
+        assert _plane(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_plane_api_token_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a token is never cut out of the
+    middle of a longer identifier or hex run, and a 33-character body matches
+    nothing rather than being truncated to 32."""
+    for neg in (
+        "x" + _PLANE,
+        "9" + _PLANE,
+        "my_" + _PLANE,
+        "key-" + _PLANE,
+        _PLANE + "a",
+        _PLANE + "0",
+        _PLANE + "_old",
+        _PLANE + "-x",
+    ):
+        assert _plane(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_plane_api_token_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The masks that stay inside the
+    [0-9a-f] body charset are registered as known_test_values and must land at
+    ~0.15."""
+    for body in ("0" * 32, "a" * 32, "f" * 32, "deadbeef" * 4):
+        mask = _PLANE_PREFIX + body
+        matched = _plane("PLANE_API_TOKEN=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_plane_api_token_has_no_entropy_gate():
+    """A uuid4 hex body is ~4.0 bits/char by construction, so an entropy floor
+    would false-negative real tokens. The pattern must carry no entropy
+    threshold and no length+entropy bonus — the 10-char prefix is the anchor.
+    A low-entropy-but-real-shaped body (only a few distinct nibbles) still has
+    to be reported."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    pattern = next(p for p in PATTERN_REGISTRY if p.id == "plane_api_token")
+    assert pattern.entropy_threshold == 0.0
+    assert pattern.length_entropy_bonus_threshold is None
+    assert pattern.confidence_base == 0.95
+
+    low_entropy = _PLANE_PREFIX + "0102030405060708090a0b0c0d0e0f10"
+    matched = _plane("PLANE_API_TOKEN=" + low_entropy)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+
+
+def test_plane_api_token_does_not_collide():
+    """A token — bare, behind PLANE_API_TOKEN= or api_key=, in the vendor's
+    X-API-Key header, or in JSON — is reported once, as this pattern and
+    nothing else (the generic env / high-entropy fallbacks are deduplicated
+    away)."""
+    for text in (
+        _PLANE,
+        "PLANE_API_TOKEN=" + _PLANE,
+        "api_key=" + _PLANE_2,
+        "X-API-Key: " + _PLANE_3,
+        '{"token": "' + _PLANE_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["plane_api_token"], text[:40]
+
+
+def test_plane_api_token_does_not_disturb_planetscale():
+    """The only 'plane' substrings already in the registry belong to
+    PlanetScale, whose credentials use the unrelated 'pscale_' prefixes. Each
+    side must keep matching only its own, even on a line that names the other
+    vendor."""
+    assert _plane("DATABASE_PASSWORD=pscale_pw_" + "a" * 43) == []
+    assert _plane("PLANETSCALE_TOKEN=pscale_tkn_" + "b" * 43) == []
+
+    # A Plane token on a line that also names PlanetScale is still exactly one
+    # Plane finding.
+    mixed = "PLANETSCALE_TOKEN note — plane_api=" + _PLANE
+    assert [f.type for f in scan(mixed, min_confidence=0.01)] == ["plane_api_token"]
+
+
+def test_plane_api_token_redaction_keeps_the_variable_name():
+    """Redaction must remove both tokens while leaving the variable name and
+    the header name readable, so the reader can still tell where the token was
+    configured."""
+    from app.engine.redactor import redact
+
+    text = "PLANE_API_TOKEN=" + _PLANE + "\n" + 'curl -H "X-API-Key: ' + _PLANE_2 + '" https://api.plane.so/'
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PLANE_BODY not in redacted_text
+    assert _PLANE_BODY_2 not in redacted_text
+    assert "PLANE_API_TOKEN=" in redacted_text
+    assert "X-API-Key: " in redacted_text
