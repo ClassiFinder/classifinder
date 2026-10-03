@@ -15658,3 +15658,176 @@ def test_google_gemini_auth_key_redaction_keeps_the_variable_name():
     assert _AQ_BODY_2 not in redacted_text
     assert "GEMINI_API_KEY=" in redacted_text
     assert "apiKey:" in redacted_text
+
+
+# --- Bitwarden Secrets Manager access token -----------------------------------
+# A Bitwarden Secrets Manager machine-account access token, read from
+# BWS_ACCESS_TOKEN by the bws CLI, SDKs and CI integrations. Structure per the
+# vendor's own parser (bitwarden/sdk-internal access_token.rs): version '0',
+# '.', the access-token UUID, '.', a 30-character client secret, ':', and a
+# 24-character base64 encryption key (16 bytes). 94 characters in total.
+#
+# Every literal below is SYNTHETIC — UUID from SHA-256, client secret from
+# SHA-512 (base62) and key from SHA-256 over the seed
+# 'classifinder-bitwarden-synthetic-<n>' — and every token is assembled from
+# its parts so no contiguous token literal is committed to source.
+# Source: https://bitwarden.com/help/access-tokens/
+def _bws(uuid, client_secret, key):
+    return "0" + "." + uuid + "." + client_secret + ":" + key
+
+
+_BWS_SECRET = "1JXzgnOAM5lDzCMhQp4ADRLfYQpm14"
+_BWS_KEY = "Nr2mQblxnHuSkpm3KU6Rzw=="
+_BWS = _bws("04cc77e4-62c1-4b2d-b932-c102bcde74c1", _BWS_SECRET, _BWS_KEY)
+_BWS_2 = _bws("e9dbca51-e35a-4806-9727-e6904ec6730d",
+              "I28TcvAwbZZPhySDqMfrEJ7ZINUbMS", "+0jugEIHjgl6PD3GO2dBjw==")
+_BWS_3 = _bws("eee0730a-26c1-42bd-adda-41a9bd2441ff",
+              "EA1IHtPprATFoEPJDqSLySEbZe4RNj", "gB5MxIQnds/TlaHjGA3gxg==")
+_BWS_UUID_4 = "a338416d-a3b0-43a5-8f47-f388b215c40b"
+
+
+def _bitwarden(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "bitwarden_secrets_manager_access_token"
+    ]
+
+
+def test_bitwarden_sm_access_token_true_positives():
+    """Detected in the carriers a Secrets Manager token leaks through: bare, a
+    BWS_ACCESS_TOKEN env line, an export, a GitHub Actions sm-action input,
+    a bws CLI flag, a Kubernetes secret and JSON."""
+    for text in (
+        _BWS,
+        "BWS_ACCESS_TOKEN=" + _BWS,
+        'BWS_ACCESS_TOKEN="' + _BWS_2 + '"',
+        "export BWS_ACCESS_TOKEN=" + _BWS_3,
+        "- uses: bitwarden/sm-action@v2\n  with:\n    access_token: " + _BWS_2,
+        "bws secret list --access-token " + _BWS,
+        "stringData:\n  token: " + _BWS_3,
+        '{"bws_access_token": "' + _BWS + '"}',
+        # An uppercase UUID is still the vendor's parser-accepted token.
+        _bws(_BWS_UUID_4.upper(), _BWS_SECRET, _BWS_KEY),
+    ):
+        matched = _bitwarden(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "bitwarden"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_bitwarden_sm_access_token_span_covers_the_encryption_key():
+    """The span must be the whole 94-character token, INCLUDING the ':<key>'
+    half, so redaction removes the encryption key as well as the credential
+    (the generic env fallback used to stop at ':')."""
+    for text, token in (
+        ("BWS_ACCESS_TOKEN=" + _BWS, _BWS),
+        ('access_token: "' + _BWS_2 + '"', _BWS_2),
+        ("BWS_ACCESS_TOKEN=" + _BWS_3 + "\r\n", _BWS_3),
+    ):
+        matched = _bitwarden(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == token
+        assert len(token) == 94
+
+
+def test_bitwarden_sm_access_token_true_negatives():
+    """Every part of the composite is fixed: version '0', a UUID, a
+    30-character alnum client secret and a 16-byte base64 key."""
+    uuid = "04cc77e4-62c1-4b2d-b932-c102bcde74c1"
+    for neg in (
+        # Wrong version.
+        "1" + "." + uuid + "." + _BWS_SECRET + ":" + _BWS_KEY,
+        # Client secret one short / one long / with a non-alnum character.
+        _bws(uuid, _BWS_SECRET[:-1], _BWS_KEY),
+        _bws(uuid, _BWS_SECRET + "Q", _BWS_KEY),
+        _bws(uuid, _BWS_SECRET[:10] + "_" + _BWS_SECRET[11:], _BWS_KEY),
+        # Key missing padding, too short, or not a 16-byte value.
+        _bws(uuid, _BWS_SECRET, _BWS_KEY[:-2]),
+        _bws(uuid, _BWS_SECRET, _BWS_KEY[:-3] + "=="),
+        _bws(uuid, _BWS_SECRET, _BWS_KEY[:21] + "x=="),
+        # Malformed UUID.
+        _bws(uuid.replace("-", ""), _BWS_SECRET, _BWS_KEY),
+        _bws(uuid[:-1] + "g", _BWS_SECRET, _BWS_KEY),
+        # The credential half alone (no ':' key) is not claimed by this pattern.
+        "0" + "." + uuid + "." + _BWS_SECRET,
+        # Placeholders and CI secret references.
+        "BWS_ACCESS_TOKEN=<your-access-token>",
+        "access_token: ${{ secrets.BWS_ACCESS_TOKEN }}",
+        "0.<uuid>.<client-secret>:<encryption-key>",
+    ):
+        assert _bitwarden(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_bitwarden_sm_access_token_is_not_carved_out_of_a_longer_token():
+    """The leading guard refuses [A-Za-z0-9_.-] (so '10.' or a dotted
+    identifier never starts a match) and the trailing guard refuses base64
+    characters, so a longer run matches nothing rather than being truncated."""
+    for neg in (
+        "1" + _BWS,
+        "v" + _BWS,
+        "x." + _BWS,
+        "id-" + _BWS,
+        "_" + _BWS,
+        _BWS + "A",
+        _BWS + "=",
+        _BWS + "/",
+        _BWS + "+x",
+        _BWS + "_old",
+    ):
+        assert _bitwarden(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_bitwarden_sm_access_token_vendor_examples_score_as_test_values():
+    """The vendor's published help-page example, the sdk-internal test fixture
+    and the single-character masks are registered as known_test_values and
+    must land at ~0.15."""
+    nil = "00000000-0000-0000-0000-000000000000"
+    for token in (
+        _bws("48c78342-1635-48a6-accd-afbe01336365",
+             "C0tMmQqHnAp1h0gL8bngprlPOYutt0", "B3h5D+YgLvFiQhWkIq6Bow=="),
+        _bws("ec2c1d46-6a4b-4751-a310-af9601317f2d",
+             "C2IgxjjLF7qSshsbwe8JGcbM075YXw", "X8vbvA0bduihIDe/qrzIQQ=="),
+        _bws(nil, "0" * 30, "A" * 22 + "=="),
+        _bws(nil, "x" * 30, "A" * 22 + "=="),
+        _bws(nil, "X" * 30, "A" * 22 + "=="),
+    ):
+        matched = _bitwarden("BWS_ACCESS_TOKEN=" + token)
+        assert len(matched) == 1, "not detected: " + token
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_bitwarden_sm_access_token_does_not_collide():
+    """A token — bare, behind BWS_ACCESS_TOKEN= or api_key=, or next to other
+    vendors' UUID-keyword contexts — is reported once, as this pattern and
+    nothing else (the generic env / high-entropy / UUID-keyword patterns are
+    deduplicated away or never fire)."""
+    for text in (
+        _BWS,
+        "BWS_ACCESS_TOKEN=" + _BWS,
+        "api_key=" + _BWS_2,
+        "Authorization: Bearer " + _BWS_3,
+        '{"token": "' + _BWS_2 + '"}',
+        "heroku hubspot bitwarden token=" + _BWS,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == [
+            "bitwarden_secrets_manager_access_token"
+        ], text[:40]
+
+
+def test_bitwarden_sm_access_token_redaction_removes_both_halves():
+    """Redaction must remove the client secret AND the encryption key while
+    leaving the variable name readable."""
+    from app.engine.redactor import redact
+
+    text = "BWS_ACCESS_TOKEN=" + _BWS + "\n" + "access_token: " + _BWS_2
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _BWS_SECRET not in redacted_text
+    assert _BWS_KEY not in redacted_text
+    assert "+0jugEIHjgl6PD3GO2dBjw==" not in redacted_text
+    assert "BWS_ACCESS_TOKEN=" in redacted_text
+    assert "access_token: " in redacted_text
