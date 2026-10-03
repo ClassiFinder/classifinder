@@ -355,6 +355,24 @@ _POLAR_AT_U_CASES = "polar_" + "at_u_" + "uME09qTk6QNcBmGZ6EJaa03o2BA17FGipMj2HV
 _POLAR_RT_O_CASES = "polar_" + "rt_o_" + "M7ZZXnKB5l9KuOG0Lrjg5AgRNXddk5xeovpogkS2na9"
 
 
+# ── 2026-10-03 ────────────────────────────────────────────────────────────
+# Private Packagist authentication token: packagist_(ort|out|uut|cut)_ + 60
+# hex random part + 8 hex CRC32 checksum (68 lowercase hex). Bodies are
+# SYNTHETIC (SHA-512 over 'classifinder-packagist-synthetic-<n>', truncated to
+# 60 hex, then the vendor-documented CRC32 checksum appended) and the prefix is
+# split so no contiguous token literal is committed.
+_PKGST_ORT_PREFIX_CASES = "packagist" + "_ort_"
+_PKGST_UUT_PREFIX_CASES = "packagist" + "_uut_"
+_PKGST_ORT_BODY_CASES = (
+    "a6f6c1c01e21b1731e1e9a4d32f073724acf2cf6a1ada497bc6806ceaba4" + "e4951d54"
+)
+_PKGST_UUT_BODY_CASES = (
+    "d9e1d08d1dd18c695ca9f452ebed51309c6422cc6c15187da1ebcdf62d88" + "0ad69005"
+)
+_PKGST_ORT_CASES = _PKGST_ORT_PREFIX_CASES + _PKGST_ORT_BODY_CASES
+_PKGST_UUT_CASES = _PKGST_UUT_PREFIX_CASES + _PKGST_UUT_BODY_CASES
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -6402,6 +6420,34 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "POLAR_" + "AT_U_" + _POLAR_AT_U_CASES[11:],
             # Must not be carved out of a longer identifier.
             "my" + _POLAR_AT_U_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-10-03 ───────────────────────────────────────────────────────
+    # Private Packagist authentication token — packagist_(ort|out|uut|cut)_ +
+    # 60 hex random part + 8 hex CRC32 checksum.
+    # Source: https://packagist.com/docs/composer-authentication
+    "packagist_authentication_token": {
+        "positives": [
+            "COMPOSER_AUTH_TOKEN=" + _PKGST_ORT_CASES,
+            '{"http-basic": {"repo.packagist.com": {"username": "token", '
+            '"password": "' + _PKGST_UUT_CASES + '"}}}',
+            "composer config --global --auth http-basic.repo.packagist.com token "
+            + _PKGST_ORT_CASES,
+        ],
+        "negatives": [
+            # The body is exactly 68 hex characters.
+            _PKGST_ORT_CASES[:-1],
+            _PKGST_ORT_CASES + "a",
+            # Lowercase hex only (PHP dechex / sha output).
+            _PKGST_ORT_PREFIX_CASES + _PKGST_ORT_BODY_CASES[:-1] + "g",
+            # Unknown token-type infix.
+            "packagist" + "_xyz_" + _PKGST_ORT_BODY_CASES,
+            # Legacy / vendor-customer tokens are bare 60 hex: not matched.
+            _PKGST_ORT_BODY_CASES[:60],
+            # Must not be carved out of a longer identifier.
+            "my" + _PKGST_ORT_CASES,
         ],
         "min_confidence": 0.90,
     },

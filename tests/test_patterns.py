@@ -16752,3 +16752,138 @@ def test_polar_oauth2_access_token_redaction_keeps_the_variable_name():
     assert _PO_BODY not in redacted_text
     assert _PO_BODY_4 not in redacted_text
     assert "POLAR_ACCESS_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Private Packagist authentication token — 2026-10-03
+# ═══════════════════════════════════════════════════════════════════════════
+# Private Packagist's own docs: "a prefix, a 60 hexadecimal character long
+# random part, and an eight hexadecimal character long checksum" (CRC32 of
+# prefix + random, zero-padded to 8), with four prefixes: packagist_ort_
+# (org read-only), packagist_out_ (org update), packagist_uut_ (user update)
+# and packagist_cut_ (Conductor update). Every body below is SYNTHETIC
+# (SHA-512 over 'classifinder-packagist-synthetic-<n>', first 60 hex, then the
+# documented CRC32 checksum appended) and each prefix is split so no
+# contiguous token literal is committed.
+# Source: https://packagist.com/docs/composer-authentication
+_PKGST_PREFIXES = {
+    "ort": "packagist" + "_ort_",
+    "out": "packagist" + "_out_",
+    "uut": "packagist" + "_uut_",
+    "cut": "packagist" + "_cut_",
+}
+_PKGST_BODIES = {
+    "ort": "a6f6c1c01e21b1731e1e9a4d32f073724acf2cf6a1ada497bc6806ceaba4" + "e4951d54",
+    "out": "1a5f58f359ee53ca2392693162b21a1a4d88fe4b8158b077dcef06114362" + "d8b28e7b",
+    "uut": "d9e1d08d1dd18c695ca9f452ebed51309c6422cc6c15187da1ebcdf62d88" + "0ad69005",
+    "cut": "cf9ab4aa7b37b585480b376acf9fff39c35aa809bc47659411f9f779f436" + "56a04735",
+}
+_PKGST = {k: _PKGST_PREFIXES[k] + _PKGST_BODIES[k] for k in _PKGST_PREFIXES}
+
+
+def _pkgst(text: str) -> list:
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "packagist_authentication_token"
+    ]
+
+
+def test_packagist_synthetic_fixtures_carry_valid_crc32_checksums():
+    """The fixtures follow the documented checksum rule exactly."""
+    import zlib
+
+    for kind, token in _PKGST.items():
+        prefix, body = _PKGST_PREFIXES[kind], _PKGST_BODIES[kind]
+        assert len(body) == 68
+        assert body[60:] == "%08x" % zlib.crc32((prefix + body[:60]).encode()), kind
+        assert token == prefix + body
+
+
+@pytest.mark.parametrize("kind", ["ort", "out", "uut", "cut"])
+def test_packagist_authentication_token_detected_for_every_prefix(kind):
+    """All four documented token-type prefixes are detected, bare, at high severity."""
+    matched = _pkgst(_PKGST[kind])
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.95
+    assert matched[0].provider == "packagist"
+    assert matched[0].severity == "high"
+
+
+def test_packagist_authentication_token_in_composer_auth_json():
+    """The token in an auth.json http-basic block is reported with an exact span."""
+    text = (
+        '{"http-basic": {"repo.packagist.com": {"username": "token", "password": "'
+        + _PKGST["uut"]
+        + '"}}}'
+    )
+    matched = _pkgst(text)
+    assert len(matched) == 1
+    f = matched[0]
+    assert text[f.span_start:f.span_end] == _PKGST["uut"]
+    assert f.span_end - f.span_start == len("packagist_uut_") + 68
+
+
+@pytest.mark.parametrize("delta", [-1, +1])
+def test_packagist_authentication_token_body_is_exactly_68(delta):
+    """67 or 69 hex characters must miss rather than be truncated."""
+    body = _PKGST_BODIES["ort"][:-1] if delta < 0 else _PKGST_BODIES["ort"] + "0"
+    assert _pkgst("token=" + _PKGST_PREFIXES["ort"] + body) == []
+
+
+def test_packagist_authentication_token_rejects_uppercase_and_non_hex():
+    """The body is lowercase hex only."""
+    assert _pkgst(_PKGST_PREFIXES["ort"] + _PKGST_BODIES["ort"].upper()) == []
+    assert _pkgst(_PKGST_PREFIXES["ort"] + _PKGST_BODIES["ort"][:-1] + "z") == []
+
+
+@pytest.mark.parametrize("infix", ["xyz", "ack", "acs", "ORT", "or"])
+def test_packagist_authentication_token_only_documented_prefixes(infix):
+    """Unknown token types (incl. the separate packagist_ack_/acs_ API
+    credential format) are not this pattern."""
+    assert _pkgst("packagist" + "_" + infix + "_" + _PKGST_BODIES["ort"]) == []
+
+
+def test_packagist_legacy_bare_hex_token_not_matched():
+    """Legacy and vendor-customer tokens are 60 bare hex characters with no
+    prefix; this pattern deliberately does not claim them."""
+    assert _pkgst("COMPOSER_TOKEN=" + _PKGST_BODIES["ort"][:60]) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "my" + _PKGST["ort"],
+        "private-" + _PKGST["out"],
+        "x_" + _PKGST["cut"],
+        _PKGST["uut"] + "_old",
+        _PKGST["ort"] + "-suffix",
+    ],
+)
+def test_packagist_authentication_token_boundaries_reject_embedded_runs(text):
+    """Both guards refuse [A-Za-z0-9_-]: no token is carved out of a longer run."""
+    assert _pkgst(text) == []
+
+
+@pytest.mark.parametrize("ch", ["0", "a", "f"])
+def test_packagist_authentication_token_masks_score_as_test_values(ch):
+    """Single-character hex masks are registered known_test_values (-> ~0.15)."""
+    matched = _pkgst("token=" + _PKGST_PREFIXES["ort"] + ch * 68)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_packagist_authentication_token_wins_over_generic_fallbacks():
+    """In an env assignment the specific pattern is the only finding reported."""
+    findings = scan("COMPOSER_AUTH_TOKEN=" + _PKGST["out"], min_confidence=0.01)
+    assert [f.type for f in findings] == ["packagist_authentication_token"]
+
+
+def test_packagist_authentication_token_redaction():
+    """Redaction removes the token body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "PACKAGIST_TOKEN=" + _PKGST["ort"]
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PKGST_BODIES["ort"] not in redacted_text
+    assert "PACKAGIST_TOKEN=" in redacted_text
