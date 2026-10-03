@@ -294,6 +294,17 @@ _BWS_CASES_2 = (
 )
 
 
+# ── 2026-09-19 ────────────────────────────────────────────────────────────
+# Helicone API keys: '[sp]k-helicone' + optional '-eu' / '-cp' / '-rl' + four
+# dash-separated groups of 7 [a-z0-9]. Every body is SYNTHETIC (SHA-512 over
+# the seed 'classifinder-helicone-synthetic-<n>') and the prefix is split so
+# no contiguous key literal is committed.
+_HELI_SK_CASES = "sk" + "-" + "helicone" + "-"
+_HELI_BODY_CASES = "htdw94h-fs42zvx-b7qmtjk-x7reiqv"
+_HELI_CASES = _HELI_SK_CASES + _HELI_BODY_CASES
+_HELI_CASES_2 = "pk" + "-" + "helicone" + "-eu-" + "v0xlhmg-ixmo8e7-6pjwb1x-n7j8bfo"
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -6168,6 +6179,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer run.
             "1" + _BWS_CASES,
             _BWS_CASES + "A",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-09-19 ───────────────────────────────────────────────────────
+    # Helicone API key — 'sk-helicone-' / 'pk-helicone-' (+ optional '-eu',
+    # '-cp', '-rl' segments) + four dash-separated groups of 7 [a-z0-9].
+    # Source: https://github.com/Helicone/helicone/blob/main/worker/src/lib/util/apiKeyRegex.ts
+    "helicone_api_key": {
+        "positives": [
+            "HELICONE_API_KEY=" + _HELI_CASES,
+            'HELICONE_API_KEY="' + _HELI_CASES_2 + '"',
+            "Helicone-Auth: Bearer " + _HELI_CASES,
+        ],
+        "negatives": [
+            # Each group is exactly 7 characters.
+            _HELI_CASES[:-1],
+            _HELI_CASES + "q",
+            # The body is lowercase.
+            _HELI_SK_CASES + _HELI_BODY_CASES.upper(),
+            # The legacy bare 'sk-' form has no anchor and is not matched.
+            "sk" + "-" + _HELI_BODY_CASES,
+            # Must not be carved out of a longer run.
+            "x" + _HELI_CASES,
+            _HELI_CASES + "-abc1234",
         ],
         "min_confidence": 0.90,
     },
