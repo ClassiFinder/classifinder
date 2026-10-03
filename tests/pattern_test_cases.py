@@ -268,6 +268,17 @@ _NBP_CASES = _NBP_PREFIX_CASES + _NBP_BODY_CASES
 _NBP_CASES_2 = _NBP_PREFIX_CASES + "GXOUroprn2naUxTVicNxj3zfQCUs96" + "4wOxjy"
 
 
+# ── 2026-09-17 ───────────────────────────────────────────────────────────────────────
+# Google Gemini / GCP Express Mode auth keys: 'AQ.Ab' + 48 base64url, 53
+# characters. Every body is SYNTHETIC (urlsafe-base64 of SHA-512 over the seed
+# 'classifinder-gemini-synthetic-<n>', truncated to 48) and the prefix is split
+# so no contiguous key literal is committed.
+_AQ_PREFIX_CASES = "AQ" + "." + "Ab"
+_AQ_BODY_CASES = "zFfneCRXS17YT8CN8scb2xPGuL3rStgeZEdKP4h0svi8jO3W"
+_AQ_CASES = _AQ_PREFIX_CASES + _AQ_BODY_CASES
+_AQ_CASES_2 = _AQ_PREFIX_CASES + "7k9_An5vQToQJjfL1-uc4CZMI0MDuXGgfrViemMZMC-P9elh"
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -6090,6 +6101,34 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "x" + _NBP_CASES,
             _NBP_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-09-17 ─────────────────────────────────────────────────────────────────
+    # Google Gemini / GCP Express Mode auth key — 'AQ.Ab' + 48 base64url, 53
+    # characters. Google's own osv-scalibr detector gives the width (maxKeyLen
+    # 53); its narrower 'AQ.Ab8R' literal is single-sourced and is folded into
+    # the body, so a key Google's regex matches also matches this one.
+    # Source: https://github.com/google/osv-scalibr/blob/v0.5.2/veles/secrets/gcpexpressmode/detector.go
+    "google_gemini_auth_key": {
+        "positives": [
+            "GEMINI_API_KEY=" + _AQ_CASES,
+            'GOOGLE_API_KEY="' + _AQ_CASES_2 + '"',
+            # The narrower 'AQ.Ab8R' form Google's own detector pins.
+            _AQ_PREFIX_CASES + "8R" + _AQ_BODY_CASES[:46],
+        ],
+        "negatives": [
+            # The body is exactly 48 characters.
+            _AQ_CASES[:-1],
+            _AQ_CASES + "Q",
+            # The prefix is exact, case-sensitive, and carries a literal dot.
+            "AQ" + "Ab" + _AQ_BODY_CASES,
+            "aq" + "." + "ab" + _AQ_BODY_CASES,
+            "AQ" + "-" + "Ab" + _AQ_BODY_CASES,
+            # Must not be carved out of a longer identifier or dotted token.
+            "x" + _AQ_CASES,
+            "v1." + _AQ_CASES,
+            _AQ_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
