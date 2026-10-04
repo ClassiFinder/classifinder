@@ -882,6 +882,189 @@ def test_cloudflare_scannable_api_token_redaction_keeps_the_variable_name():
 
 
 # ═══════════════════════════════════════════════
+# 2026-10-04 — Cloudflare scannable Global API Key ('cfk_')
+# ═══════════════════════════════════════════════
+# Every literal is SYNTHETIC: the 40-character body is SHA-512 over the seed
+# 'classifinder-cloudflare-cfk-synthetic-<n>', base62-encoded and truncated,
+# and the 8-hex tail is SHA-256 over the same seed, deliberately NOT a valid
+# CRC32 of the key. The prefix is split so no contiguous key literal is
+# committed to source (Cloudflare is a GitHub secret-scanning partner).
+# Source: https://developers.cloudflare.com/fundamentals/api/get-started/token-formats/
+_CFK_PREFIX = "cf" + "k_"
+_CFK_BODY = "gBxnpPvLD7FKfKNMl99Tca0STg8hEKYjRpUa5lmC"
+_CFK_BODY_2 = "pQb5mb4ehBS8mcQUbbzN72CeSKcJC9yVJKLeqKzm"
+_CFK_BODY_3 = "q41jPsBZHNWHlz2MUExRc2gNelNVpLwAdnEz14vm"
+_CFK_CHK = "3bca61cd"
+_CFK_CHK_2 = "9bdd7698"
+_CFK_CHK_3 = "be9291c7"
+_CFK = _CFK_PREFIX + _CFK_BODY + _CFK_CHK
+_CFK_2 = _CFK_PREFIX + _CFK_BODY_2 + _CFK_CHK_2
+_CFK_3 = _CFK_PREFIX + _CFK_BODY_3 + _CFK_CHK_3
+_CFK_UPPER_CHK = _CFK_PREFIX + _CFK_BODY + _CFK_CHK.upper()
+
+
+def _cf_global_scannable(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "cloudflare_scannable_global_api_key"
+    ]
+
+
+def test_cloudflare_scannable_global_api_key_true_positives():
+    """Detected in the carriers a Global API Key actually leaks through: bare,
+    CLOUDFLARE_API_KEY / CF_API_KEY env lines, an export, a CI YAML env block,
+    the X-Auth-Key header (curl), Terraform provider config and JSON."""
+    for text in (
+        _CFK,
+        "CLOUDFLARE_API_KEY=" + _CFK,
+        'CF_API_KEY="' + _CFK_2 + '"',
+        "export CLOUDFLARE_API_KEY=" + _CFK_3,
+        "env:\n  CLOUDFLARE_API_KEY: " + _CFK,
+        "X-Auth-Key: " + _CFK_2,
+        "curl -H 'X-Auth-Email: ops@example.com' -H 'X-Auth-Key: " + _CFK
+        + "' https://api.cloudflare.com/client/v4/user",
+        'provider "cloudflare" {\n  email   = "ops@example.com"\n  api_key = "'
+        + _CFK_3 + '"\n}',
+        '{"cloudflare_global_api_key": "' + _CFK_2 + '"}',
+        # The vendor says only "hex" — an uppercase checksum is accepted too.
+        "CLOUDFLARE_API_KEY=" + _CFK_UPPER_CHK,
+    ):
+        matched = _cf_global_scannable(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "cloudflare"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_cloudflare_scannable_global_api_key_span_is_exactly_the_key():
+    """The span must be the whole 52-character key — prefix and checksum
+    included, no quote, no variable name — so redaction removes all of it."""
+    for text, key in (
+        ("CLOUDFLARE_API_KEY=" + _CFK, _CFK),
+        ('api_key = "' + _CFK_2 + '"', _CFK_2),
+        ("X-Auth-Key: " + _CFK_3 + "\r\n", _CFK_3),
+    ):
+        matched = _cf_global_scannable(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == key
+        assert len(key) == 52
+
+
+def test_cloudflare_scannable_global_api_key_true_negatives():
+    """The prefix is the exact lowercase 'cfk_', the body is exactly 40
+    alphanumerics and the checksum exactly 8 hex characters."""
+    for neg in (
+        # Truncated key, and a checksum one character short.
+        _CFK[:-1],
+        _CFK_PREFIX + _CFK_BODY + _CFK_CHK[:7],
+        _CFK_PREFIX + _CFK_BODY[:20],
+        # A checksum that is not hex.
+        _CFK_PREFIX + _CFK_BODY + "zzzzzzzz",
+        _CFK_PREFIX + _CFK_BODY + "3bca61cg",
+        # A body carrying a non-alnum character.
+        _CFK_PREFIX + _CFK_BODY[:20] + "_" + _CFK_BODY[21:] + _CFK_CHK,
+        _CFK_PREFIX + _CFK_BODY[:20] + "-" + _CFK_BODY[21:] + _CFK_CHK,
+        # Only the exact lowercase 'cfk_' prefix.
+        "CF" + "K_" + _CFK_BODY + _CFK_CHK,
+        "cf" + "k-" + _CFK_BODY + _CFK_CHK,
+        "cf" + "k" + _CFK_BODY + _CFK_CHK,
+        "cf" + "x_" + _CFK_BODY + _CFK_CHK,
+        # The bare body + checksum with no prefix is not claimed.
+        _CFK_BODY + _CFK_CHK,
+        # Docs placeholders do not match.
+        _CFK_PREFIX + "[40 characters][checksum]",
+        _CFK_PREFIX + "...",
+        'CLOUDFLARE_API_KEY="' + _CFK_PREFIX + 'your_global_api_key_here"',
+        # A CI reference to a stored secret is not a key.
+        "CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}",
+        # Prose naming the prefix is not a key.
+        "Global API Keys now start with cf" + "k_ followed by 48 characters.",
+    ):
+        assert _cf_global_scannable(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_cloudflare_scannable_global_api_key_is_not_carved_out_of_a_longer_token():
+    """Both guards refuse [A-Za-z0-9_-], so a key is never cut out of the
+    middle of a longer identifier or base64url run, and a 53-character run
+    matches nothing rather than being truncated."""
+    for neg in (
+        "x" + _CFK,
+        "9" + _CFK_2,
+        "my_" + _CFK,
+        "key-" + _CFK_3,
+        _CFK + "a",
+        _CFK + "7",
+        _CFK_2 + "Q",
+        _CFK + "_old",
+        _CFK_3 + "-x",
+    ):
+        assert _cf_global_scannable(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_cloudflare_scannable_global_api_key_masked_placeholders_score_as_test_values():
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+    wordlist never prices a placeholder down. The single-character masks are
+    registered as known_test_values and must land at ~0.15."""
+    for mask in (
+        _CFK_PREFIX + "x" * 40 + "0" * 8,
+        _CFK_PREFIX + "X" * 40 + "0" * 8,
+        _CFK_PREFIX + "0" * 48,
+    ):
+        matched = _cf_global_scannable("CLOUDFLARE_API_KEY=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_cloudflare_scannable_global_api_key_does_not_collide():
+    """A key — bare, behind CLOUDFLARE_API_KEY= / CF_API_KEY= / api_key=, in
+    the X-Auth-Key header, or in JSON — is reported once, as this pattern and
+    nothing else: the generic fallbacks are deduplicated away."""
+    for text in (
+        _CFK,
+        "CLOUDFLARE_API_KEY=" + _CFK,
+        "CF_API_KEY=" + _CFK_2,
+        "cloudflare_global_api_key = " + _CFK_3,
+        "api_key=" + _CFK,
+        "X-Auth-Key: " + _CFK_2,
+        '{"key": "' + _CFK_3 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["cloudflare_scannable_global_api_key"], text[:40]
+
+
+def test_cloudflare_scannable_global_api_key_is_disjoint_from_sibling_cloudflare_patterns():
+    """The scannable API tokens ('cfut_' / 'cfat_') and the legacy 37-hex
+    Global API Key keep their own findings; the new pattern claims neither,
+    and the scannable-token pattern does not claim a 'cfk_' key."""
+    for token in ("cf" + "ut_" + _CFK_BODY + _CFK_CHK, "cf" + "at_" + _CFK_BODY + _CFK_CHK):
+        assert _cf_global_scannable(token) == []
+        assert [f.type for f in scan(token, min_confidence=0.01)] == [
+            "cloudflare_scannable_api_token"
+        ]
+
+    legacy = "CLOUDFLARE_GLOBAL_API_KEY: d3d1443e0adc9c24564c6c5676d679d47e2ca"
+    assert _cf_global_scannable(legacy) == []
+    assert "cloudflare_global_api_key" in [f.type for f in scan(legacy, min_confidence=0.01)]
+
+
+def test_cloudflare_scannable_global_api_key_redaction_keeps_the_variable_name():
+    """Redaction must remove both keys while leaving the variable names
+    readable, so the reader can still tell where the key was configured."""
+    from app.engine.redactor import redact
+
+    text = "CLOUDFLARE_API_KEY=" + _CFK + "\n" + 'CF_API_KEY="' + _CFK_3 + '"'
+    findings = scan(text, min_confidence=0.01)
+    assert [f.type for f in findings] == ["cloudflare_scannable_global_api_key"] * 2
+    redacted_text, _redaction_map = redact(text, findings, style="label")
+    assert _CFK_BODY not in redacted_text
+    assert _CFK_BODY_3 not in redacted_text
+    assert "CLOUDFLARE_API_KEY=" in redacted_text
+    assert "CF_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 1.5 — JFrog / Artifactory (2026-05-21)
 # ═══════════════════════════════════════════════
 
