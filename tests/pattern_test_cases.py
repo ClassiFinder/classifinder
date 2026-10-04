@@ -68,6 +68,14 @@ _CF_BODY_CASES = "v0nn2giVcwySONs5UbnOGZccbsZ0fPjJhHhw7MOx" + "7d82bb93"
 _CFUT_CASES = _CFUT_PREFIX_CASES + _CF_BODY_CASES
 _CFAT_CASES = _CFAT_PREFIX_CASES + _CF_BODY_CASES
 
+# ── 2026-10-04 ────────────────────────────────────────────────────────────
+# Cloudflare scannable Global API Key: 'cfk_' + 40 alnum + 8 hex. The body is
+# SYNTHETIC (SHA-512 over 'classifinder-cloudflare-cfk-synthetic-4',
+# base62-encoded) and the tail is SHA-256 over the same seed, NOT a valid CRC32.
+_CFK_PREFIX_CASES = "cf" + "k_"
+_CFK_BODY_CASES = "jM6P1EsJvCqOnEwEqniGwQvsg899PSqTNAI0TYyu" + "d6ae2245"
+_CFK_CASES = _CFK_PREFIX_CASES + _CFK_BODY_CASES
+
 # GitLab runner registration tokens. 'GR1348941' is a literal vendor constant
 # (GitLab's RUNNERS_TOKEN_PREFIX); the bodies are 20 urlsafe-base64 characters.
 # Split so no contiguous registration-token literal is committed to source.
@@ -1364,6 +1372,31 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "x" + _CFAT_CASES,
             _CFUT_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-10-04 ───────────────────────────────────────────────────────
+    # Cloudflare scannable Global API Key — 'cfk_' + 40 alnum + 8-hex
+    # checksum, 52 characters. Vendor-documented format.
+    # Source: https://developers.cloudflare.com/fundamentals/api/get-started/token-formats/
+    "cloudflare_scannable_global_api_key": {
+        "positives": [
+            "CLOUDFLARE_API_KEY=" + _CFK_CASES,
+            "X-Auth-Key: " + _CFK_CASES,
+            'CF_API_KEY="' + _CFK_CASES + '"',
+        ],
+        "negatives": [
+            # The key is exactly 52 characters.
+            _CFK_CASES[:-1],
+            _CFK_CASES + "a",
+            # The prefix is exact and case-sensitive.
+            "CF" + "K_" + _CFK_BODY_CASES,
+            # The scannable API tokens are a separate pattern.
+            "cf" + "ut_" + _CFK_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "x" + _CFK_CASES,
+            _CFK_CASES + "_old",
         ],
         "min_confidence": 0.90,
     },
