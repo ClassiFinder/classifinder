@@ -76,6 +76,29 @@ _CFK_PREFIX_CASES = "cf" + "k_"
 _CFK_BODY_CASES = "jM6P1EsJvCqOnEwEqniGwQvsg899PSqTNAI0TYyu" + "d6ae2245"
 _CFK_CASES = _CFK_PREFIX_CASES + _CFK_BODY_CASES
 
+# ── 2026-10-05 ────────────────────────────────────────────────────────────
+# Weekly batch: Ory OAuth2, Private Packagist API secret, WooCommerce consumer
+# secret, Akamai EdgeGrid client secret. Every body is SYNTHETIC (SHA-512 over
+# 'classifinder-<vendor>-...-synthetic-<n>'); prefixes are split by
+# concatenation so no contiguous token literal is committed to source.
+_ORY_AT_CASES = (
+    "ory_" + "at_" + "8Lf-vAvNdiLtE-UwkIuYRX67fVjFc-oSUDgu5tN6RyQ"
+    + "." + "5EstzLy7FhkGTDqYlgDDFFBlerKyqeXXB9o_LioTDAI"
+)
+_ORY_RT_CASES = (
+    "ory_" + "rt_" + "zHkAsKFSdPdYSF7O5K0Agcaz3_WBlq4_Yu81kLw52zE"
+    + "." + "qb4HlwCJR-cCxWhokqj21HgI7zQxlCS-sj2vg7UwHs4"
+)
+_PACKAGIST_ACS_CASES = (
+    "packagist_" + "acs_" + "242053d730049b5eb62eaf85f4584a696941397a"
+    + "0cc34fbdf1ddd70ea20cb57516c650fbaa84b697"
+)
+_WC_CS_CASES = "cs" + "_" + "2218a2927ba11e148c3fb808b7bebc64b9909419"
+_WC_CK_CASES = "ck" + "_" + "df17725eef143f5b51460c8d090bf6b871218c59"
+_AKAMAI_SECRET_CASES = "2EZcckmFnauaOqfB1mkrtkE3tznlnSJ9QmGF/jBx4Qo="
+_AKAB_HOST_CASES = "ak" + "ab-abcdefghijklmnop-qrstuvwxyz012345.luna.akamaiapis.net"
+_AKAB_TOKEN_CASES = "ak" + "ab-ponmlkjihgfedcba-543210zyxwvutsrq"
+
 # GitLab runner registration tokens. 'GR1348941' is a literal vendor constant
 # (GitLab's RUNNERS_TOKEN_PREFIX); the bodies are 20 urlsafe-base64 characters.
 # Split so no contiguous registration-token literal is committed to source.
@@ -1397,6 +1420,96 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Must not be carved out of a longer identifier.
             "x" + _CFK_CASES,
             _CFK_CASES + "_old",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-10-05 ───────────────────────────────────────────────────────
+    # Ory OAuth2 opaque tokens — 'ory_at_' / 'ory_rt_' + 43 base64url '.'
+    # 43 base64url (Ory Hydra fosite HMAC-SHA strategy).
+    # Source: https://www.ory.com/docs/security-compliance/token-formats
+    "ory_oauth2_token": {
+        "positives": [
+            "Authorization: Bearer " + _ORY_AT_CASES,
+            '{"access_token": "' + _ORY_AT_CASES + '", "token_type": "bearer"}',
+            "ORY_REFRESH_TOKEN=" + _ORY_RT_CASES,
+        ],
+        "negatives": [
+            _ORY_AT_CASES[:-1],
+            _ORY_AT_CASES + "a",
+            # The authorization code is deliberately not matched.
+            "ory_" + "ac_" + _ORY_AT_CASES[7:],
+            # Must not be carved out of a longer identifier.
+            "fact" + _ORY_AT_CASES,
+            # Prefix is exact and case-sensitive.
+            "ORY_" + "AT_" + _ORY_AT_CASES[7:],
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Private Packagist API secret — 'packagist_acs_' + lowercase hex.
+    # Source: https://packagist.com/docs/changelog
+    "packagist_api_secret": {
+        "positives": [
+            "PACKAGIST_API_SECRET=" + _PACKAGIST_ACS_CASES,
+            "$client->authenticate('packagist_" + "ack_99c18e819e1a596af2c16f896a043817', '"
+            + _PACKAGIST_ACS_CASES + "');",
+            _PACKAGIST_ACS_CASES,
+        ],
+        "negatives": [
+            # Body below the 32-hex floor, or above the 128-hex ceiling.
+            "packagist_" + "acs_" + "abcdef0123456789" * 1,
+            "packagist_" + "acs_" + "abcdef0123456789" * 9,
+            # Uppercase hex is not the vendor's format.
+            "packagist_" + "acs_" + _PACKAGIST_ACS_CASES[14:].upper(),
+            # The API key id is not the secret.
+            "packagist_" + "ack_99c18e819e1a596af2c16f896a043817",
+            "x" + _PACKAGIST_ACS_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # WooCommerce REST API consumer secret — 'cs_' + exactly 40 lowercase hex.
+    # Source: https://github.com/woocommerce/woocommerce/blob/trunk/plugins/woocommerce/includes/class-wc-auth.php
+    "woocommerce_consumer_secret": {
+        "positives": [
+            "WOOCOMMERCE_CONSUMER_SECRET=" + _WC_CS_CASES,
+            "consumer_key=" + _WC_CK_CASES + "\nconsumer_secret=" + _WC_CS_CASES,
+            "curl https://shop.example.com/wp-json/wc/v3/orders -u "
+            + _WC_CK_CASES + ":" + _WC_CS_CASES,
+        ],
+        "negatives": [
+            _WC_CS_CASES[:-1],
+            _WC_CS_CASES + "a",
+            "docs_" + _WC_CS_CASES[3:],
+            "cs" + "-" + _WC_CS_CASES[3:],
+            "CS" + "_" + _WC_CS_CASES[3:],
+            # Stripe Checkout Session ids are base62 after cs_live_ / cs_test_.
+            "cs" + "_live_" + "a1B2c3D4e5F6g7H8i9J0kLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsT",
+            "cs" + "_test_" + "a1B2c3D4e5F6g7H8i9J0kLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsT",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    # Akamai EdgeGrid client_secret — base64 43 + '=', context-anchored.
+    # Source: https://techdocs.akamai.com/developer/docs/edgegrid
+    "akamai_edgegrid_client_secret": {
+        "positives": [
+            "[default]\nclient_secret = " + _AKAMAI_SECRET_CASES + "\nhost = "
+            + _AKAB_HOST_CASES + "\nclient_token = " + _AKAB_TOKEN_CASES + "\n",
+            "[default]\nhost = " + _AKAB_HOST_CASES + "\nclient_token = "
+            + _AKAB_TOKEN_CASES + "\nclient_secret = " + _AKAMAI_SECRET_CASES + "\n",
+            "AKAMAI_CLIENT_SECRET=" + _AKAMAI_SECRET_CASES,
+        ],
+        "negatives": [
+            # The bare value, and a client_secret with no Akamai marker nearby.
+            _AKAMAI_SECRET_CASES,
+            "client_secret = " + _AKAMAI_SECRET_CASES,
+            # A marker in a DIFFERENT .edgerc-style section is not borrowed.
+            "[a]\nhost = " + _AKAB_HOST_CASES + "\n[b]\nclient_secret = "
+            + _AKAMAI_SECRET_CASES,
+            # Wrong length.
+            "AKAMAI_CLIENT_SECRET=" + _AKAMAI_SECRET_CASES[1:],
         ],
         "min_confidence": 0.90,
     },

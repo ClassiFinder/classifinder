@@ -1065,6 +1065,396 @@ def test_cloudflare_scannable_global_api_key_redaction_keeps_the_variable_name()
 
 
 # ═══════════════════════════════════════════════
+# 2026-10-05 — weekly batch: Ory OAuth2, Packagist API secret,
+# WooCommerce consumer secret, Akamai EdgeGrid client secret
+# ═══════════════════════════════════════════════
+# Every literal is SYNTHETIC: bodies are SHA-512 over seeds of the form
+# 'classifinder-<vendor>-...-synthetic-<n>' (base64url / hex / base64 encoded
+# as the format needs); signatures and checksums are NOT valid. Prefixes are
+# split so no contiguous token literal is committed to source.
+
+def _of(text, pid):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == pid]
+
+
+# ── Ory OAuth2 access / refresh token ─────────────────────────────────
+# Source: https://www.ory.com/docs/security-compliance/token-formats
+_ORY_KEY = "PO9UuAY6p7DRACbfya2KIKkGO0IEwBxgNOzb2q5B-0k"
+_ORY_SIG = "_4siHdtduO_FTy4QqqF-xiwFkWkFAzeTO27_L6kLHdg"
+_ORY_KEY_2 = "0rkpmIOuZ1ovqWYmE73Act61Q0eCFa18WXFReSEkwSE"
+_ORY_SIG_2 = "ayOUzTSmkY2f_qrpnLpB5VlRIxFFitcuianud8MdSzY"
+_ORY_AT = "ory_" + "at_" + _ORY_KEY + "." + _ORY_SIG
+_ORY_RT = "ory_" + "rt_" + _ORY_KEY_2 + "." + _ORY_SIG_2
+
+
+def test_ory_oauth2_token_true_positives():
+    for text in (
+        _ORY_AT,
+        _ORY_RT,
+        "Authorization: Bearer " + _ORY_AT,
+        '{"access_token":"' + _ORY_AT + '","refresh_token":"' + _ORY_RT + '"}',
+        "ORY_ACCESS_TOKEN=" + _ORY_AT,
+        "curl -H 'Authorization: Bearer " + _ORY_AT + "' https://x.projects.oryapis.com/userinfo",
+    ):
+        matched = _of(text, "ory_oauth2_token")
+        assert matched, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.provider == "ory"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.90
+
+
+def test_ory_oauth2_token_span_is_exactly_the_token():
+    for text, tok in (("Bearer " + _ORY_AT, _ORY_AT), ('"' + _ORY_RT + '",', _ORY_RT)):
+        matched = _of(text, "ory_oauth2_token")
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+        assert len(tok) == 94
+
+
+def test_ory_oauth2_token_true_negatives():
+    for neg in (
+        _ORY_AT[:-1],
+        "ory_" + "at_" + _ORY_KEY[:-1] + "." + _ORY_SIG,
+        "ory_" + "at_" + _ORY_KEY + _ORY_SIG,  # missing the '.' separator
+        "ory_" + "ac_" + _ORY_KEY + "." + _ORY_SIG,  # authorization code: not matched
+        "ory_" + "st_" + _ORY_KEY + "." + _ORY_SIG,
+        "ORY_" + "AT_" + _ORY_KEY + "." + _ORY_SIG,
+        _ORY_KEY + "." + _ORY_SIG,  # unprefixed fosite token is not claimed
+        "Ory access tokens start with ory_" + "at_ followed by two base64url parts.",
+    ):
+        assert _of(neg, "ory_oauth2_token") == [], "wrongly matched: " + neg[:70]
+
+
+def test_ory_oauth2_token_is_not_carved_out_of_a_longer_token():
+    for neg in ("fact" + _ORY_AT, "x" + _ORY_AT, "-" + _ORY_RT, _ORY_AT + "a", _ORY_AT + "-", _ORY_RT + "_x"):
+        assert _of(neg, "ory_oauth2_token") == [], "wrongly matched: " + neg[:70]
+
+
+def test_ory_oauth2_token_masked_placeholders_score_as_test_values():
+    for mask in (
+        "ory_" + "at_" + "x" * 43 + "." + "x" * 43,
+        "ory_" + "rt_" + "X" * 43 + "." + "X" * 43,
+        "ory_" + "at_" + "0" * 43 + "." + "0" * 43,
+    ):
+        matched = _of("Bearer " + mask, "ory_oauth2_token")
+        assert len(matched) == 1, mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_ory_oauth2_token_does_not_collide():
+    """Reported once, as this pattern — not as ory_session_token, a JWT or a
+    generic finding."""
+    for text in (_ORY_AT, "access_token=" + _ORY_AT, "Authorization: Bearer " + _ORY_RT):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == ["ory_oauth2_token"], text[:40]
+    st = "ory_" + "st_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+    assert [f.type for f in scan(st, min_confidence=0.01)] == ["ory_session_token"]
+
+
+# ── Private Packagist API secret ──────────────────────────────────────
+# Source: https://packagist.com/docs/changelog
+_ACS_BODY = "8afa6bdd207908993664caaf86202aab43d593f2a6075c52b451e7fc5317539f8831ae5b0e373848"
+_ACS_BODY_2 = "5885c9025a82d1497b9bd1485a9ae1fbe032251488475938c93a126792ead0961c5a10d244968618"
+_ACS = "packagist_" + "acs_" + _ACS_BODY
+_ACS_2 = "packagist_" + "acs_" + _ACS_BODY_2
+_ACK = "packagist_" + "ack_" + "1e29edb072789b777b34cda036b95dc8"
+
+
+def test_packagist_api_secret_true_positives():
+    for text in (
+        _ACS,
+        "PACKAGIST_API_SECRET=" + _ACS,
+        "PACKAGIST_API_KEY=" + _ACK + "\nPACKAGIST_API_SECRET=" + _ACS_2,
+        "$client->authenticate('" + _ACK + "', '" + _ACS + "');",
+        '{"api_key": "' + _ACK + '", "api_secret": "' + _ACS_2 + '"}',
+        # Width window: 64 and 96 hex (the observed range) both match.
+        "packagist_" + "acs_" + _ACS_BODY[:64],
+        "packagist_" + "acs_" + (_ACS_BODY + _ACS_BODY_2)[:96],
+    ):
+        matched = _of(text, "packagist_api_secret")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "packagist"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_packagist_api_secret_span_is_exactly_the_secret():
+    text = "secret: '" + _ACS + "'"
+    matched = _of(text, "packagist_api_secret")
+    assert len(matched) == 1
+    assert text[matched[0].span_start:matched[0].span_end] == _ACS
+
+
+def test_packagist_api_secret_true_negatives():
+    for neg in (
+        _ACK,  # the API key id is not the secret
+        "packagist_" + "acs_" + _ACS_BODY[:31],
+        "packagist_" + "acs_" + (_ACS_BODY * 2)[:129],
+        "packagist_" + "acs_" + _ACS_BODY.upper(),
+        "packagist_" + "acs_" + _ACS_BODY[:40] + "g" + _ACS_BODY[41:],
+        "Packagist_" + "acs_" + _ACS_BODY,
+        "packagist_" + "acs_...",
+        "x" + _ACS,
+        "my-" + _ACS,
+        _ACS + "_old",
+        _ACS + "-x",
+    ):
+        assert _of(neg, "packagist_api_secret") == [], "wrongly matched: " + neg[:70]
+
+
+def test_packagist_api_secret_masked_placeholders_score_as_test_values():
+    for mask in ("packagist_" + "acs_" + "0" * 80, "packagist_" + "acs_" + "f" * 64):
+        matched = _of("PACKAGIST_API_SECRET=" + mask, "packagist_api_secret")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_packagist_api_secret_does_not_collide():
+    for text in (_ACS, "PACKAGIST_API_SECRET=" + _ACS, "api_secret=" + _ACS_2):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == ["packagist_api_secret"], text[:40]
+    # The authentication-token sibling keeps its own findings.
+    ort = "packagist_" + "ort_" + _ACS_BODY[:68]
+    assert _of(ort, "packagist_api_secret") == []
+    assert [f.type for f in scan(ort, min_confidence=0.01)] == ["packagist_authentication_token"]
+
+
+# ── WooCommerce REST API consumer secret ──────────────────────────────
+# Source: https://github.com/woocommerce/woocommerce/blob/trunk/plugins/woocommerce/includes/class-wc-auth.php
+_WC_CS = "cs" + "_" + "094ccd5a6b12c1fd6727500447e5d3810f819438"
+_WC_CS_2 = "cs" + "_" + "dd4e651b2f5a2aa845d5df8a0f33c43b9368545f"
+_WC_CK = "ck" + "_" + "4b9942c1572041405718234385606dc23c469d63"
+
+
+def test_woocommerce_consumer_secret_true_positives():
+    for text in (
+        _WC_CS,
+        "WOOCOMMERCE_CONSUMER_SECRET=" + _WC_CS,
+        "WC_CONSUMER_KEY=" + _WC_CK + "\nWC_CONSUMER_SECRET=" + _WC_CS_2,
+        "curl https://shop.example.com/wp-json/wc/v3/products -u " + _WC_CK + ":" + _WC_CS,
+        "https://shop.example.com/wp-json/wc/v3/orders?consumer_key=" + _WC_CK
+        + "&consumer_secret=" + _WC_CS_2,
+        "new WooCommerceRestApi({ url, consumerKey: '" + _WC_CK + "', consumerSecret: '"
+        + _WC_CS + "', version: 'wc/v3' })",
+        '{"consumer_secret": "' + _WC_CS_2 + '"}',
+    ):
+        matched = _of(text, "woocommerce_consumer_secret")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].provider == "woocommerce"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.85
+
+
+def test_woocommerce_consumer_secret_span_is_exactly_the_secret():
+    text = "-u " + _WC_CK + ":" + _WC_CS + " "
+    matched = _of(text, "woocommerce_consumer_secret")
+    assert len(matched) == 1
+    assert text[matched[0].span_start:matched[0].span_end] == _WC_CS
+    assert len(_WC_CS) == 43
+
+
+def test_woocommerce_consumer_secret_true_negatives():
+    body = _WC_CS[3:]
+    for neg in (
+        _WC_CS[:-1],
+        _WC_CS + "0",
+        "cs" + "_" + body.upper(),
+        "cs" + "_" + body[:20] + "g" + body[21:],
+        "CS" + "_" + body,
+        "cs" + "-" + body,
+        "cs" + body,
+        _WC_CK,  # the consumer key is not the secret
+        body,  # a bare SHA-1-shaped hex string
+        "docs_" + body,
+        "abcs_" + body,
+        "x" + _WC_CS,
+        _WC_CS + "_old",
+        _WC_CS + "-x",
+        "cs" + "_...",
+    ):
+        assert _of(neg, "woocommerce_consumer_secret") == [], "wrongly matched: " + neg[:70]
+
+
+def test_woocommerce_consumer_secret_does_not_match_stripe_checkout_sessions():
+    """Stripe Checkout Session ids ('cs_live_' / 'cs_test_' + base62) are not
+    WooCommerce secrets: the body after 'cs_' must be pure lowercase hex."""
+    for sess in (
+        "cs" + "_live_" + "a1B2c3D4e5F6g7H8i9J0kLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsT",
+        "cs" + "_test_" + "a1B2c3D4e5F6g7H8i9J0kLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsT",
+        "cs" + "_test_" + "a1" + "0" * 38,
+    ):
+        assert _of(sess, "woocommerce_consumer_secret") == [], sess
+
+
+def test_woocommerce_consumer_secret_masked_placeholders_score_as_test_values():
+    for mask in ("cs" + "_" + "0" * 40, "cs" + "_" + "f" * 40):
+        matched = _of("consumer_secret=" + mask, "woocommerce_consumer_secret")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_woocommerce_consumer_secret_does_not_collide():
+    for text in (_WC_CS, "WOOCOMMERCE_CONSUMER_SECRET=" + _WC_CS, "consumer_secret=" + _WC_CS_2,
+                 "api_secret=" + _WC_CS):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == [
+            "woocommerce_consumer_secret"
+        ], text[:40]
+
+
+# ── Akamai EdgeGrid client secret ─────────────────────────────────────
+# Source: https://techdocs.akamai.com/developer/docs/edgegrid
+_AK_SECRET = "g603gF67Z/j0S/CicEC7beu+yDJ0BY46VQOStCi2dRM="
+_AK_SECRET_2 = "VczQ0gdEcjsi1vsFyv2rD6WPluBKUYMK7qdXoe+lZ9U="
+_AK_SECRET_3 = "ccv0SYmEheCTg9jhkDuM92KuIx13aZaHkKuI5YCdnmM="
+_AK_HOST = "ak" + "ab-abcdefghijklmnop-qrstuvwxyz012345.luna.akamaiapis.net"
+_AK_CLIENT_TOKEN = "ak" + "ab-ponmlkjihgfedcba-543210zyxwvutsrq"
+_AK_ACCESS_TOKEN = "ak" + "ab-abcdefghijklmnop-qrstuvwxyz0123"
+
+
+def _edgerc(secret, secret_first=True, key="client_secret", section="default"):
+    lines = [
+        "host = " + _AK_HOST,
+        "access_token = " + _AK_ACCESS_TOKEN,
+        "client_token = " + _AK_CLIENT_TOKEN,
+    ]
+    sec = key + " = " + secret
+    lines = [sec] + lines if secret_first else lines + [sec]
+    return "[" + section + "]\n" + "\n".join(lines) + "\n"
+
+
+def test_akamai_edgegrid_client_secret_true_positives():
+    for text in (
+        _edgerc(_AK_SECRET, secret_first=True),
+        _edgerc(_AK_SECRET_2, secret_first=False),
+        _edgerc(_AK_SECRET, key="client-secret"),
+        "AKAMAI_CLIENT_SECRET=" + _AK_SECRET,
+        "export AKAMAI_PAPI_CLIENT_SECRET='" + _AK_SECRET_2 + "'",
+        'AKAMAI_CLIENT_SECRET: "' + _AK_SECRET + '"',
+        'provider "akamai" {\n  config {\n    client_secret = "' + _AK_SECRET
+        + '"\n    host          = "' + _AK_HOST + '"\n    access_token  = "'
+        + _AK_ACCESS_TOKEN + '"\n    client_token  = "' + _AK_CLIENT_TOKEN + '"\n  }\n}',
+        '{"client_token": "' + _AK_CLIENT_TOKEN + '", "client_secret": "' + _AK_SECRET_2 + '"}',
+    ):
+        matched = _of(text, "akamai_edgegrid_client_secret")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].provider == "akamai"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+
+
+def test_akamai_edgegrid_client_secret_span_is_exactly_the_secret():
+    for text, sec in (
+        (_edgerc(_AK_SECRET, secret_first=True), _AK_SECRET),
+        (_edgerc(_AK_SECRET_2, secret_first=False), _AK_SECRET_2),
+        ("AKAMAI_CLIENT_SECRET='" + _AK_SECRET + "'", _AK_SECRET),
+    ):
+        matched = _of(text, "akamai_edgegrid_client_secret")
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == sec
+        assert len(sec) == 44
+
+
+def test_akamai_edgegrid_client_secret_every_section_is_reported():
+    text = _edgerc(_AK_SECRET, section="default") + _edgerc(_AK_SECRET_2, False, section="papi")
+    assert len(_of(text, "akamai_edgegrid_client_secret")) == 2
+
+
+def test_akamai_edgegrid_client_secret_requires_akamai_context():
+    """The 44-char base64 value is a generic shape — without an AKAMAI_
+    variable name or an akab-/luna marker in the same section, no match."""
+    for neg in (
+        _AK_SECRET,
+        "client_secret = " + _AK_SECRET,
+        "CLIENT_SECRET=" + _AK_SECRET,
+        "OAUTH_CLIENT_SECRET=" + _AK_SECRET,
+        "client_secret = " + _AK_SECRET + "\nhost = auth.example.com",
+        # A marker in a different section is not borrowed.
+        "[a]\nhost = " + _AK_HOST + "\n[b]\nclient_secret = " + _AK_SECRET,
+        "[b]\nclient_secret = " + _AK_SECRET + "\n[a]\nhost = " + _AK_HOST,
+        # A marker more than 400 characters away is not borrowed.
+        "host = " + _AK_HOST + "\n" + ("# filler\n" * 60) + "client_secret = " + _AK_SECRET,
+    ):
+        assert _of(neg, "akamai_edgegrid_client_secret") == [], "wrongly matched: " + neg[:70]
+
+
+def test_akamai_edgegrid_client_secret_true_negatives():
+    for neg in (
+        _edgerc(_AK_SECRET[1:]),  # 43 chars
+        _edgerc(_AK_SECRET[:-1] + "A"),  # no '=' pad
+        _edgerc("A" + _AK_SECRET),  # 45 chars
+        _edgerc(_AK_SECRET + "="),  # '==' padding is not a 32-byte value
+        _edgerc(_AK_SECRET[:10] + "-" + _AK_SECRET[11:]),  # base64url char
+        "AKAMAI_CLIENT_TOKEN=" + _AK_SECRET,
+        "AKAMAI_CLIENT_SECRET=${{ secrets.AKAMAI_CLIENT_SECRET }}",
+    ):
+        assert _of(neg, "akamai_edgegrid_client_secret") == [], "wrongly matched: " + neg[:70]
+
+
+def test_akamai_edgegrid_client_secret_placeholders_score_as_test_values():
+    """The vendor's documentation example and the SDK sample-file masks.
+    Scanned with a types filter: at 0.15 the documentation example's span is
+    otherwise taken in dedup by azure_ad_client_secret's partial match on the
+    same 'client_secret =' line (pre-existing behaviour, unchanged here)."""
+    for mask in (
+        "C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN=",
+        "x" * 43 + "=",
+        "A" * 43 + "=",
+    ):
+        matched = scan(
+            _edgerc(mask), types=["akamai_edgegrid_client_secret"], min_confidence=0.01
+        )
+        assert len(matched) == 1, mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_akamai_edgegrid_client_secret_does_not_collide():
+    """The secret span is reported once, as this pattern — the generic
+    fallbacks on the same span are deduplicated away."""
+    # _AK_SECRET_3 has no '+' or '/', so azure_ad_client_secret's
+    # 'client_secret =' + [A-Za-z0-9~_.]{34,44} regex also matches its first 43
+    # characters; the Akamai finding must still be the one reported.
+    for text in (
+        _edgerc(_AK_SECRET),
+        _edgerc(_AK_SECRET_2, secret_first=False),
+        _edgerc(_AK_SECRET_3),
+        _edgerc(_AK_SECRET_3, secret_first=False),
+        "AKAMAI_CLIENT_SECRET=" + _AK_SECRET,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        on_secret = [
+            f.type for f in findings
+            if any(
+                f.span_start < text.find(s) + len(s) and text.find(s) < f.span_end
+                for s in (_AK_SECRET, _AK_SECRET_2, _AK_SECRET_3) if s in text
+            )
+        ]
+        assert on_secret == ["akamai_edgegrid_client_secret"], text[:40]
+
+
+def test_weekly_batch_2026_10_05_redaction_removes_every_secret():
+    from app.engine.redactor import redact
+
+    text = (
+        "Authorization: Bearer " + _ORY_AT + "\n"
+        + "PACKAGIST_API_SECRET=" + _ACS + "\n"
+        + "WOOCOMMERCE_CONSUMER_SECRET=" + _WC_CS + "\n"
+        + "AKAMAI_CLIENT_SECRET=" + _AK_SECRET + "\n"
+    )
+    findings = scan(text)
+    redacted_text, _ = redact(text, findings, style="label")
+    for secret in (_ORY_AT, _ACS, _WC_CS, _AK_SECRET):
+        assert secret not in redacted_text
+    for name in ("PACKAGIST_API_SECRET=", "WOOCOMMERCE_CONSUMER_SECRET=", "AKAMAI_CLIENT_SECRET="):
+        assert name in redacted_text
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 1.5 — JFrog / Artifactory (2026-05-21)
 # ═══════════════════════════════════════════════
 
