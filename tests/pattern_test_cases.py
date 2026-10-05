@@ -76,6 +76,14 @@ _CFK_PREFIX_CASES = "cf" + "k_"
 _CFK_BODY_CASES = "jM6P1EsJvCqOnEwEqniGwQvsg899PSqTNAI0TYyu" + "d6ae2245"
 _CFK_CASES = _CFK_PREFIX_CASES + _CFK_BODY_CASES
 
+# ── 2026-10-05 ────────────────────────────────────────────────────────────
+# Flagsmith server-side environment key: 'ser.' + 22 shortuuid base57. The
+# body is SYNTHETIC (SHA-512 over 'classifinder-flagsmith-synthetic-6',
+# base57-encoded) and the prefix is split.
+_FSM_PREFIX_CASES = "se" + "r."
+_FSM_BODY_CASES = "jcAEfDnqxMRBMvaJ6E3ELg"
+_FSM_CASES = _FSM_PREFIX_CASES + _FSM_BODY_CASES
+
 # GitLab runner registration tokens. 'GR1348941' is a literal vendor constant
 # (GitLab's RUNNERS_TOKEN_PREFIX); the bodies are 20 urlsafe-base64 characters.
 # Split so no contiguous registration-token literal is committed to source.
@@ -1399,6 +1407,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _CFK_CASES + "_old",
         ],
         "min_confidence": 0.90,
+    },
+
+    # ── 2026-10-05 ───────────────────────────────────────────────────────
+    # Flagsmith server-side environment key — 'ser.' + 22 shortuuid base57,
+    # 26 characters, from the vendor's own generate_server_api_key().
+    # Source: https://github.com/Flagsmith/flagsmith/blob/main/api/environments/api_keys.py
+    "flagsmith_server_side_environment_key": {
+        "positives": [
+            "FLAGSMITH_SERVER_KEY=" + _FSM_CASES,
+            'FLAGSMITH_ENVIRONMENT_KEY="' + _FSM_CASES + '"',
+            "flagsmith = Flagsmith(environment_key='" + _FSM_CASES + "')",
+        ],
+        "negatives": [
+            # The body is exactly 22 characters.
+            _FSM_CASES[:-1],
+            _FSM_CASES + "Q",
+            # 'ser.' at the end of a word is not the prefix.
+            "self." + _FSM_CASES,
+            "user." + _FSM_BODY_CASES,
+            # Characters outside the shortuuid alphabet (0, 1, I, O, l).
+            _FSM_PREFIX_CASES + "0" + _FSM_BODY_CASES[1:],
+            _FSM_PREFIX_CASES + "l" + _FSM_BODY_CASES[1:],
+        ],
+        "min_confidence": 0.85,
     },
 
     "okta_api_token": {

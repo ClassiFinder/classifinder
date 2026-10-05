@@ -17070,3 +17070,164 @@ def test_packagist_authentication_token_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _PKGST_BODIES["ort"] not in redacted_text
     assert "PACKAGIST_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-05 — Flagsmith server-side environment key ('ser.')
+# ═══════════════════════════════════════════════
+# Every literal is SYNTHETIC: the 22-character body is SHA-512 over the seed
+# 'classifinder-flagsmith-synthetic-<n>', base57-encoded with shortuuid's
+# default alphabet. The prefix is split so no contiguous key literal sits in
+# source.
+# Source: https://github.com/Flagsmith/flagsmith/blob/main/api/environments/api_keys.py
+_FSM_PREFIX = "se" + "r."
+_FSM_BODY = "wwCHozKAfPiU7b7So3xCif"
+_FSM_BODY_2 = "PEh68ndFuZwCDjKXEGkSPR"
+_FSM_BODY_3 = "sSVCpffKWpJMSE5c7fUu3b"
+_FSM = _FSM_PREFIX + _FSM_BODY
+_FSM_2 = _FSM_PREFIX + _FSM_BODY_2
+_FSM_3 = _FSM_PREFIX + _FSM_BODY_3
+
+
+def _flagsmith(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "flagsmith_server_side_environment_key"
+    ]
+
+
+def test_flagsmith_server_side_environment_key_true_positives():
+    """Detected in the carriers a server-side key actually leaks through:
+    bare, env lines, an export, CI YAML, SDK constructors and JSON."""
+    for text in (
+        _FSM,
+        "FLAGSMITH_SERVER_KEY=" + _FSM,
+        'FLAGSMITH_ENVIRONMENT_KEY="' + _FSM_2 + '"',
+        "export FLAGSMITH_ENVIRONMENT_KEY=" + _FSM_3,
+        "env:\n  FLAGSMITH_SERVER_SIDE_KEY: " + _FSM,
+        "flagsmith = Flagsmith(environment_key='" + _FSM_2 + "')",
+        "const flagsmith = new Flagsmith({ environmentKey: '" + _FSM_3 + "' });",
+        "X-Environment-Key: " + _FSM,
+        '{"flagsmithEnvironmentKey": "' + _FSM_2 + '"}',
+    ):
+        matched = _flagsmith(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "medium"
+        assert matched[0].provider == "flagsmith"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.85
+
+
+def test_flagsmith_server_side_environment_key_span_is_exactly_the_key():
+    """The span is the whole 26-character key, prefix included."""
+    for text, key in (
+        ("FLAGSMITH_SERVER_KEY=" + _FSM, _FSM),
+        ("environment_key='" + _FSM_2 + "'", _FSM_2),
+        ("X-Environment-Key: " + _FSM_3 + "\r\n", _FSM_3),
+    ):
+        matched = _flagsmith(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == key
+        assert len(key) == 26
+
+
+def test_flagsmith_server_side_environment_key_true_negatives():
+    """Exact lowercase 'ser.' prefix, exactly 22 characters of shortuuid's
+    base57 alphabet (no 0, 1, I, O or l)."""
+    for neg in (
+        _FSM[:-1],
+        _FSM_PREFIX + _FSM_BODY[:12],
+        # Characters shortuuid never emits.
+        _FSM_PREFIX + "0" + _FSM_BODY[1:],
+        _FSM_PREFIX + "1" + _FSM_BODY[1:],
+        _FSM_PREFIX + "I" + _FSM_BODY[1:],
+        _FSM_PREFIX + "O" + _FSM_BODY[1:],
+        _FSM_PREFIX + "l" + _FSM_BODY[1:],
+        _FSM_PREFIX + _FSM_BODY[:10] + "_" + _FSM_BODY[11:],
+        # Only the exact lowercase 'ser.' prefix.
+        "SE" + "R." + _FSM_BODY,
+        "se" + "r_" + _FSM_BODY,
+        "se" + "r-" + _FSM_BODY,
+        "se" + "r" + _FSM_BODY,
+        # The client-side key (no prefix) is public by design and not claimed.
+        _FSM_BODY,
+        # Docs placeholders and CI references.
+        _FSM_PREFIX + "...",
+        'FLAGSMITH_SERVER_KEY="' + _FSM_PREFIX + 'YOUR_SERVER_SIDE_KEY"',
+        "FLAGSMITH_SERVER_KEY: ${{ secrets.FLAGSMITH_SERVER_KEY }}",
+        "Server-side keys start with se" + "r. and are secret.",
+        # Ordinary code: a serializer called 'ser' with a method call.
+        "ser.writeValueAsString(obj)",
+        "ser.serialize_to_bytes(payload)",
+    ):
+        assert _flagsmith(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_flagsmith_server_side_environment_key_is_not_carved_out_of_a_word():
+    """'ser.' ends many words ('user.', 'parser.', 'browser.'): the left guard
+    refuses [A-Za-z0-9_.-], so a dotted attribute path never matches, and the
+    right guard refuses a 23rd body character."""
+    for neg in (
+        "user." + _FSM_BODY,
+        "parser." + _FSM_BODY_2,
+        "browser." + _FSM_BODY_3,
+        "self." + _FSM,
+        "config." + _FSM_2,
+        "my_" + _FSM,
+        "x-" + _FSM_3,
+        "9" + _FSM,
+        _FSM + "a",
+        _FSM_2 + "7",
+        _FSM + "_old",
+        _FSM_3 + "-x",
+    ):
+        assert _flagsmith(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_flagsmith_server_side_environment_key_masks_score_as_test_values():
+    """Single-character masks are registered known_test_values (-> ~0.15)."""
+    for mask in (
+        _FSM_PREFIX + "x" * 22,
+        _FSM_PREFIX + "X" * 22,
+        _FSM_PREFIX + "2" * 22,
+    ):
+        matched = _flagsmith("FLAGSMITH_SERVER_KEY=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_flagsmith_server_side_environment_key_low_entropy_body_is_penalised():
+    """A repetitive, non-random body clears the regex but falls under the
+    entropy floor and drops below the default 0.5 reporting threshold."""
+    text = "key=" + _FSM_PREFIX + "abababababababababab22"
+    assert all(f.type != "flagsmith_server_side_environment_key" for f in scan(text))
+    matched = _flagsmith(text)
+    assert len(matched) == 1
+    assert matched[0].confidence < 0.5
+
+
+def test_flagsmith_server_side_environment_key_does_not_collide():
+    """A key behind a generic env name, in JSON or bare is reported once, as
+    this pattern and nothing else."""
+    for text in (
+        _FSM,
+        "FLAGSMITH_SERVER_KEY=" + _FSM,
+        "FLAGSMITH_ENVIRONMENT_KEY=" + _FSM_2,
+        "api_key=" + _FSM_3,
+        "SECRET_KEY=" + _FSM,
+        '{"key": "' + _FSM_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["flagsmith_server_side_environment_key"], text
+
+
+def test_flagsmith_server_side_environment_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "FLAGSMITH_SERVER_KEY=" + _FSM
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _FSM_BODY not in redacted_text
+    assert "FLAGSMITH_SERVER_KEY=" in redacted_text
