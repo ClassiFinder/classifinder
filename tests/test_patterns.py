@@ -1455,6 +1455,336 @@ def test_weekly_batch_2026_10_05_redaction_removes_every_secret():
         assert name in redacted_text
 
 # ═══════════════════════════════════════════════
+# 2026-10-05 (round 2) — UpCloud, ConfigCat, Hack Club AI, Chief Tools,
+# Rainforest Pay
+# ═══════════════════════════════════════════════
+# Every literal is SYNTHETIC (SHA-512 over 'classifinder-<vendor>-...-
+# synthetic-<n>', encoded to each format's alphabet); prefixes are split.
+
+# ── UpCloud API token ─────────────────────────────────────────────────
+# Source: https://upcloud.com/docs/guides/managing-api-tokens/
+_UCAT_PREFIX = "uc" + "at_"
+_UCAT = _UCAT_PREFIX + "01B945XF7S64DXVGY9A39VN3Z3"
+_UCAT_2 = _UCAT_PREFIX + "018Y07EGBVD2G7VDM8YV0NJ198"
+_UCAT_3 = _UCAT_PREFIX + "01WFDGPKN27V9JJMC9SY0WK85G"
+
+
+def test_upcloud_api_token_true_positives():
+    for text in (
+        _UCAT,
+        "UPCLOUD_TOKEN=" + _UCAT,
+        "export UPCLOUD_TOKEN=" + _UCAT_2,
+        "token: " + _UCAT_3,
+        'curl -H "Authorization: Bearer ' + _UCAT + '" https://api.upcloud.com/1.3/account',
+        'provider "upcloud" {\n  token = "' + _UCAT_2 + '"\n}',
+    ):
+        matched = _of(text, "upcloud_api_token")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start:matched[0].span_end] in (_UCAT, _UCAT_2, _UCAT_3)
+
+
+def test_upcloud_api_token_true_negatives():
+    body = _UCAT[5:]
+    for neg in (
+        _UCAT[:-1],
+        _UCAT + "A",
+        _UCAT_PREFIX + body.lower(),
+        _UCAT_PREFIX + body[:-1] + "U",  # U, I, L, O are not Crockford base32
+        _UCAT_PREFIX + body[:-1] + "L",
+        _UCAT_PREFIX + "8" + body[1:],  # a ULID's first character is 0-7
+        "UC" + "AT_" + body,
+        body,
+        "x" + _UCAT,
+        _UCAT + "_old",
+        _UCAT_PREFIX + "[REDACTED]",
+        "UPCLOUD_TOKEN=" + _UCAT_PREFIX + "...",
+    ):
+        assert _of(neg, "upcloud_api_token") == [], "wrongly matched: " + neg[:70]
+
+
+def test_upcloud_api_token_vendor_examples_score_as_test_values():
+    for example in (
+        _UCAT_PREFIX + "01DQE3AJDEBFEKECFM558TGH2F",  # vendor guide
+        _UCAT_PREFIX + "01DEADBEEFDEADBEEFDEADBEEF",  # vendor SDK test
+        _UCAT_PREFIX + "0" * 26,
+    ):
+        matched = _of("UPCLOUD_TOKEN=" + example, "upcloud_api_token")
+        assert len(matched) == 1, example
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_upcloud_api_token_does_not_collide():
+    for text in (_UCAT, "UPCLOUD_TOKEN=" + _UCAT, "api_token=" + _UCAT_2, "Bearer " + _UCAT_3):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == ["upcloud_api_token"], text[:40]
+
+
+# ── ConfigCat SDK key ─────────────────────────────────────────────────
+# Source: https://github.com/configcat/js-unified-sdk/blob/master/src/ConfigCatClient.ts
+_CC_PREFIX = "configcat-" + "sdk-1/"
+_CC = _CC_PREFIX + "sP93W7qiPNkcJVwzFc6yMg" + "/" + "BupJG23aEX5mTpOVjQ_5CQ"
+_CC_2 = _CC_PREFIX + "RaKVHCN1kycQ9pVcbT42Ww" + "/" + "yRw1jtRnj9U-LEQoQ9iViA"
+
+
+def test_configcat_sdk_key_true_positives():
+    for text in (
+        _CC,
+        'const client = configcat.getClient("' + _CC + '");',
+        "CONFIGCAT_SDK_KEY=" + _CC_2,
+        "https://cdn-global.configcat.com/configuration-files/" + _CC + "/config_v6.json",
+        '{"sdkKey": "' + _CC_2 + '"}',
+    ):
+        matched = _of(text, "configcat_sdk_key")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "low"
+        assert matched[0].provider == "configcat"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start:matched[0].span_end] in (_CC, _CC_2)
+
+
+def test_configcat_sdk_key_true_negatives():
+    a, b = _CC[len(_CC_PREFIX):].split("/")
+    for neg in (
+        a + "/" + b,  # legacy unprefixed form: deliberately not matched
+        _CC_PREFIX + a[:-1] + "/" + b,
+        _CC_PREFIX + a + "/" + b[:-1],
+        _CC + "x",
+        _CC_PREFIX + a + "x/" + b,
+        _CC_PREFIX + a + "/" + b[:10] + "." + b[11:],
+        "configcat-" + "sdk-2/" + a + "/" + b,
+        "configcat-" + "proxy/" + a,
+        "x" + _CC,
+        _CC_PREFIX + "YOUR-SDK-KEY/YOUR-SDK-KEY",
+    ):
+        assert _of(neg, "configcat_sdk_key") == [], "wrongly matched: " + neg[:70]
+
+
+def test_configcat_sdk_key_vendor_sample_scores_as_test_value():
+    for mask in (
+        _CC_PREFIX + "PKDVCLf-Hq-h-kCzMp-L7Q" + "/" + "tiOvFw5gkky9LFu1Duuvzw",
+        _CC_PREFIX + "x" * 22 + "/" + "x" * 22,
+    ):
+        matched = _of('getClient("' + mask + '")', "configcat_sdk_key")
+        assert len(matched) == 1, mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_configcat_sdk_key_does_not_collide():
+    for text in (_CC, "CONFIGCAT_SDK_KEY=" + _CC, "sdk_key=" + _CC_2):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == ["configcat_sdk_key"], text[:40]
+
+
+# ── Hack Club AI API key ──────────────────────────────────────────────
+# Source: https://github.com/hackclub/ai/blob/main/src/routes/api.tsx
+_HC_PREFIX = "sk-" + "hc-v1-"
+_HC = _HC_PREFIX + "7d8317aa385cd166ef630fd37d415483" + "bc6534e8eee57d3bbf6eca0e124b421f"
+_HC_2 = _HC_PREFIX + "95817477aec07fb1ab1d03df014f290a" + "ef9339a7dd7a3ad5ae4b06ac09fa8f1d"
+
+
+def test_hackclub_ai_api_key_true_positives():
+    for text in (
+        _HC,
+        "HACKCLUB_AI_API_KEY=" + _HC,
+        "Authorization: Bearer " + _HC_2,
+        'client = OpenAI(base_url="https://ai.hackclub.com/proxy/v1", api_key="' + _HC + '")',
+        "OPENAI_API_KEY=" + _HC_2,
+    ):
+        matched = _of(text, "hackclub_ai_api_key")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "high"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start:matched[0].span_end] in (_HC, _HC_2)
+
+
+def test_hackclub_ai_api_key_true_negatives():
+    body = _HC[len(_HC_PREFIX):]
+    for neg in (
+        _HC[:-1],
+        _HC + "0",
+        _HC_PREFIX + body.upper(),
+        _HC_PREFIX + body[:30] + "g" + body[31:],
+        "sk-" + "hc-v2-" + body,
+        "sk-" + "hc-" + body,
+        "x" + _HC,
+        _HC + "_old",
+    ):
+        assert _of(neg, "hackclub_ai_api_key") == [], "wrongly matched: " + neg[:70]
+
+
+def test_hackclub_ai_api_key_masks_score_as_test_values():
+    for mask in (_HC_PREFIX + "0" * 64, _HC_PREFIX + "f" * 64):
+        matched = _of("HACKCLUB_AI_API_KEY=" + mask, "hackclub_ai_api_key")
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_hackclub_ai_api_key_does_not_collide_with_openai():
+    """'sk-hc-v1-' keys are reported only as Hack Club AI — never as an
+    OpenAI (or any other 'sk-') key — and real OpenAI keys keep their own
+    finding."""
+    for text in (_HC, "OPENAI_API_KEY=" + _HC, "api_key=" + _HC_2, "Bearer " + _HC):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == ["hackclub_ai_api_key"], text[:40]
+    openai = "sk-" + "proj-" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+    assert _of(openai, "hackclub_ai_api_key") == []
+    assert "openai_api_key" in [f.type for f in scan(openai, min_confidence=0.01)]
+
+
+# ── Chief Tools access token ──────────────────────────────────────────
+# Source: https://docs.chief.tools/developers/authentication
+_CT_BODY = "VE6abqDkrgUEqhEx1NAIudLydhQ9mt8bWpn2"
+_CT_BODY_LONG = "fjJv50UGB6rWAM8LMsd7Z9LDMupQYYoMFOJm" + "NogZn3fhLjmtlbzk7emwfwNdC0k86fvlyOWU"
+_CTP = "ct" + "p_" + _CT_BODY
+_CTT = "ct" + "t_" + _CT_BODY_LONG
+_CTO = "ct" + "o_" + _CT_BODY
+_CTR = "ct" + "r_" + _CT_BODY_LONG
+
+
+def test_chief_tools_access_token_true_positives():
+    for text in (
+        _CTP,
+        "Authorization: Bearer " + _CTP,
+        "CHIEF_TEAM_TOKEN=" + _CTT,
+        '{"access_token":"' + _CTO + '","refresh_token":"' + _CTR + '"}',
+        # Upper bound: 248 characters after the prefix.
+        "ct" + "p_" + (_CT_BODY_LONG * 4)[:248],
+    ):
+        matched = _of(text, "chief_tools_access_token")
+        assert matched, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.85
+
+
+def test_chief_tools_access_token_true_negatives():
+    for neg in (
+        "ct" + "x_" + _CT_BODY,  # only ctp_/ctt_/cto_/ctr_
+        "CT" + "P_" + _CT_BODY,
+        "ct" + "p_" + _CT_BODY[:35],  # 35 < 30 random + 6 checksum
+        "ct" + "p_" + (_CT_BODY_LONG * 4)[:249],
+        # A camelCase identifier carries no digit.
+        "ct" + "p_getAllCustomerTransactionsForAccountIdAndDate",
+        "ct" + "o_" + "AbstractCustomerOrderTransformerFactoryBean",
+        "x" + _CTP,
+        "acct" + "p_" + _CT_BODY,
+        _CTP + "_old",
+        _CTP + "-x",
+        "ct" + "p_" + _CT_BODY[:20] + "-" + _CT_BODY[21:],
+    ):
+        assert _of(neg, "chief_tools_access_token") == [], "wrongly matched: " + neg[:70]
+
+
+def test_chief_tools_access_token_masks_score_as_test_values():
+    for mask in ("ct" + "p_" + "0" * 36, "ct" + "t_" + "x" * 30 + "000000"):
+        matched = _of("Bearer " + mask, "chief_tools_access_token")
+        assert len(matched) == 1, mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_chief_tools_access_token_does_not_collide():
+    for text in (_CTP, "Authorization: Bearer " + _CTO, "CHIEF_TOKEN=" + _CTT, "api_token=" + _CTR):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == [
+            "chief_tools_access_token"
+        ], text[:40]
+
+
+# ── Rainforest Pay API key ────────────────────────────────────────────
+# Source: https://docs.rainforestpay.com/docs/api-keys
+_RF_BODY = "da1fa350fe8310995676fc747a3c550a" + "4ee03ddf290d939917bc9d374943f8ec"
+_RF_BODY_2 = "eb57fbfc023c6b28b9c17c9c2b3ce883" + "9c1302f4c259f7371094fb9197a939a3"
+_RF = "api" + "key_" + _RF_BODY
+_RF_SBX = "sbx_" + "api" + "key_" + _RF_BODY_2
+
+
+def test_rainforest_pay_api_key_true_positives():
+    for text in (
+        _RF,
+        _RF_SBX,
+        "RAINFOREST_API_KEY=" + _RF,
+        "Authorization: Bearer " + _RF_SBX,
+        '{"api_key": "' + _RF + '", "platform_id": "plt_123"}',
+        "curl https://api.rainforestpay.com/v1/payins -H 'Authorization: Bearer " + _RF + "'",
+    ):
+        matched = _of(text, "rainforest_pay_api_key")
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "critical"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.85
+        assert text[matched[0].span_start:matched[0].span_end] in (_RF, _RF_SBX)
+
+
+def test_rainforest_pay_api_key_true_negatives():
+    for neg in (
+        _RF[:-1],
+        _RF + "0",
+        "api" + "key_" + _RF_BODY.upper(),
+        "api" + "key_" + _RF_BODY[:30] + "g" + _RF_BODY[31:],
+        "API" + "KEY_" + _RF_BODY,
+        "sdbx_" + "api" + "key_" + _RF_BODY,
+        "my" + "api" + "key_" + _RF_BODY,
+        "x_" + "api" + "key_" + _RF_BODY,
+        _RF + "_old",
+        "api" + "key_{{api_key}}",
+    ):
+        assert _of(neg, "rainforest_pay_api_key") == [], "wrongly matched: " + neg[:70]
+
+
+def test_rainforest_pay_api_key_does_not_match_inside_paddle_keys():
+    """Paddle keys embed '_apikey_' after 'pdl_live' / 'pdl_sdbx'; the left
+    guard means Rainforest never claims any part of them, and the Paddle
+    pattern keeps its own finding."""
+    for paddle in (
+        "pdl_" + "live_" + "api" + "key_" + _RF_BODY,
+        "pdl_" + "sdbx_" + "api" + "key_" + _RF_BODY_2,
+        "PADDLE_API_KEY=pdl_" + "sdbx_" + "api" + "key_" + "ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXwVu",
+    ):
+        assert _of(paddle, "rainforest_pay_api_key") == [], paddle[:40]
+    paddle = "PADDLE_API_KEY=pdl_" + "sdbx_" + "api" + "key_" + "ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXwVu"
+    assert "paddle_api_key" in [f.type for f in scan(paddle, min_confidence=0.01)]
+
+
+def test_rainforest_pay_api_key_vendor_example_scores_as_test_value():
+    for example in (
+        "api" + "key_1ad1c535b0c0093e7b9bf093d7e3444cd0e2ddefab36199216f555c3efa65d63",
+        "sbx_" + "api" + "key_" + "0" * 64,
+    ):
+        matched = _of('{"api_key": "' + example + '"}', "rainforest_pay_api_key")
+        assert len(matched) == 1, example
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_rainforest_pay_api_key_does_not_collide():
+    for text in (_RF, "RAINFOREST_API_KEY=" + _RF, "api_key=" + _RF_SBX, "Bearer " + _RF):
+        assert [f.type for f in scan(text, min_confidence=0.01)] == [
+            "rainforest_pay_api_key"
+        ], text[:40]
+
+
+def test_round2_2026_10_05_redaction_removes_every_secret():
+    from app.engine.redactor import redact
+
+    text = (
+        "UPCLOUD_TOKEN=" + _UCAT + "\n"
+        + "CONFIGCAT_SDK_KEY=" + _CC + "\n"
+        + "HACKCLUB_AI_API_KEY=" + _HC + "\n"
+        + "CHIEF_TOKEN=" + _CTP + "\n"
+        + "RAINFOREST_API_KEY=" + _RF + "\n"
+    )
+    redacted_text, _ = redact(text, scan(text), style="label")
+    for secret in (_UCAT, _CC, _HC, _CTP, _RF):
+        assert secret not in redacted_text
+    assert "RAINFOREST_API_KEY=" in redacted_text
+
+# ═══════════════════════════════════════════════
 # BATCH 4 PART 1.5 — JFrog / Artifactory (2026-05-21)
 # ═══════════════════════════════════════════════
 

@@ -99,6 +99,15 @@ _AKAMAI_SECRET_CASES = "2EZcckmFnauaOqfB1mkrtkE3tznlnSJ9QmGF/jBx4Qo="
 _AKAB_HOST_CASES = "ak" + "ab-abcdefghijklmnop-qrstuvwxyz012345.luna.akamaiapis.net"
 _AKAB_TOKEN_CASES = "ak" + "ab-ponmlkjihgfedcba-543210zyxwvutsrq"
 
+# ── 2026-10-05 (round 2) ──────────────────────────────────────────────────
+# UpCloud, ConfigCat, Hack Club AI, Chief Tools, Rainforest Pay. SYNTHETIC
+# bodies (SHA-512 seeds 'classifinder-<vendor>-synthetic-<n>'), split prefixes.
+_UCAT_CASES = "uc" + "at_" + "01BPDEK9RTDCWQNT7W0MF4BAGP"
+_CONFIGCAT_CASES = "configcat-" + "sdk-1/" + "zWyaeXhEFDKSh5lfDVjYjQ" + "/" + "M4w3UZQna1N7pGEevmYLSA"
+_HACKCLUB_CASES = "sk-" + "hc-v1-" + "c235448c091e14cb54dc2021ec989f7a" + "0ea86a1d8afebd532c881d428d558b8f"
+_CHIEF_BODY_CASES = "EfbMhWyXvNMHXXH6lcsn1GvQ7QY1w6kg3BKd"
+_RAINFOREST_BODY_CASES = "94ed011a2705e0362e8337ae42f8b447" + "5b8e18c11382e7a4e46add6f2a8bebde"
+
 # GitLab runner registration tokens. 'GR1348941' is a literal vendor constant
 # (GitLab's RUNNERS_TOKEN_PREFIX); the bodies are 20 urlsafe-base64 characters.
 # Split so no contiguous registration-token literal is committed to source.
@@ -1512,6 +1521,97 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "AKAMAI_CLIENT_SECRET=" + _AKAMAI_SECRET_CASES[1:],
         ],
         "min_confidence": 0.90,
+    },
+
+    # ── 2026-10-05 (round 2) ─────────────────────────────────────────────
+    # Source: https://upcloud.com/docs/guides/managing-api-tokens/
+    "upcloud_api_token": {
+        "positives": [
+            "UPCLOUD_TOKEN=" + _UCAT_CASES,
+            "Authorization: Bearer " + _UCAT_CASES,
+            "token: " + _UCAT_CASES,
+        ],
+        "negatives": [
+            _UCAT_CASES[:-1],
+            _UCAT_CASES + "A",
+            _UCAT_CASES.lower(),
+            "uc" + "at_" + "01BPDEK9RTDCWQNT7W0MF4BAGI",  # 'I' is not Crockford base32
+            "uc" + "at_" + "81BPDEK9RTDCWQNT7W0MF4BAGP",  # ULID first char is 0-7
+            "x" + _UCAT_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Source: https://github.com/configcat/js-unified-sdk/blob/master/src/ConfigCatClient.ts
+    "configcat_sdk_key": {
+        "positives": [
+            'configcat.getClient("' + _CONFIGCAT_CASES + '")',
+            "CONFIGCAT_SDK_KEY=" + _CONFIGCAT_CASES,
+            "https://cdn-global.configcat.com/configuration-files/" + _CONFIGCAT_CASES
+            + "/config_v6.json",
+        ],
+        "negatives": [
+            # The legacy unprefixed 22/22 form is deliberately not matched.
+            _CONFIGCAT_CASES[len("configcat-sdk-1/"):],
+            _CONFIGCAT_CASES[:-1],
+            _CONFIGCAT_CASES + "x",
+            "configcat-" + "sdk-2/" + _CONFIGCAT_CASES[len("configcat-sdk-1/"):],
+            "configcat-" + "proxy/my-sdk-key",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Source: https://github.com/hackclub/ai/blob/main/src/routes/api.tsx
+    "hackclub_ai_api_key": {
+        "positives": [
+            "HACKCLUB_AI_API_KEY=" + _HACKCLUB_CASES,
+            "Authorization: Bearer " + _HACKCLUB_CASES,
+            "OPENAI_API_KEY=" + _HACKCLUB_CASES,
+        ],
+        "negatives": [
+            _HACKCLUB_CASES[:-1],
+            _HACKCLUB_CASES + "0",
+            "sk-" + "hc-v1-" + _HACKCLUB_CASES[9:].upper(),
+            "sk-" + "hc-v2-" + _HACKCLUB_CASES[9:],
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Source: https://docs.chief.tools/developers/authentication
+    "chief_tools_access_token": {
+        "positives": [
+            "Authorization: Bearer " + "ct" + "p_" + _CHIEF_BODY_CASES,
+            "CHIEF_TEAM_TOKEN=" + "ct" + "t_" + _CHIEF_BODY_CASES,
+            '{"access_token": "' + "ct" + "o_" + _CHIEF_BODY_CASES + '", "refresh_token": "'
+            + "ct" + "r_" + _CHIEF_BODY_CASES[::-1] + '"}',
+        ],
+        "negatives": [
+            "ct" + "x_" + _CHIEF_BODY_CASES,
+            "ct" + "p_" + _CHIEF_BODY_CASES[:35],
+            "ct" + "p_getAllCustomerTransactionsForAccountIdAndDate",
+            "x" + "ct" + "p_" + _CHIEF_BODY_CASES,
+            "ct" + "p_" + _CHIEF_BODY_CASES + "_old",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    # Source: https://docs.rainforestpay.com/docs/api-keys
+    "rainforest_pay_api_key": {
+        "positives": [
+            "RAINFOREST_API_KEY=" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            "Authorization: Bearer " + "sbx_" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            '{"api_key": "' + "api" + "key_" + _RAINFOREST_BODY_CASES + '"}',
+        ],
+        "negatives": [
+            "api" + "key_" + _RAINFOREST_BODY_CASES[:-1],
+            "api" + "key_" + _RAINFOREST_BODY_CASES + "0",
+            "api" + "key_" + _RAINFOREST_BODY_CASES.upper(),
+            # Paddle keys embed '_apikey_' after 'pdl_live' / 'pdl_sdbx'.
+            "pdl_" + "live_" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            "pdl_" + "sdbx_" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            "my" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+        ],
+        "min_confidence": 0.85,
     },
 
     "okta_api_token": {
