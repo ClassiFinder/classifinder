@@ -17231,3 +17231,131 @@ def test_flagsmith_server_side_environment_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _FSM_BODY not in redacted_text
     assert "FLAGSMITH_SERVER_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-06 — Miro OAuth access / refresh token
+# ═══════════════════════════════════════════════
+# Every tail is SYNTHETIC: SHA-512 over the seed
+# 'classifinder-miro-synthetic-<n>', base64url-encoded, first 27 characters.
+# The header is split so no contiguous token literal sits in source.
+# Source: https://developers.miro.com/reference/get-new-access-token-using-refresh-token
+_MIRO_OPEN = "eyJtaXJv" + "Lm9yaWdpbiI6"  # base64 of '{"miro.origin":'
+_MIRO_EU = _MIRO_OPEN + "ImV1MDEifQ"  # {"miro.origin":"eu01"}
+_MIRO_US = _MIRO_OPEN + "InVzMDEifQ"  # {"miro.origin":"us01"}
+_MIRO_TAIL = "T2pnpwdSji2_bdvE6zB9llFU1Kd"
+_MIRO_TAIL_2 = "O1gotXu5-HX52OIjGVV5fwBDehD"
+_MIRO_TAIL_3 = "-lvIxqT0MbD7RzOx1JWnyL2KifN"
+_MIRO = _MIRO_EU + "_" + _MIRO_TAIL
+_MIRO_2 = _MIRO_US + "_" + _MIRO_TAIL_2
+_MIRO_3 = _MIRO_EU + "_" + _MIRO_TAIL_3
+# us01 variant with a 24-character tail.
+_MIRO_SHORT = _MIRO_US + "_" + "bjR3h-1DgBnFD2hSoXXaQRXp"
+
+
+def _miro(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "miro_oauth_access_token"
+    ]
+
+
+def test_miro_oauth_access_token_true_positives():
+    """Detected in env lines, OAuth JSON responses, bearer headers and SDK
+    calls; eu01 and us01 headers; tails from 24 to 28 characters, including
+    one that starts with '-'."""
+    for text in (
+        _MIRO,
+        "MIRO_ACCESS_TOKEN=" + _MIRO,
+        'MIRO_REFRESH_TOKEN="' + _MIRO_2 + '"',
+        "export MIRO_TOKEN=" + _MIRO_3,
+        '{"access_token":"' + _MIRO + '","refresh_token":"' + _MIRO_2 + '"}',
+        "curl -H 'Authorization: Bearer " + _MIRO_3 + "' https://api.miro.com/v2/boards",
+        "api = MiroApi('" + _MIRO_SHORT + "')",
+        "token: " + _MIRO_EU + "_" + _MIRO_TAIL + "Q",
+    ):
+        matched = _miro(text)
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.provider == "miro"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.90
+
+
+def test_miro_oauth_access_token_span_is_exactly_the_token():
+    """The span is the whole token, header included."""
+    for text, tok in (
+        ("MIRO_ACCESS_TOKEN=" + _MIRO, _MIRO),
+        ('"refresh_token": "' + _MIRO_2 + '"', _MIRO_2),
+        ("Bearer " + _MIRO_3 + "\r\n", _MIRO_3),
+        ("t=" + _MIRO_SHORT + ".", _MIRO_SHORT),
+    ):
+        matched = _miro(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_miro_oauth_access_token_true_negatives():
+    """Only the '{"miro.origin":' header, an underscore and a 24-28 char
+    base64url tail."""
+    for neg in (
+        # Tail too short / too long (a 29th character matches nothing).
+        _MIRO_EU + "_" + _MIRO_TAIL[:23],
+        _MIRO_EU + "_" + _MIRO_TAIL + "AB",
+        # No underscore, or a JWT-style dot.
+        _MIRO_EU + _MIRO_TAIL,
+        _MIRO_EU + "." + _MIRO_TAIL,
+        # A different base64 JSON header.
+        "eyJhbGciOiJIUzI1NiJ9" + "_" + _MIRO_TAIL,
+        # The bare header and docs placeholders.
+        _MIRO_EU,
+        "MIRO_ACCESS_TOKEN=<your-access-token>",
+        "MIRO_ACCESS_TOKEN: ${{ secrets.MIRO_ACCESS_TOKEN }}",
+        # Carved out of a longer base64url run.
+        "a" + _MIRO,
+        "_" + _MIRO_2,
+        "-" + _MIRO_3,
+    ):
+        assert _miro(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_miro_oauth_access_token_vendor_doc_examples_score_as_test_values():
+    """Miro's own documented access/refresh token examples and single-character
+    masks are known_test_values (-> ~0.15)."""
+    for tok in (
+        _MIRO_EU + "_" + "o-P91OccaII0A63CDSK--x21xiI",
+        _MIRO_EU + "_" + "-PIBKmE9rzQuL3bUeAvUEGFEhLk",
+        _MIRO_EU + "_" + "x" * 27,
+        _MIRO_US + "_" + "X" * 27,
+    ):
+        matched = _miro("MIRO_ACCESS_TOKEN=" + tok)
+        assert len(matched) == 1, "not detected: " + tok
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_miro_oauth_access_token_does_not_collide():
+    """Reported once, as this pattern and nothing else — jwt_token and the
+    generic patterns stay quiet."""
+    for text in (
+        _MIRO,
+        "MIRO_ACCESS_TOKEN=" + _MIRO,
+        "api_key=" + _MIRO_2,
+        "SECRET_KEY=" + _MIRO_3,
+        '{"access_token": "' + _MIRO + '"}',
+        "Authorization: Bearer " + _MIRO_SHORT,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["miro_oauth_access_token"], text
+
+
+def test_miro_oauth_access_token_redaction():
+    """Redaction removes the token tail and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "MIRO_ACCESS_TOKEN=" + _MIRO
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _MIRO_TAIL not in redacted_text
+    assert "MIRO_ACCESS_TOKEN=" in redacted_text
