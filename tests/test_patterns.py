@@ -17359,3 +17359,132 @@ def test_miro_oauth_access_token_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _MIRO_TAIL not in redacted_text
     assert "MIRO_ACCESS_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-07 — Ionic Appflow personal access token
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: SHA-512 over the seed
+# 'classifinder-ionic-synthetic-<n>', base62-encoded, first 42 characters.
+# The prefix is split so no contiguous token literal sits in source.
+# Source: https://ionic.io/docs/portals/cli/configuration
+_IONIC_PREFIX = "io" + "n_"
+_IONIC_BODY = "jRtqqRUhFsjv788k2mLkZsRu79Jbv1p8tk8yNSmSQO"
+_IONIC_BODY_2 = "gBttesY0a8SEvPnImbwQUSo5ccBrlI7GVbWUmluMQ8"
+_IONIC_BODY_3 = "0Z3f7czryk96pThcpNcUDYcifjTPCgO8pjBUDV6leG"
+_IONIC = _IONIC_PREFIX + _IONIC_BODY
+_IONIC_2 = _IONIC_PREFIX + _IONIC_BODY_2
+_IONIC_3 = _IONIC_PREFIX + _IONIC_BODY_3
+
+
+def _ionic(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "ionic_personal_access_token"
+    ]
+
+
+def test_ionic_personal_access_token_true_positives():
+    """Detected in env lines, shell exports, CI YAML, JSON and CLI flags."""
+    for text in (
+        _IONIC,
+        "IONIC_TOKEN=" + _IONIC,
+        "export IONIC_TOKEN='" + _IONIC_2 + "'",
+        "  IONIC_TOKEN: " + _IONIC_3,
+        '{"ionic_token": "' + _IONIC + '"}',
+        "appflow build --token=" + _IONIC_2,
+        "portals:\n  token: " + _IONIC_3,
+    ):
+        matched = _ionic(text)
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.provider == "ionic"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.85
+
+
+def test_ionic_personal_access_token_context_boost():
+    """IONIC_TOKEN / ionic / appflow keywords lift the score above the bare
+    token's base."""
+    bare = _ionic(_IONIC)[0].confidence
+    boosted = _ionic("IONIC_TOKEN=" + _IONIC + "  # ionic appflow")[0].confidence
+    assert bare == pytest.approx(0.90, abs=0.001)
+    assert boosted > bare
+
+
+def test_ionic_personal_access_token_span_is_exactly_the_token():
+    """The span is the whole token, prefix included."""
+    for text, tok in (
+        ("IONIC_TOKEN=" + _IONIC, _IONIC),
+        ('"token": "' + _IONIC_2 + '"', _IONIC_2),
+        ("--token " + _IONIC_3 + "\r\n", _IONIC_3),
+        ("t=" + _IONIC + ".", _IONIC),
+    ):
+        matched = _ionic(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_ionic_personal_access_token_true_negatives():
+    """Only a free-standing 'ion_' + exactly 42 base62."""
+    for neg in (
+        # Body too short / too long (a 43rd character matches nothing).
+        _IONIC_PREFIX + _IONIC_BODY[:41],
+        _IONIC + "Q",
+        _IONIC + "_x",
+        _IONIC + "-x",
+        # 'ion_' as the tail of a longer identifier.
+        "vers" + _IONIC,
+        "act" + _IONIC,
+        "permiss" + _IONIC,
+        "_" + _IONIC,
+        "x-" + _IONIC,
+        # Wrong case / non-base62 body.
+        "IO" + "N_" + _IONIC_BODY,
+        _IONIC_PREFIX + _IONIC_BODY[:20] + "-" + _IONIC_BODY[21:],
+        # Docs placeholders.
+        "IONIC_TOKEN=" + _IONIC_PREFIX + "XXXXXXXXXXXXX",
+        "IONIC_TOKEN=<your-personal-access-token>",
+        "IONIC_TOKEN: ${{ secrets.IONIC_TOKEN }}",
+    ):
+        assert _ionic(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_ionic_personal_access_token_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for tok in (
+        _IONIC_PREFIX + "x" * 42,
+        _IONIC_PREFIX + "X" * 42,
+        _IONIC_PREFIX + "0" * 42,
+    ):
+        matched = _ionic("IONIC_TOKEN=" + tok)
+        assert len(matched) == 1, "not detected: " + tok
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_ionic_personal_access_token_does_not_collide():
+    """Reported once, as this pattern and nothing else — the generic
+    patterns stay quiet."""
+    for text in (
+        _IONIC,
+        "IONIC_TOKEN=" + _IONIC,
+        "api_key=" + _IONIC_2,
+        "SECRET_KEY=" + _IONIC_3,
+        "token: " + _IONIC,
+        "Authorization: Bearer " + _IONIC_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["ionic_personal_access_token"], text
+
+
+def test_ionic_personal_access_token_redaction():
+    """Redaction removes the token body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "IONIC_TOKEN=" + _IONIC
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _IONIC_BODY not in redacted_text
+    assert "IONIC_TOKEN=" in redacted_text
