@@ -18208,3 +18208,150 @@ def test_ionic_personal_access_token_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _IONIC_BODY not in redacted_text
     assert "IONIC_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-08 — Cashfree Payments secret key
+# ═══════════════════════════════════════════════
+# Every hex segment is SYNTHETIC: SHA-512 over the seed
+# 'classifinder-cashfree-synthetic-<n>' (first 32 hex + next 8 hex). The
+# prefix is split so no contiguous key literal sits in source — Cashfree is
+# a GitHub secret-scanning partner.
+# Source: https://sitesplaced.com/help/payments-and-orders/connect-cashfree
+_CF_HEAD = "cf" + "sk_ma_"
+_CF_PROD = _CF_HEAD + "prod_"
+_CF_TEST = _CF_HEAD + "test_"
+_CF_BODY = "96bbb76c615a89231dfd959f10de7ade" + "_" + "115d1c2e"
+_CF_BODY_2 = "a593d5ff19f198d8f1bc38316c2eef57" + "_" + "23292a64"
+_CF_BODY_3 = "cb8da2f6479b35c556986c3d286a53e7" + "_" + "65081b25"
+_CASHFREE = _CF_PROD + _CF_BODY
+_CASHFREE_2 = _CF_PROD + _CF_BODY_2
+_CASHFREE_SBX = _CF_TEST + _CF_BODY_3
+
+
+def _cashfree(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "cashfree_secret_key"
+    ]
+
+
+def test_cashfree_secret_key_true_positives():
+    """Production and sandbox keys are detected in env, shell, JSON, YAML and
+    HTTP-header carriers."""
+    for text in (
+        _CASHFREE,
+        _CASHFREE_SBX,
+        "CASHFREE_SECRET_KEY=" + _CASHFREE,
+        "export CASHFREE_SECRET_KEY='" + _CASHFREE_SBX + "'",
+        '{"x-client-secret": "' + _CASHFREE_2 + '"}',
+        "cashfree:\n  app_id: 12345abcde\n  secret_key: " + _CASHFREE,
+        "-H 'x-client-secret: " + _CASHFREE_2 + "'",
+        "CASHFREE_SECRET_KEY=" + _CASHFREE_SBX + "  # sandbox",
+    ):
+        matched = _cashfree(text)
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "critical"
+            assert m.provider == "cashfree"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.90
+
+
+def test_cashfree_secret_key_context_boost():
+    """cashfree / x-client-secret keywords lift the score above the base."""
+    bare = _cashfree(_CASHFREE)[0].confidence
+    boosted = _cashfree("CASHFREE_SECRET_KEY=" + _CASHFREE + " # cashfree")[0].confidence
+    assert bare == pytest.approx(0.95, abs=0.001)
+    assert boosted > bare
+
+
+def test_cashfree_secret_key_sandbox_not_sunk_by_fp_wordlist():
+    """The 'test' environment literal must not trip the FP wordlist: the
+    base confidence sits above the 0.85 gate, so a sandbox key scores like
+    a production one."""
+    assert _cashfree(_CASHFREE_SBX)[0].confidence == pytest.approx(0.95, abs=0.001)
+
+
+def test_cashfree_secret_key_span_is_exactly_the_key():
+    """The span is the whole key, prefix included."""
+    for text, tok in (
+        ("CASHFREE_SECRET_KEY=" + _CASHFREE, _CASHFREE),
+        ('"secret": "' + _CASHFREE_2 + '"', _CASHFREE_2),
+        ("--secret " + _CASHFREE_SBX + "\r\n", _CASHFREE_SBX),
+        ("k=" + _CASHFREE + ".", _CASHFREE),
+    ):
+        matched = _cashfree(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_cashfree_secret_key_true_negatives():
+    """Only a free-standing cfsk_ma_(prod|test)_ + 32 hex + '_' + 8 hex."""
+    hex32, hex8 = _CF_BODY.split("_")
+    for neg in (
+        # Segment widths off by one (a longer key matches nothing).
+        _CF_PROD + hex32[:-1] + "_" + hex8,
+        _CF_PROD + hex32 + "a_" + hex8,
+        _CF_PROD + hex32 + "_" + hex8[:-1],
+        _CASHFREE + "a",
+        _CASHFREE + "_x",
+        _CASHFREE + "-x",
+        # Uppercase / non-hex body.
+        _CF_PROD + hex32.upper() + "_" + hex8.upper(),
+        _CF_PROD + hex32[:-1] + "g_" + hex8,
+        # Unknown environment literal / wrong head.
+        _CF_HEAD + "live_" + _CF_BODY,
+        _CF_HEAD + "sandbox_" + _CF_BODY,
+        "cf" + "sk_" + "prod_" + _CF_BODY,
+        "CF" + "SK_MA_PROD_" + _CF_BODY,
+        # Missing separator.
+        _CF_PROD + hex32 + hex8,
+        # Carved out of a longer identifier.
+        "x" + _CASHFREE,
+        "_" + _CASHFREE,
+        "x-" + _CASHFREE,
+        # Docs placeholders.
+        "CASHFREE_SECRET_KEY=" + _CF_PROD + "xxxxxxxxxxxxxxxx",
+        "CASHFREE_SECRET_KEY=<your-secret-key>",
+        "CASHFREE_SECRET_KEY: ${{ secrets.CASHFREE_SECRET_KEY }}",
+    ):
+        assert _cashfree(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_cashfree_secret_key_masks_score_as_test_values():
+    """Single-character hex masks are known_test_values (-> ~0.15)."""
+    for env in (_CF_PROD, _CF_TEST):
+        for fill in ("0", "a", "f"):
+            tok = env + fill * 32 + "_" + fill * 8
+            matched = _cashfree("CASHFREE_SECRET_KEY=" + tok)
+            assert len(matched) == 1, "not detected: " + tok
+            assert matched[0].is_likely_test_value is True
+            assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_cashfree_secret_key_does_not_collide():
+    """Reported once, as this pattern and nothing else — the generic
+    patterns stay quiet."""
+    for text in (
+        _CASHFREE,
+        _CASHFREE_SBX,
+        "CASHFREE_SECRET_KEY=" + _CASHFREE,
+        "api_key=" + _CASHFREE_2,
+        "SECRET_KEY=" + _CASHFREE_SBX,
+        "client_secret: " + _CASHFREE,
+        "Authorization: Bearer " + _CASHFREE_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["cashfree_secret_key"], text
+
+
+def test_cashfree_secret_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "CASHFREE_SECRET_KEY=" + _CASHFREE
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _CF_BODY not in redacted_text
+    assert "CASHFREE_SECRET_KEY=" in redacted_text
