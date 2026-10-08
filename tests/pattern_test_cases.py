@@ -100,6 +100,38 @@ _IONIC_PREFIX_CASES = "io" + "n_"
 _IONIC_BODY_CASES = "jRtqqRUhFsjv788k2mLkZsRu79Jbv1p8tk8yNSmSQO"
 _IONIC_CASES = _IONIC_PREFIX_CASES + _IONIC_BODY_CASES
 
+# ── 2026-10-05 ────────────────────────────────────────────────────────────
+# Weekly batch: Ory OAuth2, Private Packagist API secret, WooCommerce consumer
+# secret, Akamai EdgeGrid client secret. Every body is SYNTHETIC (SHA-512 over
+# 'classifinder-<vendor>-...-synthetic-<n>'); prefixes are split by
+# concatenation so no contiguous token literal is committed to source.
+_ORY_AT_CASES = (
+    "ory_" + "at_" + "8Lf-vAvNdiLtE-UwkIuYRX67fVjFc-oSUDgu5tN6RyQ"
+    + "." + "5EstzLy7FhkGTDqYlgDDFFBlerKyqeXXB9o_LioTDAI"
+)
+_ORY_RT_CASES = (
+    "ory_" + "rt_" + "zHkAsKFSdPdYSF7O5K0Agcaz3_WBlq4_Yu81kLw52zE"
+    + "." + "qb4HlwCJR-cCxWhokqj21HgI7zQxlCS-sj2vg7UwHs4"
+)
+_PACKAGIST_ACS_CASES = (
+    "packagist_" + "acs_" + "242053d730049b5eb62eaf85f4584a696941397a"
+    + "0cc34fbdf1ddd70ea20cb57516c650fbaa84b697"
+)
+_WC_CS_CASES = "cs" + "_" + "2218a2927ba11e148c3fb808b7bebc64b9909419"
+_WC_CK_CASES = "ck" + "_" + "df17725eef143f5b51460c8d090bf6b871218c59"
+_AKAMAI_SECRET_CASES = "2EZcckmFnauaOqfB1mkrtkE3tznlnSJ9QmGF/jBx4Qo="
+_AKAB_HOST_CASES = "ak" + "ab-abcdefghijklmnop-qrstuvwxyz012345.luna.akamaiapis.net"
+_AKAB_TOKEN_CASES = "ak" + "ab-ponmlkjihgfedcba-543210zyxwvutsrq"
+
+# ── 2026-10-05 (round 2) ──────────────────────────────────────────────────
+# UpCloud, ConfigCat, Hack Club AI, Chief Tools, Rainforest Pay. SYNTHETIC
+# bodies (SHA-512 seeds 'classifinder-<vendor>-synthetic-<n>'), split prefixes.
+_UCAT_CASES = "uc" + "at_" + "01BPDEK9RTDCWQNT7W0MF4BAGP"
+_CONFIGCAT_CASES = "configcat-" + "sdk-1/" + "zWyaeXhEFDKSh5lfDVjYjQ" + "/" + "M4w3UZQna1N7pGEevmYLSA"
+_HACKCLUB_CASES = "sk-" + "hc-v1-" + "c235448c091e14cb54dc2021ec989f7a" + "0ea86a1d8afebd532c881d428d558b8f"
+_CHIEF_BODY_CASES = "EfbMhWyXvNMHXXH6lcsn1GvQ7QY1w6kg3BKd"
+_RAINFOREST_BODY_CASES = "94ed011a2705e0362e8337ae42f8b447" + "5b8e18c11382e7a4e46add6f2a8bebde"
+
 # GitLab runner registration tokens. 'GR1348941' is a literal vendor constant
 # (GitLab's RUNNERS_TOKEN_PREFIX); the bodies are 20 urlsafe-base64 characters.
 # Split so no contiguous registration-token literal is committed to source.
@@ -1491,6 +1523,187 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Characters outside the shortuuid alphabet (0, 1, I, O, l).
             _FSM_PREFIX_CASES + "0" + _FSM_BODY_CASES[1:],
             _FSM_PREFIX_CASES + "l" + _FSM_BODY_CASES[1:],
+        ],
+        "min_confidence": 0.85,
+    },
+
+    # ── 2026-10-05 ───────────────────────────────────────────────────────
+    # Ory OAuth2 opaque tokens — 'ory_at_' / 'ory_rt_' + 43 base64url '.'
+    # 43 base64url (Ory Hydra fosite HMAC-SHA strategy).
+    # Source: https://www.ory.com/docs/security-compliance/token-formats
+    "ory_oauth2_token": {
+        "positives": [
+            "Authorization: Bearer " + _ORY_AT_CASES,
+            '{"access_token": "' + _ORY_AT_CASES + '", "token_type": "bearer"}',
+            "ORY_REFRESH_TOKEN=" + _ORY_RT_CASES,
+        ],
+        "negatives": [
+            _ORY_AT_CASES[:-1],
+            _ORY_AT_CASES + "a",
+            # The authorization code is deliberately not matched.
+            "ory_" + "ac_" + _ORY_AT_CASES[7:],
+            # Must not be carved out of a longer identifier.
+            "fact" + _ORY_AT_CASES,
+            # Prefix is exact and case-sensitive.
+            "ORY_" + "AT_" + _ORY_AT_CASES[7:],
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Private Packagist API secret — 'packagist_acs_' + lowercase hex.
+    # Source: https://packagist.com/docs/changelog
+    "packagist_api_secret": {
+        "positives": [
+            "PACKAGIST_API_SECRET=" + _PACKAGIST_ACS_CASES,
+            "$client->authenticate('packagist_" + "ack_99c18e819e1a596af2c16f896a043817', '"
+            + _PACKAGIST_ACS_CASES + "');",
+            _PACKAGIST_ACS_CASES,
+        ],
+        "negatives": [
+            # Body below the 32-hex floor, or above the 128-hex ceiling.
+            "packagist_" + "acs_" + "abcdef0123456789" * 1,
+            "packagist_" + "acs_" + "abcdef0123456789" * 9,
+            # Uppercase hex is not the vendor's format.
+            "packagist_" + "acs_" + _PACKAGIST_ACS_CASES[14:].upper(),
+            # The API key id is not the secret.
+            "packagist_" + "ack_99c18e819e1a596af2c16f896a043817",
+            "x" + _PACKAGIST_ACS_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # WooCommerce REST API consumer secret — 'cs_' + exactly 40 lowercase hex.
+    # Source: https://github.com/woocommerce/woocommerce/blob/trunk/plugins/woocommerce/includes/class-wc-auth.php
+    "woocommerce_consumer_secret": {
+        "positives": [
+            "WOOCOMMERCE_CONSUMER_SECRET=" + _WC_CS_CASES,
+            "consumer_key=" + _WC_CK_CASES + "\nconsumer_secret=" + _WC_CS_CASES,
+            "curl https://shop.example.com/wp-json/wc/v3/orders -u "
+            + _WC_CK_CASES + ":" + _WC_CS_CASES,
+        ],
+        "negatives": [
+            _WC_CS_CASES[:-1],
+            _WC_CS_CASES + "a",
+            "docs_" + _WC_CS_CASES[3:],
+            "cs" + "-" + _WC_CS_CASES[3:],
+            "CS" + "_" + _WC_CS_CASES[3:],
+            # Stripe Checkout Session ids are base62 after cs_live_ / cs_test_.
+            "cs" + "_live_" + "a1B2c3D4e5F6g7H8i9J0kLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsT",
+            "cs" + "_test_" + "a1B2c3D4e5F6g7H8i9J0kLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsT",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    # Akamai EdgeGrid client_secret — base64 43 + '=', context-anchored.
+    # Source: https://techdocs.akamai.com/developer/docs/edgegrid
+    "akamai_edgegrid_client_secret": {
+        "positives": [
+            "[default]\nclient_secret = " + _AKAMAI_SECRET_CASES + "\nhost = "
+            + _AKAB_HOST_CASES + "\nclient_token = " + _AKAB_TOKEN_CASES + "\n",
+            "[default]\nhost = " + _AKAB_HOST_CASES + "\nclient_token = "
+            + _AKAB_TOKEN_CASES + "\nclient_secret = " + _AKAMAI_SECRET_CASES + "\n",
+            "AKAMAI_CLIENT_SECRET=" + _AKAMAI_SECRET_CASES,
+        ],
+        "negatives": [
+            # The bare value, and a client_secret with no Akamai marker nearby.
+            _AKAMAI_SECRET_CASES,
+            "client_secret = " + _AKAMAI_SECRET_CASES,
+            # A marker in a DIFFERENT .edgerc-style section is not borrowed.
+            "[a]\nhost = " + _AKAB_HOST_CASES + "\n[b]\nclient_secret = "
+            + _AKAMAI_SECRET_CASES,
+            # Wrong length.
+            "AKAMAI_CLIENT_SECRET=" + _AKAMAI_SECRET_CASES[1:],
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # ── 2026-10-05 (round 2) ─────────────────────────────────────────────
+    # Source: https://upcloud.com/docs/guides/managing-api-tokens/
+    "upcloud_api_token": {
+        "positives": [
+            "UPCLOUD_TOKEN=" + _UCAT_CASES,
+            "Authorization: Bearer " + _UCAT_CASES,
+            "token: " + _UCAT_CASES,
+        ],
+        "negatives": [
+            _UCAT_CASES[:-1],
+            _UCAT_CASES + "A",
+            _UCAT_CASES.lower(),
+            "uc" + "at_" + "01BPDEK9RTDCWQNT7W0MF4BAGI",  # 'I' is not Crockford base32
+            "uc" + "at_" + "81BPDEK9RTDCWQNT7W0MF4BAGP",  # ULID first char is 0-7
+            "x" + _UCAT_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Source: https://github.com/configcat/js-unified-sdk/blob/master/src/ConfigCatClient.ts
+    "configcat_sdk_key": {
+        "positives": [
+            'configcat.getClient("' + _CONFIGCAT_CASES + '")',
+            "CONFIGCAT_SDK_KEY=" + _CONFIGCAT_CASES,
+            "https://cdn-global.configcat.com/configuration-files/" + _CONFIGCAT_CASES
+            + "/config_v6.json",
+        ],
+        "negatives": [
+            # The legacy unprefixed 22/22 form is deliberately not matched.
+            _CONFIGCAT_CASES[len("configcat-sdk-1/"):],
+            _CONFIGCAT_CASES[:-1],
+            _CONFIGCAT_CASES + "x",
+            "configcat-" + "sdk-2/" + _CONFIGCAT_CASES[len("configcat-sdk-1/"):],
+            "configcat-" + "proxy/my-sdk-key",
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Source: https://github.com/hackclub/ai/blob/main/src/routes/api.tsx
+    "hackclub_ai_api_key": {
+        "positives": [
+            "HACKCLUB_AI_API_KEY=" + _HACKCLUB_CASES,
+            "Authorization: Bearer " + _HACKCLUB_CASES,
+            "OPENAI_API_KEY=" + _HACKCLUB_CASES,
+        ],
+        "negatives": [
+            _HACKCLUB_CASES[:-1],
+            _HACKCLUB_CASES + "0",
+            "sk-" + "hc-v1-" + _HACKCLUB_CASES[9:].upper(),
+            "sk-" + "hc-v2-" + _HACKCLUB_CASES[9:],
+        ],
+        "min_confidence": 0.90,
+    },
+
+    # Source: https://docs.chief.tools/developers/authentication
+    "chief_tools_access_token": {
+        "positives": [
+            "Authorization: Bearer " + "ct" + "p_" + _CHIEF_BODY_CASES,
+            "CHIEF_TEAM_TOKEN=" + "ct" + "t_" + _CHIEF_BODY_CASES,
+            '{"access_token": "' + "ct" + "o_" + _CHIEF_BODY_CASES + '", "refresh_token": "'
+            + "ct" + "r_" + _CHIEF_BODY_CASES[::-1] + '"}',
+        ],
+        "negatives": [
+            "ct" + "x_" + _CHIEF_BODY_CASES,
+            "ct" + "p_" + _CHIEF_BODY_CASES[:35],
+            "ct" + "p_getAllCustomerTransactionsForAccountIdAndDate",
+            "x" + "ct" + "p_" + _CHIEF_BODY_CASES,
+            "ct" + "p_" + _CHIEF_BODY_CASES + "_old",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    # Source: https://docs.rainforestpay.com/docs/api-keys
+    "rainforest_pay_api_key": {
+        "positives": [
+            "RAINFOREST_API_KEY=" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            "Authorization: Bearer " + "sbx_" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            '{"api_key": "' + "api" + "key_" + _RAINFOREST_BODY_CASES + '"}',
+        ],
+        "negatives": [
+            "api" + "key_" + _RAINFOREST_BODY_CASES[:-1],
+            "api" + "key_" + _RAINFOREST_BODY_CASES + "0",
+            "api" + "key_" + _RAINFOREST_BODY_CASES.upper(),
+            # Paddle keys embed '_apikey_' after 'pdl_live' / 'pdl_sdbx'.
+            "pdl_" + "live_" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            "pdl_" + "sdbx_" + "api" + "key_" + _RAINFOREST_BODY_CASES,
+            "my" + "api" + "key_" + _RAINFOREST_BODY_CASES,
         ],
         "min_confidence": 0.85,
     },
