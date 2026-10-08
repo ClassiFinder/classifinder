@@ -92,6 +92,18 @@ _MIRO_HEAD_CASES = "eyJtaXJv" + "Lm9yaWdpbiI6" + "ImV1MDEifQ"
 _MIRO_TAIL_CASES = "T2pnpwdSji2_bdvE6zB9llFU1Kd"
 _MIRO_CASES = _MIRO_HEAD_CASES + "_" + _MIRO_TAIL_CASES
 
+# ── 2026-10-08 ────────────────────────────────────────────────────────────
+# Cashfree Payments secret key: 'cfsk_ma_' + 'prod' | 'test' + '_' + 32 hex +
+# '_' + 8 hex. Hex is SYNTHETIC (SHA-512 over
+# 'classifinder-cashfree-synthetic-<n>') and the prefix is split so no
+# contiguous key literal sits in source (Cashfree is a GitHub
+# secret-scanning partner).
+_CASHFREE_PROD_PREFIX_CASES = "cf" + "sk_ma_" + "prod_"
+_CASHFREE_TEST_PREFIX_CASES = "cf" + "sk_ma_" + "test_"
+_CASHFREE_BODY_CASES = "96bbb76c615a89231dfd959f10de7ade" + "_" + "115d1c2e"
+_CASHFREE_CASES = _CASHFREE_PROD_PREFIX_CASES + _CASHFREE_BODY_CASES
+_CASHFREE_TEST_CASES = _CASHFREE_TEST_PREFIX_CASES + _CASHFREE_BODY_CASES
+
 # ── 2026-10-07 ────────────────────────────────────────────────────────────
 # Ionic Appflow personal access token: 'ion_' + 42 base62. The body is
 # SYNTHETIC (SHA-512 over 'classifinder-ionic-synthetic-<n>', base62) and the
@@ -6788,6 +6800,29 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _PKGST_ORT_BODY_CASES[:60],
             # Must not be carved out of a longer identifier.
             "my" + _PKGST_ORT_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-10-08 ───────────────────────────────────────────────────────
+    # Cashfree Payments secret key — 'cfsk_ma_prod_' / 'cfsk_ma_test_' + 32
+    # hex + '_' + 8 hex (prefix per an integrator help doc; width measured).
+    # Source: https://sitesplaced.com/help/payments-and-orders/connect-cashfree
+    "cashfree_secret_key": {
+        "positives": [
+            "CASHFREE_SECRET_KEY=" + _CASHFREE_CASES,
+            "export CASHFREE_SECRET_KEY='" + _CASHFREE_TEST_CASES + "'",
+            '{"x-client-secret": "' + _CASHFREE_CASES + '"}',
+        ],
+        "negatives": [
+            # Wrong segment widths.
+            _CASHFREE_PROD_PREFIX_CASES + _CASHFREE_BODY_CASES[:-1],
+            _CASHFREE_CASES + "a",
+            # Unknown environment literal.
+            "cf" + "sk_ma_" + "sand_" + _CASHFREE_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "x" + _CASHFREE_CASES,
+            # Docs placeholder.
+            "CASHFREE_SECRET_KEY=" + _CASHFREE_PROD_PREFIX_CASES + "xxxxxxxx",
         ],
         "min_confidence": 0.90,
     },
