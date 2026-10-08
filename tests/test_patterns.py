@@ -17790,3 +17790,421 @@ def test_packagist_authentication_token_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _PKGST_BODIES["ort"] not in redacted_text
     assert "PACKAGIST_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-05 — Flagsmith server-side environment key ('ser.')
+# ═══════════════════════════════════════════════
+# Every literal is SYNTHETIC: the 22-character body is SHA-512 over the seed
+# 'classifinder-flagsmith-synthetic-<n>', base57-encoded with shortuuid's
+# default alphabet. The prefix is split so no contiguous key literal sits in
+# source.
+# Source: https://github.com/Flagsmith/flagsmith/blob/main/api/environments/api_keys.py
+_FSM_PREFIX = "se" + "r."
+_FSM_BODY = "wwCHozKAfPiU7b7So3xCif"
+_FSM_BODY_2 = "PEh68ndFuZwCDjKXEGkSPR"
+_FSM_BODY_3 = "sSVCpffKWpJMSE5c7fUu3b"
+_FSM = _FSM_PREFIX + _FSM_BODY
+_FSM_2 = _FSM_PREFIX + _FSM_BODY_2
+_FSM_3 = _FSM_PREFIX + _FSM_BODY_3
+
+
+def _flagsmith(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "flagsmith_server_side_environment_key"
+    ]
+
+
+def test_flagsmith_server_side_environment_key_true_positives():
+    """Detected in the carriers a server-side key actually leaks through:
+    bare, env lines, an export, CI YAML, SDK constructors and JSON."""
+    for text in (
+        _FSM,
+        "FLAGSMITH_SERVER_KEY=" + _FSM,
+        'FLAGSMITH_ENVIRONMENT_KEY="' + _FSM_2 + '"',
+        "export FLAGSMITH_ENVIRONMENT_KEY=" + _FSM_3,
+        "env:\n  FLAGSMITH_SERVER_SIDE_KEY: " + _FSM,
+        "flagsmith = Flagsmith(environment_key='" + _FSM_2 + "')",
+        "const flagsmith = new Flagsmith({ environmentKey: '" + _FSM_3 + "' });",
+        "X-Environment-Key: " + _FSM,
+        '{"flagsmithEnvironmentKey": "' + _FSM_2 + '"}',
+    ):
+        matched = _flagsmith(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].severity == "medium"
+        assert matched[0].provider == "flagsmith"
+        assert matched[0].is_likely_test_value is False
+        assert matched[0].confidence >= 0.85
+
+
+def test_flagsmith_server_side_environment_key_span_is_exactly_the_key():
+    """The span is the whole 26-character key, prefix included."""
+    for text, key in (
+        ("FLAGSMITH_SERVER_KEY=" + _FSM, _FSM),
+        ("environment_key='" + _FSM_2 + "'", _FSM_2),
+        ("X-Environment-Key: " + _FSM_3 + "\r\n", _FSM_3),
+    ):
+        matched = _flagsmith(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == key
+        assert len(key) == 26
+
+
+def test_flagsmith_server_side_environment_key_true_negatives():
+    """Exact lowercase 'ser.' prefix, exactly 22 characters of shortuuid's
+    base57 alphabet (no 0, 1, I, O or l)."""
+    for neg in (
+        _FSM[:-1],
+        _FSM_PREFIX + _FSM_BODY[:12],
+        # Characters shortuuid never emits.
+        _FSM_PREFIX + "0" + _FSM_BODY[1:],
+        _FSM_PREFIX + "1" + _FSM_BODY[1:],
+        _FSM_PREFIX + "I" + _FSM_BODY[1:],
+        _FSM_PREFIX + "O" + _FSM_BODY[1:],
+        _FSM_PREFIX + "l" + _FSM_BODY[1:],
+        _FSM_PREFIX + _FSM_BODY[:10] + "_" + _FSM_BODY[11:],
+        # Only the exact lowercase 'ser.' prefix.
+        "SE" + "R." + _FSM_BODY,
+        "se" + "r_" + _FSM_BODY,
+        "se" + "r-" + _FSM_BODY,
+        "se" + "r" + _FSM_BODY,
+        # The client-side key (no prefix) is public by design and not claimed.
+        _FSM_BODY,
+        # Docs placeholders and CI references.
+        _FSM_PREFIX + "...",
+        'FLAGSMITH_SERVER_KEY="' + _FSM_PREFIX + 'YOUR_SERVER_SIDE_KEY"',
+        "FLAGSMITH_SERVER_KEY: ${{ secrets.FLAGSMITH_SERVER_KEY }}",
+        "Server-side keys start with se" + "r. and are secret.",
+        # Ordinary code: a serializer called 'ser' with a method call.
+        "ser.writeValueAsString(obj)",
+        "ser.serialize_to_bytes(payload)",
+    ):
+        assert _flagsmith(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_flagsmith_server_side_environment_key_is_not_carved_out_of_a_word():
+    """'ser.' ends many words ('user.', 'parser.', 'browser.'): the left guard
+    refuses [A-Za-z0-9_.-], so a dotted attribute path never matches, and the
+    right guard refuses a 23rd body character."""
+    for neg in (
+        "user." + _FSM_BODY,
+        "parser." + _FSM_BODY_2,
+        "browser." + _FSM_BODY_3,
+        "self." + _FSM,
+        "config." + _FSM_2,
+        "my_" + _FSM,
+        "x-" + _FSM_3,
+        "9" + _FSM,
+        _FSM + "a",
+        _FSM_2 + "7",
+        _FSM + "_old",
+        _FSM_3 + "-x",
+    ):
+        assert _flagsmith(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_flagsmith_server_side_environment_key_masks_score_as_test_values():
+    """Single-character masks are registered known_test_values (-> ~0.15)."""
+    for mask in (
+        _FSM_PREFIX + "x" * 22,
+        _FSM_PREFIX + "X" * 22,
+        _FSM_PREFIX + "2" * 22,
+    ):
+        matched = _flagsmith("FLAGSMITH_SERVER_KEY=" + mask)
+        assert len(matched) == 1, "not detected: " + mask
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_flagsmith_server_side_environment_key_low_entropy_body_is_penalised():
+    """A repetitive, non-random body clears the regex but falls under the
+    entropy floor and drops below the default 0.5 reporting threshold."""
+    text = "key=" + _FSM_PREFIX + "abababababababababab22"
+    assert all(f.type != "flagsmith_server_side_environment_key" for f in scan(text))
+    matched = _flagsmith(text)
+    assert len(matched) == 1
+    assert matched[0].confidence < 0.5
+
+
+def test_flagsmith_server_side_environment_key_does_not_collide():
+    """A key behind a generic env name, in JSON or bare is reported once, as
+    this pattern and nothing else."""
+    for text in (
+        _FSM,
+        "FLAGSMITH_SERVER_KEY=" + _FSM,
+        "FLAGSMITH_ENVIRONMENT_KEY=" + _FSM_2,
+        "api_key=" + _FSM_3,
+        "SECRET_KEY=" + _FSM,
+        '{"key": "' + _FSM_2 + '"}',
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["flagsmith_server_side_environment_key"], text
+
+
+def test_flagsmith_server_side_environment_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "FLAGSMITH_SERVER_KEY=" + _FSM
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _FSM_BODY not in redacted_text
+    assert "FLAGSMITH_SERVER_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-06 — Miro OAuth access / refresh token
+# ═══════════════════════════════════════════════
+# Every tail is SYNTHETIC: SHA-512 over the seed
+# 'classifinder-miro-synthetic-<n>', base64url-encoded, first 27 characters.
+# The header is split so no contiguous token literal sits in source.
+# Source: https://developers.miro.com/reference/get-new-access-token-using-refresh-token
+_MIRO_OPEN = "eyJtaXJv" + "Lm9yaWdpbiI6"  # base64 of '{"miro.origin":'
+_MIRO_EU = _MIRO_OPEN + "ImV1MDEifQ"  # {"miro.origin":"eu01"}
+_MIRO_US = _MIRO_OPEN + "InVzMDEifQ"  # {"miro.origin":"us01"}
+_MIRO_TAIL = "T2pnpwdSji2_bdvE6zB9llFU1Kd"
+_MIRO_TAIL_2 = "O1gotXu5-HX52OIjGVV5fwBDehD"
+_MIRO_TAIL_3 = "-lvIxqT0MbD7RzOx1JWnyL2KifN"
+_MIRO = _MIRO_EU + "_" + _MIRO_TAIL
+_MIRO_2 = _MIRO_US + "_" + _MIRO_TAIL_2
+_MIRO_3 = _MIRO_EU + "_" + _MIRO_TAIL_3
+# us01 variant with a 24-character tail.
+_MIRO_SHORT = _MIRO_US + "_" + "bjR3h-1DgBnFD2hSoXXaQRXp"
+
+
+def _miro(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "miro_oauth_access_token"
+    ]
+
+
+def test_miro_oauth_access_token_true_positives():
+    """Detected in env lines, OAuth JSON responses, bearer headers and SDK
+    calls; eu01 and us01 headers; tails from 24 to 28 characters, including
+    one that starts with '-'."""
+    for text in (
+        _MIRO,
+        "MIRO_ACCESS_TOKEN=" + _MIRO,
+        'MIRO_REFRESH_TOKEN="' + _MIRO_2 + '"',
+        "export MIRO_TOKEN=" + _MIRO_3,
+        '{"access_token":"' + _MIRO + '","refresh_token":"' + _MIRO_2 + '"}',
+        "curl -H 'Authorization: Bearer " + _MIRO_3 + "' https://api.miro.com/v2/boards",
+        "api = MiroApi('" + _MIRO_SHORT + "')",
+        "token: " + _MIRO_EU + "_" + _MIRO_TAIL + "Q",
+    ):
+        matched = _miro(text)
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.provider == "miro"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.90
+
+
+def test_miro_oauth_access_token_span_is_exactly_the_token():
+    """The span is the whole token, header included."""
+    for text, tok in (
+        ("MIRO_ACCESS_TOKEN=" + _MIRO, _MIRO),
+        ('"refresh_token": "' + _MIRO_2 + '"', _MIRO_2),
+        ("Bearer " + _MIRO_3 + "\r\n", _MIRO_3),
+        ("t=" + _MIRO_SHORT + ".", _MIRO_SHORT),
+    ):
+        matched = _miro(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_miro_oauth_access_token_true_negatives():
+    """Only the '{"miro.origin":' header, an underscore and a 24-28 char
+    base64url tail."""
+    for neg in (
+        # Tail too short / too long (a 29th character matches nothing).
+        _MIRO_EU + "_" + _MIRO_TAIL[:23],
+        _MIRO_EU + "_" + _MIRO_TAIL + "AB",
+        # No underscore, or a JWT-style dot.
+        _MIRO_EU + _MIRO_TAIL,
+        _MIRO_EU + "." + _MIRO_TAIL,
+        # A different base64 JSON header.
+        "eyJhbGciOiJIUzI1NiJ9" + "_" + _MIRO_TAIL,
+        # The bare header and docs placeholders.
+        _MIRO_EU,
+        "MIRO_ACCESS_TOKEN=<your-access-token>",
+        "MIRO_ACCESS_TOKEN: ${{ secrets.MIRO_ACCESS_TOKEN }}",
+        # Carved out of a longer base64url run.
+        "a" + _MIRO,
+        "_" + _MIRO_2,
+        "-" + _MIRO_3,
+    ):
+        assert _miro(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_miro_oauth_access_token_vendor_doc_examples_score_as_test_values():
+    """Miro's own documented access/refresh token examples and single-character
+    masks are known_test_values (-> ~0.15)."""
+    for tok in (
+        _MIRO_EU + "_" + "o-P91OccaII0A63CDSK--x21xiI",
+        _MIRO_EU + "_" + "-PIBKmE9rzQuL3bUeAvUEGFEhLk",
+        _MIRO_EU + "_" + "x" * 27,
+        _MIRO_US + "_" + "X" * 27,
+    ):
+        matched = _miro("MIRO_ACCESS_TOKEN=" + tok)
+        assert len(matched) == 1, "not detected: " + tok
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_miro_oauth_access_token_does_not_collide():
+    """Reported once, as this pattern and nothing else — jwt_token and the
+    generic patterns stay quiet."""
+    for text in (
+        _MIRO,
+        "MIRO_ACCESS_TOKEN=" + _MIRO,
+        "api_key=" + _MIRO_2,
+        "SECRET_KEY=" + _MIRO_3,
+        '{"access_token": "' + _MIRO + '"}',
+        "Authorization: Bearer " + _MIRO_SHORT,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["miro_oauth_access_token"], text
+
+
+def test_miro_oauth_access_token_redaction():
+    """Redaction removes the token tail and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "MIRO_ACCESS_TOKEN=" + _MIRO
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _MIRO_TAIL not in redacted_text
+    assert "MIRO_ACCESS_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-07 — Ionic Appflow personal access token
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: SHA-512 over the seed
+# 'classifinder-ionic-synthetic-<n>', base62-encoded, first 42 characters.
+# The prefix is split so no contiguous token literal sits in source.
+# Source: https://ionic.io/docs/portals/cli/configuration
+_IONIC_PREFIX = "io" + "n_"
+_IONIC_BODY = "jRtqqRUhFsjv788k2mLkZsRu79Jbv1p8tk8yNSmSQO"
+_IONIC_BODY_2 = "gBttesY0a8SEvPnImbwQUSo5ccBrlI7GVbWUmluMQ8"
+_IONIC_BODY_3 = "0Z3f7czryk96pThcpNcUDYcifjTPCgO8pjBUDV6leG"
+_IONIC = _IONIC_PREFIX + _IONIC_BODY
+_IONIC_2 = _IONIC_PREFIX + _IONIC_BODY_2
+_IONIC_3 = _IONIC_PREFIX + _IONIC_BODY_3
+
+
+def _ionic(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "ionic_personal_access_token"
+    ]
+
+
+def test_ionic_personal_access_token_true_positives():
+    """Detected in env lines, shell exports, CI YAML, JSON and CLI flags."""
+    for text in (
+        _IONIC,
+        "IONIC_TOKEN=" + _IONIC,
+        "export IONIC_TOKEN='" + _IONIC_2 + "'",
+        "  IONIC_TOKEN: " + _IONIC_3,
+        '{"ionic_token": "' + _IONIC + '"}',
+        "appflow build --token=" + _IONIC_2,
+        "portals:\n  token: " + _IONIC_3,
+    ):
+        matched = _ionic(text)
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.provider == "ionic"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.85
+
+
+def test_ionic_personal_access_token_context_boost():
+    """IONIC_TOKEN / ionic / appflow keywords lift the score above the bare
+    token's base."""
+    bare = _ionic(_IONIC)[0].confidence
+    boosted = _ionic("IONIC_TOKEN=" + _IONIC + "  # ionic appflow")[0].confidence
+    assert bare == pytest.approx(0.90, abs=0.001)
+    assert boosted > bare
+
+
+def test_ionic_personal_access_token_span_is_exactly_the_token():
+    """The span is the whole token, prefix included."""
+    for text, tok in (
+        ("IONIC_TOKEN=" + _IONIC, _IONIC),
+        ('"token": "' + _IONIC_2 + '"', _IONIC_2),
+        ("--token " + _IONIC_3 + "\r\n", _IONIC_3),
+        ("t=" + _IONIC + ".", _IONIC),
+    ):
+        matched = _ionic(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_ionic_personal_access_token_true_negatives():
+    """Only a free-standing 'ion_' + exactly 42 base62."""
+    for neg in (
+        # Body too short / too long (a 43rd character matches nothing).
+        _IONIC_PREFIX + _IONIC_BODY[:41],
+        _IONIC + "Q",
+        _IONIC + "_x",
+        _IONIC + "-x",
+        # 'ion_' as the tail of a longer identifier.
+        "vers" + _IONIC,
+        "act" + _IONIC,
+        "permiss" + _IONIC,
+        "_" + _IONIC,
+        "x-" + _IONIC,
+        # Wrong case / non-base62 body.
+        "IO" + "N_" + _IONIC_BODY,
+        _IONIC_PREFIX + _IONIC_BODY[:20] + "-" + _IONIC_BODY[21:],
+        # Docs placeholders.
+        "IONIC_TOKEN=" + _IONIC_PREFIX + "XXXXXXXXXXXXX",
+        "IONIC_TOKEN=<your-personal-access-token>",
+        "IONIC_TOKEN: ${{ secrets.IONIC_TOKEN }}",
+    ):
+        assert _ionic(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_ionic_personal_access_token_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for tok in (
+        _IONIC_PREFIX + "x" * 42,
+        _IONIC_PREFIX + "X" * 42,
+        _IONIC_PREFIX + "0" * 42,
+    ):
+        matched = _ionic("IONIC_TOKEN=" + tok)
+        assert len(matched) == 1, "not detected: " + tok
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_ionic_personal_access_token_does_not_collide():
+    """Reported once, as this pattern and nothing else — the generic
+    patterns stay quiet."""
+    for text in (
+        _IONIC,
+        "IONIC_TOKEN=" + _IONIC,
+        "api_key=" + _IONIC_2,
+        "SECRET_KEY=" + _IONIC_3,
+        "token: " + _IONIC,
+        "Authorization: Bearer " + _IONIC_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["ionic_personal_access_token"], text
+
+
+def test_ionic_personal_access_token_redaction():
+    """Redaction removes the token body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "IONIC_TOKEN=" + _IONIC
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _IONIC_BODY not in redacted_text
+    assert "IONIC_TOKEN=" in redacted_text

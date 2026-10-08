@@ -77,6 +77,30 @@ _CFK_BODY_CASES = "jM6P1EsJvCqOnEwEqniGwQvsg899PSqTNAI0TYyu" + "d6ae2245"
 _CFK_CASES = _CFK_PREFIX_CASES + _CFK_BODY_CASES
 
 # ── 2026-10-05 ────────────────────────────────────────────────────────────
+# Flagsmith server-side environment key: 'ser.' + 22 shortuuid base57. The
+# body is SYNTHETIC (SHA-512 over 'classifinder-flagsmith-synthetic-6',
+# base57-encoded) and the prefix is split.
+_FSM_PREFIX_CASES = "se" + "r."
+_FSM_BODY_CASES = "jcAEfDnqxMRBMvaJ6E3ELg"
+_FSM_CASES = _FSM_PREFIX_CASES + _FSM_BODY_CASES
+
+# ── 2026-10-06 ────────────────────────────────────────────────────────────
+# Miro OAuth access / refresh token: base64 header of {"miro.origin":"eu01"}
+# + '_' + 27 base64url. The tails are SYNTHETIC (SHA-512 over
+# 'classifinder-miro-synthetic-<n>', base64url) and the header is split.
+_MIRO_HEAD_CASES = "eyJtaXJv" + "Lm9yaWdpbiI6" + "ImV1MDEifQ"
+_MIRO_TAIL_CASES = "T2pnpwdSji2_bdvE6zB9llFU1Kd"
+_MIRO_CASES = _MIRO_HEAD_CASES + "_" + _MIRO_TAIL_CASES
+
+# ── 2026-10-07 ────────────────────────────────────────────────────────────
+# Ionic Appflow personal access token: 'ion_' + 42 base62. The body is
+# SYNTHETIC (SHA-512 over 'classifinder-ionic-synthetic-<n>', base62) and the
+# prefix is split so no contiguous token literal sits in source.
+_IONIC_PREFIX_CASES = "io" + "n_"
+_IONIC_BODY_CASES = "jRtqqRUhFsjv788k2mLkZsRu79Jbv1p8tk8yNSmSQO"
+_IONIC_CASES = _IONIC_PREFIX_CASES + _IONIC_BODY_CASES
+
+# ── 2026-10-05 ────────────────────────────────────────────────────────────
 # Weekly batch: Ory OAuth2, Private Packagist API secret, WooCommerce consumer
 # secret, Akamai EdgeGrid client secret. Every body is SYNTHETIC (SHA-512 over
 # 'classifinder-<vendor>-...-synthetic-<n>'); prefixes are split by
@@ -1431,6 +1455,76 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _CFK_CASES + "_old",
         ],
         "min_confidence": 0.90,
+    },
+
+    # ── 2026-10-05 ───────────────────────────────────────────────────────
+    # Flagsmith server-side environment key — 'ser.' + 22 shortuuid base57,
+    # 26 characters, from the vendor's own generate_server_api_key().
+    # Source: https://github.com/Flagsmith/flagsmith/blob/main/api/environments/api_keys.py
+    # ── 2026-10-06 ───────────────────────────────────────────────────────
+    # Miro OAuth access / refresh token — base64 {"miro.origin":"<region>"}
+    # header + '_' + base64url tail, per the vendor's API-reference example.
+    # Source: https://developers.miro.com/reference/get-new-access-token-using-refresh-token
+    # ── 2026-10-07 ───────────────────────────────────────────────────────
+    # Ionic Appflow personal access token — 'ion_' + 42 base62 (prefix per
+    # the vendor's own Portals docs; width per Betterleaks, MIT).
+    # Source: https://ionic.io/docs/portals/cli/configuration
+    "ionic_personal_access_token": {
+        "positives": [
+            "IONIC_TOKEN=" + _IONIC_CASES,
+            "export IONIC_TOKEN='" + _IONIC_CASES + "'",
+            '{"ionic_token": "' + _IONIC_CASES + '"}',
+        ],
+        "negatives": [
+            # Body outside exactly 42 characters.
+            _IONIC_PREFIX_CASES + _IONIC_BODY_CASES[:41],
+            _IONIC_CASES + "A",
+            # 'ion_' inside a longer identifier.
+            "vers" + _IONIC_CASES,
+            "act" + _IONIC_CASES,
+            # Docs placeholder.
+            "IONIC_TOKEN=" + _IONIC_PREFIX_CASES + "XXXXXXXXXXXXX",
+        ],
+        "min_confidence": 0.85,
+    },
+
+    "miro_oauth_access_token": {
+        "positives": [
+            "MIRO_ACCESS_TOKEN=" + _MIRO_CASES,
+            '{"access_token": "' + _MIRO_CASES + '", "token_type": "bearer"}',
+            "Authorization: Bearer " + _MIRO_CASES,
+        ],
+        "negatives": [
+            # Tail outside 24-28 characters.
+            _MIRO_HEAD_CASES + "_" + _MIRO_TAIL_CASES[:20],
+            _MIRO_CASES + "abcd",
+            # No underscore separator / a dotted JWT-style segment.
+            _MIRO_HEAD_CASES + _MIRO_TAIL_CASES,
+            _MIRO_HEAD_CASES + "." + _MIRO_TAIL_CASES,
+            # Carved out of a longer base64url run.
+            "x" + _MIRO_CASES,
+        ],
+        "min_confidence": 0.90,
+    },
+
+    "flagsmith_server_side_environment_key": {
+        "positives": [
+            "FLAGSMITH_SERVER_KEY=" + _FSM_CASES,
+            'FLAGSMITH_ENVIRONMENT_KEY="' + _FSM_CASES + '"',
+            "flagsmith = Flagsmith(environment_key='" + _FSM_CASES + "')",
+        ],
+        "negatives": [
+            # The body is exactly 22 characters.
+            _FSM_CASES[:-1],
+            _FSM_CASES + "Q",
+            # 'ser.' at the end of a word is not the prefix.
+            "self." + _FSM_CASES,
+            "user." + _FSM_BODY_CASES,
+            # Characters outside the shortuuid alphabet (0, 1, I, O, l).
+            _FSM_PREFIX_CASES + "0" + _FSM_BODY_CASES[1:],
+            _FSM_PREFIX_CASES + "l" + _FSM_BODY_CASES[1:],
+        ],
+        "min_confidence": 0.85,
     },
 
     # ── 2026-10-05 ───────────────────────────────────────────────────────
