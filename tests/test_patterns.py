@@ -18790,3 +18790,134 @@ def test_datadog_app_key_ddapp_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _DDAPP_BODY not in redacted_text
     assert "DD_APP_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-09 — MiniMax API key (pay-as-you-go)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base64url of SHA-512('classifinder-minimax-synthetic-<n>-a')
+# + SHA-512('...-b'), first 119 characters. The prefix is split so no contiguous
+# key literal sits in source.
+# Source: https://platform.minimax.io/docs/token-plan/other-tools
+_MM_PREFIX = "sk-" + "api-"
+_MM_BODY = (
+    "YixvleecqP6leEUq9-h4OwV5eZYfh7JXn7OenkMUxX-E-b_awANT8pBGruG7Yv"
+    "Uw0Ujp80SNB34Fdrt5aZzv66rgYFFhb1BlT6mU7Nm1oFD0JjSLBEVtkYM"
+)
+_MM_BODY_2 = (
+    "YzwekySK1TIRTtitgC4KYmVX9B5MCKWY9arFVZV77WfNbB1TSjR1jHFJCb4-6J"
+    "jtFlfVxBUDHLx9SyyiZvtZ5XEtQxBCuj2CvqxAO_b4SeyEpaksNXnWzqJ"
+)
+_MM_BODY_3 = (
+    "KZObgpD303CgaJVOW8xKP8lcTFqjjCX7r7wdt9_KYf3RlmWimkvsXEsqC8yG34"
+    "AQ9iX-KLBkkvmzFK5oFphA_WWA5ZfVCRW2E0qyr1LRV61nMxPasIFdFHQ"
+)
+_MM = _MM_PREFIX + _MM_BODY
+_MM_2 = _MM_PREFIX + _MM_BODY_2
+_MM_3 = _MM_PREFIX + _MM_BODY_3
+
+
+def _minimax(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "minimax_api_key"]
+
+
+def test_minimax_api_key_body_width_fixture_sanity():
+    """Guard the fixtures themselves: 119 base64url characters after sk-api-."""
+    for body in (_MM_BODY, _MM_BODY_2, _MM_BODY_3):
+        assert len(body) == 119
+
+
+def test_minimax_api_key_true_positives():
+    """Keys are detected in env, shell, JSON, Python-client and header carriers."""
+    for text in (
+        _MM,
+        "MINIMAX_API_KEY=" + _MM,
+        "export MINIMAX_API_KEY='" + _MM_2 + "'",
+        '{"api_key": "' + _MM_3 + '"}',
+        'client = OpenAI(base_url="https://api.minimax.io/v1", api_key="' + _MM + '")',
+        "Authorization: Bearer " + _MM_2,
+        "minimax:\n  api_key: " + _MM_3,
+    ):
+        matched = _minimax(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "minimax"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.90
+        assert text[m.span_start:m.span_end] in (_MM, _MM_2, _MM_3)
+
+
+def test_minimax_api_key_context_boost():
+    """minimax keywords lift the score above the base."""
+    bare = _minimax(_MM)[0].confidence
+    boosted = _minimax("MINIMAX_API_KEY=" + _MM + "  # minimax")[0].confidence
+    assert bare == pytest.approx(0.90, abs=0.001)
+    assert boosted > bare
+
+
+def test_minimax_api_key_true_negatives():
+    """Only a free-standing sk-api- + exactly 119 base64url characters."""
+    for neg in (
+        # Width off by one either way (a longer key matches nothing).
+        _MM[:-1],
+        _MM + "a",
+        _MM + "-",
+        _MM + "_old",
+        # Character outside base64url inside the body.
+        _MM_PREFIX + _MM_BODY[:60] + "." + _MM_BODY[61:],
+        _MM_PREFIX + _MM_BODY[:60] + "+" + _MM_BODY[61:],
+        # Different / mangled prefix. sk-cp- (Token Plan) is out of scope here.
+        "sk-" + "cp-" + _MM_BODY,
+        "sk-" + "apix" + _MM_BODY,
+        "SK-" + "API-" + _MM_BODY,
+        "sk_" + "api_" + _MM_BODY,
+        # Carved out of a longer identifier.
+        "x" + _MM,
+        "_" + _MM,
+        "-" + _MM,
+        # Docs placeholders.
+        "MINIMAX_API_KEY=" + _MM_PREFIX + "your-api-key",
+        "MINIMAX_API_KEY=<your-minimax-api-key>",
+        "MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}",
+    ):
+        assert _minimax(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_minimax_api_key_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for fill in ("x", "X", "0", "a"):
+        tok = _MM_PREFIX + fill * 119
+        matched = _minimax("MINIMAX_API_KEY=" + tok)
+        assert len(matched) == 1, "not detected: " + fill
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_minimax_api_key_does_not_collide():
+    """Reported once, as this pattern only — the OpenAI / generic env patterns
+    stay quiet, and a real OpenAI key keeps its own finding."""
+    for text in (
+        _MM,
+        "MINIMAX_API_KEY=" + _MM,
+        "OPENAI_API_KEY=" + _MM_2,
+        "api_key=" + _MM_3,
+        "Authorization: Bearer " + _MM,
+        "SECRET_KEY=" + _MM_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["minimax_api_key"], text[:40]
+    openai = "sk-" + "proj-" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+    assert _minimax(openai) == []
+    assert "openai_api_key" in [f.type for f in scan(openai, min_confidence=0.01)]
+
+
+def test_minimax_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "MINIMAX_API_KEY=" + _MM
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _MM_BODY not in redacted_text
+    assert "MINIMAX_API_KEY=" in redacted_text

@@ -128,6 +128,18 @@ _TOGETHER_PREFIX_CASES = "tg" + "p_v1_"
 _TOGETHER_BODY_CASES = "lr2ie5CUPLtrwO0r-xdbsa-WIyzXiIhGgPA-YCif1eZ"
 _TOGETHER_CASES = _TOGETHER_PREFIX_CASES + _TOGETHER_BODY_CASES
 
+# ── 2026-10-09 ────────────────────────────────────────────────────────────
+# MiniMax pay-as-you-go API key: 'sk-api-' + 119 base64url. The body is
+# SYNTHETIC (base64url of SHA-512 over 'classifinder-minimax-synthetic-4-a' +
+# '-b', first 119 chars) and the prefix is split so no contiguous key literal
+# sits in source.
+_MINIMAX_PREFIX_CASES = "sk-" + "api-"
+_MINIMAX_BODY_CASES = (
+    "IL-MKKjpL6yg125oAH9Hyoi_0z1r5UCG1axyNAyKmrm6yibnm8KpiYt9hNH5We"
+    "85v_bzFPwWxC50AD8CMCi7WlswbbGOAj__LW8NpGDE3z7JghMzMVdQvqJ"
+)
+_MINIMAX_CASES = _MINIMAX_PREFIX_CASES + _MINIMAX_BODY_CASES
+
 # ── 2026-10-08 ────────────────────────────────────────────────────────────
 # Cashfree Payments secret key: 'cfsk_ma_' + 'prod' | 'test' + '_' + 32 hex +
 # '_' + 8 hex. Hex is SYNTHETIC (SHA-512 over
@@ -6935,6 +6947,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "DD_APP_KEY=<your-application-key>",
         ],
         "min_confidence": 0.95,
+    },
+    # ── 2026-10-09 ───────────────────────────────────────────────────────
+    # MiniMax pay-as-you-go API key — 'sk-api-' + 119 base64url (width per
+    # Betterleaks MIT rule minimax-api-key; not vendor-documented).
+    # Source: https://platform.minimax.io/docs/token-plan/other-tools
+    "minimax_api_key": {
+        "positives": [
+            "MINIMAX_API_KEY=" + _MINIMAX_CASES,
+            "Authorization: Bearer " + _MINIMAX_CASES,
+            'client = OpenAI(base_url="https://api.minimax.io/v1", api_key="'
+            + _MINIMAX_CASES + '")',
+        ],
+        "negatives": [
+            # Wrong width (a longer key matches nothing).
+            _MINIMAX_CASES[:-1],
+            _MINIMAX_CASES + "a",
+            # Token Plan prefix is out of scope for this pattern.
+            "sk-" + "cp-" + _MINIMAX_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "x" + _MINIMAX_CASES,
+            # Docs placeholder.
+            "MINIMAX_API_KEY=" + _MINIMAX_PREFIX_CASES + "your-api-key",
+        ],
+        "min_confidence": 0.90,
     },
 }
 
