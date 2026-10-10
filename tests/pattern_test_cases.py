@@ -92,6 +92,15 @@ _MIRO_HEAD_CASES = "eyJtaXJv" + "Lm9yaWdpbiI6" + "ImV1MDEifQ"
 _MIRO_TAIL_CASES = "T2pnpwdSji2_bdvE6zB9llFU1Kd"
 _MIRO_CASES = _MIRO_HEAD_CASES + "_" + _MIRO_TAIL_CASES
 
+# ── 2026-10-10 ────────────────────────────────────────────────────────────
+# Together AI API key: 'tgp_v1_' + exactly 43 base64url. The body is
+# SYNTHETIC (base64url of SHA-512 over 'classifinder-together-synthetic-1',
+# first 43 characters) and the prefix is split so no contiguous key literal
+# sits in source.
+_TOGETHER_PREFIX_CASES = "tg" + "p_v1_"
+_TOGETHER_BODY_CASES = "lr2ie5CUPLtrwO0r-xdbsa-WIyzXiIhGgPA-YCif1eZ"
+_TOGETHER_CASES = _TOGETHER_PREFIX_CASES + _TOGETHER_BODY_CASES
+
 # ── 2026-10-08 ────────────────────────────────────────────────────────────
 # Cashfree Payments secret key: 'cfsk_ma_' + 'prod' | 'test' + '_' + 32 hex +
 # '_' + 8 hex. Hex is SYNTHETIC (SHA-512 over
@@ -6823,6 +6832,29 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "x" + _CASHFREE_CASES,
             # Docs placeholder.
             "CASHFREE_SECRET_KEY=" + _CASHFREE_PROD_PREFIX_CASES + "xxxxxxxx",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-10-10 ───────────────────────────────────────────────────────
+    # Together AI API key — 'tgp_v1_' + 43 base64url (prefix per Together's
+    # own SDK; width per the Betterleaks (MIT) rule togetherai-api-key).
+    # Source: https://github.com/betterleaks/betterleaks/blob/main/cmd/generate/config/rules/togetherai.go
+    "together_api_key": {
+        "positives": [
+            "TOGETHER_API_KEY=" + _TOGETHER_CASES,
+            "export TOGETHER_API_KEY='" + _TOGETHER_CASES + "'",
+            'client = Together(api_key="' + _TOGETHER_CASES + '")',
+        ],
+        "negatives": [
+            # Wrong body widths (a longer key matches nothing).
+            _TOGETHER_PREFIX_CASES + _TOGETHER_BODY_CASES[:-1],
+            _TOGETHER_CASES + "a",
+            # Unknown version literal.
+            "tg" + "p_v2_" + _TOGETHER_BODY_CASES,
+            # Must not be carved out of a longer identifier.
+            "x" + _TOGETHER_CASES,
+            # Docs placeholder.
+            "TOGETHER_API_KEY=your-api-key",
         ],
         "min_confidence": 0.90,
     },

@@ -18355,3 +18355,136 @@ def test_cashfree_secret_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _CF_BODY not in redacted_text
     assert "CASHFREE_SECRET_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-10 — Together AI API key
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base64url of SHA-512 over the seed
+# 'classifinder-together-synthetic-<n>', first 43 characters. The prefix is
+# split so no contiguous key literal sits in source.
+# Source: https://github.com/betterleaks/betterleaks/blob/main/cmd/generate/config/rules/togetherai.go
+_TGP_PREFIX = "tg" + "p_v1_"
+_TGP_BODY = "lr2ie5CUPLtrwO0r-xdbsa-WIyzXiIhGgPA-YCif1eZ"
+_TGP_BODY_2 = "dICgWQQvSSLMcOIn_vimJ1qFi_tK4f-54crglTmH-f4"
+_TGP_BODY_3 = "lTpK16HghFaBunvw3nZYjQ1e3zS1iochssiZuVJCIDs"
+_TOGETHER = _TGP_PREFIX + _TGP_BODY
+_TOGETHER_2 = _TGP_PREFIX + _TGP_BODY_2
+_TOGETHER_3 = _TGP_PREFIX + _TGP_BODY_3
+
+
+def _together(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "together_api_key"
+    ]
+
+
+def test_together_api_key_true_positives():
+    """Keys are detected in env, shell, Python-client, JSON, YAML and
+    HTTP-header carriers."""
+    for text in (
+        _TOGETHER,
+        _TOGETHER_2,
+        "TOGETHER_API_KEY=" + _TOGETHER,
+        "export TOGETHER_API_KEY='" + _TOGETHER_2 + "'",
+        'client = Together(api_key="' + _TOGETHER_3 + '")',
+        '{"api_key": "' + _TOGETHER + '"}',
+        "together:\n  api_key: " + _TOGETHER_3,
+        "-H 'Authorization: Bearer " + _TOGETHER_2 + "'",
+    ):
+        matched = _together(text)
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.provider == "together"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.90
+
+
+def test_together_api_key_context_boost():
+    """together / TOGETHER_API_KEY keywords lift the score above the base."""
+    bare = _together(_TOGETHER)[0].confidence
+    boosted = _together("TOGETHER_API_KEY=" + _TOGETHER + " # together.ai")[0].confidence
+    assert bare == pytest.approx(0.90, abs=0.001)
+    assert boosted > bare
+
+
+def test_together_api_key_span_is_exactly_the_key():
+    """The span is the whole key, prefix included."""
+    for text, tok in (
+        ("TOGETHER_API_KEY=" + _TOGETHER, _TOGETHER),
+        ('"key": "' + _TOGETHER_2 + '"', _TOGETHER_2),
+        ("--api-key " + _TOGETHER_3 + "\r\n", _TOGETHER_3),
+        ("k=" + _TOGETHER + ".", _TOGETHER),
+    ):
+        matched = _together(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_together_api_key_true_negatives():
+    """Only a free-standing tgp_v1_ + exactly 43 base64url."""
+    for neg in (
+        # Body widths off by one (a longer key matches nothing, not truncated).
+        _TGP_PREFIX + _TGP_BODY[:-1],
+        _TOGETHER + "a",
+        _TOGETHER + "_",
+        _TOGETHER + "-x",
+        # Too-short body (Betterleaks' own 36-character false-positive shape).
+        _TGP_PREFIX + _TGP_BODY[:36],
+        # Wrong version / wrong head / wrong case.
+        "tg" + "p_v2_" + _TGP_BODY,
+        "tg" + "p_" + _TGP_BODY,
+        "tg" + "p_v1" + _TGP_BODY,
+        "TG" + "P_V1_" + _TGP_BODY,
+        # Non-base64url character in the body.
+        _TGP_PREFIX + _TGP_BODY[:20] + "." + _TGP_BODY[21:],
+        _TGP_PREFIX + _TGP_BODY[:20] + "+" + _TGP_BODY[21:],
+        # Carved out of a longer identifier.
+        "x" + _TOGETHER,
+        "_" + _TOGETHER,
+        "x-" + _TOGETHER,
+        # Docs placeholders.
+        "TOGETHER_API_KEY=your-api-key",
+        "TOGETHER_API_KEY=" + _TGP_PREFIX + "...",
+        "TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}",
+    ):
+        assert _together(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_together_api_key_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for fill in ("x", "X", "0", "a"):
+        tok = _TGP_PREFIX + fill * 43
+        matched = _together("TOGETHER_API_KEY=" + tok)
+        assert len(matched) == 1, "not detected: " + tok
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_together_api_key_does_not_collide():
+    """Reported once, as this pattern and nothing else — the generic
+    patterns stay quiet."""
+    for text in (
+        _TOGETHER,
+        _TOGETHER_2,
+        "TOGETHER_API_KEY=" + _TOGETHER,
+        "api_key=" + _TOGETHER_2,
+        "SECRET_KEY=" + _TOGETHER_3,
+        "client_secret: " + _TOGETHER,
+        "Authorization: Bearer " + _TOGETHER_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["together_api_key"], text
+
+
+def test_together_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "TOGETHER_API_KEY=" + _TOGETHER
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _TGP_BODY not in redacted_text
+    assert "TOGETHER_API_KEY=" in redacted_text
