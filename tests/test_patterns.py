@@ -11,6 +11,9 @@ Each test case validates:
 - That known test values are correctly flagged
 """
 
+import base64 as _wk_b64
+import hashlib as _wk_hashlib
+import json as _wk_json
 import sys
 import os
 
@@ -18488,3 +18491,163 @@ def test_together_api_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _TGP_BODY not in redacted_text
     assert "TOGETHER_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-11 — Workato Developer API token
+# ═══════════════════════════════════════════════
+# Every token is SYNTHETIC: an RS256-shaped JWT whose payload is base64url of
+# a made-up claim set and whose signature is base64url of four SHA-512
+# digests over 'classifinder-workato-synthetic-<n>-a'..'-d' (342 characters,
+# the RS256 width), computed here at import. The 'wrka' marker is split so no
+# contiguous token literal sits in source.
+# Source: https://docs.workato.com/en/workato-api/api-client-apis.html
+
+
+def _wk_b64url(raw):
+    return _wk_b64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _wk_jwt(n):
+    seed = "classifinder-workato-synthetic-%d" % n
+    header = _wk_b64url(b'{"alg":"RS256","typ":"JWT"}')
+    payload = _wk_b64url(
+        _wk_json.dumps(
+            {"sub": "synthetic-api-client-%d" % n, "iat": 1760000000 + n},
+            separators=(",", ":"),
+        ).encode()
+    )
+    sig = _wk_b64url(
+        b"".join(_wk_hashlib.sha512((seed + "-" + c).encode()).digest() for c in "abcd")
+    )
+    return header + "." + payload + "." + sig
+
+
+_WK_MARK = "wr" + "ka"
+_WK_JWT = _wk_jwt(1)
+_WK_JWT_2 = _wk_jwt(2)
+_WK_JWT_3 = _wk_jwt(3)
+_WORKATO = _WK_MARK + "-" + _WK_JWT
+_WORKATO_US = _WK_MARK + "us-" + _WK_JWT_2
+_WORKATO_EU = _WK_MARK + "eu-" + _WK_JWT_3
+_WORKATO_JP = _WK_MARK + "jp-" + _WK_JWT
+
+
+def _workato(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "workato_developer_api_token"
+    ]
+
+
+def test_workato_developer_api_token_true_positives():
+    """Tokens (no region and regional variants) are detected in env, shell,
+    JSON, YAML and HTTP-header carriers."""
+    for text in (
+        _WORKATO,
+        _WORKATO_US,
+        _WORKATO_EU,
+        _WORKATO_JP,
+        "WORKATO_API_TOKEN=" + _WORKATO,
+        "export WORKATO_API_TOKEN='" + _WORKATO_EU + "'",
+        '{"token": "' + _WORKATO_US + '"}',
+        "workato:\n  api_token: " + _WORKATO_JP,
+        "-H 'Authorization: Bearer " + _WORKATO_EU + "'",
+    ):
+        matched = _workato(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "workato"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.95
+
+
+def test_workato_developer_api_token_context_boost():
+    """workato / WORKATO_API_TOKEN keywords lift the score above the base."""
+    bare = _workato(_WORKATO)[0].confidence
+    boosted = _workato("WORKATO_API_TOKEN=" + _WORKATO + " # workato.com")[0].confidence
+    assert bare == pytest.approx(0.95, abs=0.001)
+    assert boosted > bare
+
+
+def test_workato_developer_api_token_span_includes_marker():
+    """The span is the whole token, 'wrka..-' marker included."""
+    for text, tok in (
+        ("WORKATO_API_TOKEN=" + _WORKATO, _WORKATO),
+        ('"token": "' + _WORKATO_EU + '"', _WORKATO_EU),
+        ("Bearer " + _WORKATO_US + "\r\n", _WORKATO_US),
+        ("k=" + _WORKATO_JP + ".", _WORKATO_JP),
+    ):
+        matched = _workato(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_workato_developer_api_token_true_negatives():
+    """Only a free-standing wrka[<2 lowercase>]- + three-segment JWT."""
+    header, payload, sig = _WK_JWT.split(".")
+    for neg in (
+        # Bare JWT (that is jwt_token's job).
+        _WK_JWT,
+        # Region code of the wrong length or case; missing hyphen.
+        _WK_MARK + "e-" + _WK_JWT,
+        _WK_MARK + "eux-" + _WK_JWT,
+        _WK_MARK + "EU-" + _WK_JWT,
+        _WK_MARK + _WK_JWT,
+        _WK_MARK + "_" + _WK_JWT,
+        # Not a JWT body.
+        _WK_MARK + "-" + "abc" + _WK_JWT[3:],
+        _WK_MARK + "-" + header + "." + payload,
+        # Segments below the floors (signature < 64, payload < 16).
+        _WK_MARK + "-" + header + "." + payload + "." + sig[:63],
+        _WK_MARK + "-" + header + "." + payload[:15] + "." + sig,
+        # Carved out of a longer identifier.
+        "x" + _WORKATO,
+        "_" + _WORKATO,
+        "x-" + _WORKATO,
+        # Docs-truncated example and placeholders.
+        _WK_MARK + "us-eyJhbGciOiJSUz...",
+        "WORKATO_API_TOKEN=" + _WK_MARK + "-short",
+        "WORKATO_API_TOKEN: ${{ secrets.WORKATO_API_TOKEN }}",
+    ):
+        assert _workato(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_workato_developer_api_token_masks_score_as_test_values():
+    """Single-character masks at the minimum widths are known_test_values."""
+    for fill in ("x", "X", "0"):
+        tok = _WK_MARK + "-eyJ" + fill * 8 + "." + fill * 16 + "." + fill * 64
+        matched = _workato("WORKATO_API_TOKEN=" + tok)
+        assert len(matched) == 1, "not detected: " + tok
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_workato_developer_api_token_does_not_collide():
+    """Reported once, as this pattern — jwt_token (which matches the eyJ...
+    body) and the generic key patterns are deduplicated away."""
+    for text in (
+        _WORKATO,
+        _WORKATO_EU,
+        "WORKATO_API_TOKEN=" + _WORKATO,
+        "api_key=" + _WORKATO_US,
+        "SECRET_KEY=" + _WORKATO_JP,
+        "client_secret: " + _WORKATO_EU,
+        "Authorization: Bearer " + _WORKATO_US,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["workato_developer_api_token"], text
+    # Control: the same JWT without the marker is still a jwt_token.
+    assert "jwt_token" in [f.type for f in scan(_WK_JWT, min_confidence=0.01)]
+
+
+def test_workato_developer_api_token_redaction():
+    """Redaction removes the token body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "WORKATO_API_TOKEN=" + _WORKATO
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _WK_JWT.split(".")[2] not in redacted_text
+    assert "WORKATO_API_TOKEN=" in redacted_text
