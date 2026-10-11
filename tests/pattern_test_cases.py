@@ -92,6 +92,26 @@ _MIRO_HEAD_CASES = "eyJtaXJv" + "Lm9yaWdpbiI6" + "ImV1MDEifQ"
 _MIRO_TAIL_CASES = "T2pnpwdSji2_bdvE6zB9llFU1Kd"
 _MIRO_CASES = _MIRO_HEAD_CASES + "_" + _MIRO_TAIL_CASES
 
+# ── 2026-10-11 ────────────────────────────────────────────────────────────
+# Workato Developer API token: 'wrka' + optional 2-letter region + '-' + an
+# RS256 JWT. SYNTHETIC: the payload is base64url of a made-up claim set and the
+# 342-character signature is base64url of SHA-512 over
+# 'classifinder-workato-synthetic-1-a'..'-d'. The marker is split so no
+# contiguous token literal sits in source.
+_WORKATO_JWT_CASES = (
+    "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJzdWIiOiJzeW50aGV0aWMtYXBpLWNsaWVudC0xIiwianRpIjoiOWIxNmU4NjBhMjE5YTJiOTdkYjcyZWM3In0"
+    "."
+    "8blPfNC7K8nlQuqJJFJ_IhhzFjgCmqJGIH6jIVBTH7s0l05BeohF1k0eoRCMJ_L4"
+    "CGD-Hyes4UYBX4X8tGeurGiSMZaafY0__LztjsS39g1gfHz7tF4eQ9F0ndraa2jy"
+    "SDzuH1zR8UNK8WJW-UuK8cEMJbqbIzwU87XTeUADaRFKEEcmovdpsK0Mt_hxm2KP"
+    "DVctdDrKr1a5m3Znegjae59aW0YTy4pYCPdWgh-ZOOSJjDOGQUPfgTxm4VKizgc6"
+    "LmOKg_cGf6HVJkMfUh8HwyyAR49iJ59BIPGmwI2CG9VB7wja5xIBe07fQjjVMI6R"
+    "y1J18xXJ_-eQfs0ginWaFg"
+)
+_WORKATO_CASES = "wr" + "ka-" + _WORKATO_JWT_CASES
+_WORKATO_EU_CASES = "wr" + "kaeu-" + _WORKATO_JWT_CASES
+
 # ── 2026-10-10 ────────────────────────────────────────────────────────────
 # Together AI API key: 'tgp_v1_' + exactly 43 base64url. The body is
 # SYNTHETIC (base64url of SHA-512 over 'classifinder-together-synthetic-1',
@@ -6857,6 +6877,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "TOGETHER_API_KEY=your-api-key",
         ],
         "min_confidence": 0.90,
+    },
+    # ── 2026-10-11 ───────────────────────────────────────────────────────
+    # Workato Developer API token — 'wrka[<region>]-' + JWT (prefix per
+    # Workato's own Developer API reference; segment floors per the
+    # Betterleaks (MIT) rule workato-developer-api-token.1).
+    # Source: https://docs.workato.com/en/workato-api/api-client-apis.html
+    "workato_developer_api_token": {
+        "positives": [
+            "WORKATO_API_TOKEN=" + _WORKATO_CASES,
+            "WORKATO_EU_API_TOKEN=" + _WORKATO_EU_CASES,
+            "-H 'Authorization: Bearer " + _WORKATO_EU_CASES + "'",
+        ],
+        "negatives": [
+            # Bare JWT with no Workato marker belongs to jwt_token, not here.
+            "token=" + _WORKATO_JWT_CASES,
+            # Three-letter region / uppercase region / missing hyphen.
+            "wr" + "kaeux-" + _WORKATO_JWT_CASES,
+            "wr" + "kaEU-" + _WORKATO_JWT_CASES,
+            "wr" + "ka" + _WORKATO_JWT_CASES,
+            # Carved out of a longer identifier.
+            "x" + _WORKATO_CASES,
+            # Docs-truncated example and short placeholders.
+            "wr" + "kaus-eyJhbGciOiJSUz...",
+            "WORKATO_API_TOKEN=" + "wr" + "ka-short",
+        ],
+        "min_confidence": 0.95,
     },
 }
 
