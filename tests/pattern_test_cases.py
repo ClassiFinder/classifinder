@@ -92,6 +92,13 @@ _MIRO_HEAD_CASES = "eyJtaXJv" + "Lm9yaWdpbiI6" + "ImV1MDEifQ"
 _MIRO_TAIL_CASES = "T2pnpwdSji2_bdvE6zB9llFU1Kd"
 _MIRO_CASES = _MIRO_HEAD_CASES + "_" + _MIRO_TAIL_CASES
 
+# ── 2026-10-12 ────────────────────────────────────────────────────────────
+# Datadog identifiable application key: 'ddapp_' + exactly 34 [A-Za-z0-9_].
+# SYNTHETIC body (base62 of SHA-512 over 'classifinder-datadog-ddapp-synthetic-1',
+# first 34 characters); the prefix is split so no contiguous key sits in source.
+_DDAPP_BODY_CASES = "MvDf4Ze8RTbOv74Ji48ynH7vrXFJ3U6MW2"
+_DDAPP_CASES = "dd" + "app_" + _DDAPP_BODY_CASES
+
 # ── 2026-10-11 ────────────────────────────────────────────────────────────
 # Workato Developer API token: 'wrka' + optional 2-letter region + '-' + an
 # RS256 JWT. SYNTHETIC: the payload is base64url of a made-up claim set and the
@@ -6901,6 +6908,31 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Docs-truncated example and short placeholders.
             "wr" + "kaus-eyJhbGciOiJSUz...",
             "WORKATO_API_TOKEN=" + "wr" + "ka-short",
+        ],
+        "min_confidence": 0.95,
+    },
+    # ── 2026-10-12 ───────────────────────────────────────────────────────
+    # Datadog identifiable application key — 'ddapp_' + 34 (format per
+    # Datadog's own agent validator and log scrubber).
+    # Source: https://github.com/DataDog/datadog-agent/blob/main/pkg/privateactionrunner/util/keys.go
+    "datadog_app_key_ddapp": {
+        "positives": [
+            "DD_APP_KEY=" + _DDAPP_CASES,
+            "DD-APPLICATION-KEY: " + _DDAPP_CASES,
+            'app_key = "' + _DDAPP_CASES + '"',
+        ],
+        "negatives": [
+            # Width off by one either way (a 35th character matches nothing).
+            "dd" + "app_" + _DDAPP_BODY_CASES[:-1],
+            _DDAPP_CASES + "a",
+            # Wrong case / missing underscore.
+            "DD" + "APP_" + _DDAPP_BODY_CASES,
+            "dd" + "app" + _DDAPP_BODY_CASES,
+            # Carved out of a longer identifier.
+            "x" + _DDAPP_CASES,
+            # Placeholders.
+            "DD_APP_KEY=" + "dd" + "app_...",
+            "DD_APP_KEY=<your-application-key>",
         ],
         "min_confidence": 0.95,
     },
