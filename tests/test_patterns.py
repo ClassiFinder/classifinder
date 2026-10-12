@@ -18651,3 +18651,142 @@ def test_workato_developer_api_token_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _WK_JWT.split(".")[2] not in redacted_text
     assert "WORKATO_API_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-12 — Datadog identifiable application key (ddapp_)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base62 of SHA-512 over the seed
+# 'classifinder-datadog-ddapp-synthetic-<n>', first 34 characters. The prefix
+# is split so no contiguous key literal sits in source.
+# Source: https://github.com/DataDog/datadog-agent/blob/main/pkg/privateactionrunner/util/keys.go
+_DDAPP_PREFIX = "dd" + "app_"
+_DDAPP_BODY = "MvDf4Ze8RTbOv74Ji48ynH7vrXFJ3U6MW2"
+_DDAPP_BODY_2 = "98Uq2Wns84kY3i6IeTaa0lAgQLOJLLrt41"
+_DDAPP_BODY_3 = "hnplEr9D9g2rZm5iugWHiV4RMFuFeddggD"
+_DDAPP = _DDAPP_PREFIX + _DDAPP_BODY
+_DDAPP_2 = _DDAPP_PREFIX + _DDAPP_BODY_2
+_DDAPP_3 = _DDAPP_PREFIX + _DDAPP_BODY_3
+# The agent's log scrubber admits '_' in the body.
+_DDAPP_UNDERSCORE = _DDAPP_PREFIX + _DDAPP_BODY[:17] + "_" + _DDAPP_BODY[18:]
+
+
+def _ddapp(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "datadog_app_key_ddapp"
+    ]
+
+
+def test_datadog_app_key_ddapp_true_positives():
+    """Keys are detected in env, header, Terraform, YAML and JSON carriers."""
+    for text in (
+        _DDAPP,
+        _DDAPP_UNDERSCORE,
+        "DD_APP_KEY=" + _DDAPP,
+        "export DATADOG_APP_KEY='" + _DDAPP_2 + "'",
+        "-H 'DD-APPLICATION-KEY: " + _DDAPP_3 + "'",
+        'provider "datadog" {\n  app_key = "' + _DDAPP + '"\n}',
+        "datadog:\n  appKey: " + _DDAPP_2,
+        '{"application_key": "' + _DDAPP_3 + '"}',
+    ):
+        matched = _ddapp(text)
+        assert len(matched) >= 1, "not detected: " + text[:70]
+        for m in matched:
+            assert m.severity == "high"
+            assert m.provider == "datadog"
+            assert m.is_likely_test_value is False
+            assert m.confidence >= 0.95
+
+
+def test_datadog_app_key_ddapp_context_boost():
+    """Datadog keywords lift the score above the base."""
+    bare = _ddapp(_DDAPP)[0].confidence
+    boosted = _ddapp("DD_APP_KEY=" + _DDAPP + " # datadog")[0].confidence
+    assert bare == pytest.approx(0.95, abs=0.001)
+    assert boosted > bare
+
+
+def test_datadog_app_key_ddapp_span_is_exactly_the_key():
+    """The span is the whole key, prefix included."""
+    for text, tok in (
+        ("DD_APP_KEY=" + _DDAPP, _DDAPP),
+        ('"key": "' + _DDAPP_2 + '"', _DDAPP_2),
+        ("--app-key " + _DDAPP_3 + "\r\n", _DDAPP_3),
+        ("k=" + _DDAPP + ".", _DDAPP),
+    ):
+        matched = _ddapp(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == tok
+
+
+def test_datadog_app_key_ddapp_true_negatives():
+    """Only a free-standing ddapp_ + exactly 34 [A-Za-z0-9_]."""
+    for neg in (
+        # Body widths off by one (a longer key matches nothing, not truncated).
+        _DDAPP_PREFIX + _DDAPP_BODY[:-1],
+        _DDAPP + "a",
+        _DDAPP + "_",
+        # Wrong head / wrong case.
+        "dd" + "app" + _DDAPP_BODY,
+        "dd" + "ap_" + _DDAPP_BODY,
+        "DD" + "APP_" + _DDAPP_BODY,
+        # Non-alphabet character in the body.
+        _DDAPP_PREFIX + _DDAPP_BODY[:20] + "-" + _DDAPP_BODY[21:],
+        _DDAPP_PREFIX + _DDAPP_BODY[:20] + "." + _DDAPP_BODY[21:],
+        # Carved out of a longer identifier.
+        "x" + _DDAPP,
+        "_" + _DDAPP,
+        "my" + _DDAPP,
+        # Docs placeholders.
+        "DD_APP_KEY=" + _DDAPP_PREFIX + "...",
+        "DD_APP_KEY=<DATADOG_APP_KEY>",
+        "DD_APP_KEY: ${{ secrets.DD_APP_KEY }}",
+    ):
+        assert _ddapp(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_datadog_app_key_ddapp_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for fill in ("x", "X", "0", "a"):
+        tok = _DDAPP_PREFIX + fill * 34
+        matched = _ddapp("DD_APP_KEY=" + tok)
+        assert len(matched) == 1, "not detected: " + tok
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_datadog_app_key_ddapp_does_not_collide():
+    """Reported once, as this pattern — the legacy 40-hex datadog_app_key and
+    the generic patterns stay quiet."""
+    for text in (
+        _DDAPP,
+        _DDAPP_2,
+        "DD_APP_KEY=" + _DDAPP,
+        "DATADOG_APP_KEY=" + _DDAPP_2,
+        "api_key=" + _DDAPP_3,
+        "SECRET_KEY=" + _DDAPP,
+        "client_secret: " + _DDAPP_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["datadog_app_key_ddapp"], text
+
+
+def test_datadog_app_key_legacy_hex_unaffected():
+    """The legacy context-gated 40-hex application key still reports as
+    datadog_app_key, never as the ddapp_ pattern."""
+    text = "DD_APP_KEY=abcdef0123456789abcdef0123456789abcdef01"
+    types = [f.type for f in scan(text, min_confidence=0.01)]
+    assert "datadog_app_key" in types
+    assert "datadog_app_key_ddapp" not in types
+
+
+def test_datadog_app_key_ddapp_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "DD_APP_KEY=" + _DDAPP
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _DDAPP_BODY not in redacted_text
+    assert "DD_APP_KEY=" in redacted_text
