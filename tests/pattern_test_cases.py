@@ -128,6 +128,15 @@ _TOGETHER_PREFIX_CASES = "tg" + "p_v1_"
 _TOGETHER_BODY_CASES = "lr2ie5CUPLtrwO0r-xdbsa-WIyzXiIhGgPA-YCif1eZ"
 _TOGETHER_CASES = _TOGETHER_PREFIX_CASES + _TOGETHER_BODY_CASES
 
+# ── 2026-10-13 ────────────────────────────────────────────────────────────
+# Postman collection access key: 'PMAT-' + 26 Crockford base32 (ULID). The
+# body is SYNTHETIC (Crockford base32 of SHA-512 over
+# 'classifinder-postman-pmat-synthetic-4', first 26 chars) and the prefix is
+# split so no contiguous key literal sits in source.
+_PMAT_PREFIX_CASES = "PM" + "AT-"
+_PMAT_BODY_CASES = "C6MWE2K1DMZTN0686SA8CPJ3BE"
+_PMAT_CASES = _PMAT_PREFIX_CASES + _PMAT_BODY_CASES
+
 # ── 2026-10-09 ────────────────────────────────────────────────────────────
 # MiniMax pay-as-you-go API key: 'sk-api-' + 119 base64url. The body is
 # SYNTHETIC (base64url of SHA-512 over 'classifinder-minimax-synthetic-4-a' +
@@ -6969,6 +6978,26 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "x" + _MINIMAX_CASES,
             # Docs placeholder.
             "MINIMAX_API_KEY=" + _MINIMAX_PREFIX_CASES + "your-api-key",
+        ],
+        "min_confidence": 0.90,
+    },
+    # ── 2026-10-13 ───────────────────────────────────────────────────────
+    # Postman collection access key — 'PMAT-' + 26 Crockford base32 (ULID).
+    # Source: https://learning.postman.com/api-docs/api-reference/collection-access-keys/get-collection-access-keys
+    "postman_collection_access_key": {
+        "positives": [
+            "POSTMAN_COLLECTION_ACCESS_KEY=" + _PMAT_CASES,
+            "https://api.getpostman.com/collections/12345678-abc?access_key="
+            + _PMAT_CASES,
+        ],
+        "negatives": [
+            _PMAT_CASES[:-1],
+            _PMAT_CASES + "A",
+            # 'U' is outside Crockford base32.
+            _PMAT_PREFIX_CASES + "U" + _PMAT_BODY_CASES[1:],
+            "x" + _PMAT_CASES,
+            # Postman API key prefix, not a collection access key.
+            "PM" + "AK-" + _PMAT_BODY_CASES,
         ],
         "min_confidence": 0.90,
     },

@@ -18921,3 +18921,127 @@ def test_minimax_api_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _MM_BODY not in redacted_text
     assert "MINIMAX_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-13 — Postman collection access key (PMAT-)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: Crockford base32 of SHA-512 over
+# 'classifinder-postman-pmat-synthetic-<n>', first 26 characters. The prefix is
+# split so no contiguous key literal sits in source.
+# Source: https://learning.postman.com/api-docs/api-reference/collection-access-keys/get-collection-access-keys
+_PMAT_PREFIX = "PM" + "AT-"
+_PMAT_BODY = "1S7AFHTDVG88VSREW65ABGF4RW"
+_PMAT_BODY_2 = "CMXHPGX7TK8YN63N8Z2QJK808S"
+_PMAT_BODY_3 = "31JE85Z1SZBDGVHF7FABF4QX3M"
+_PMAT = _PMAT_PREFIX + _PMAT_BODY
+_PMAT_2 = _PMAT_PREFIX + _PMAT_BODY_2
+_PMAT_3 = _PMAT_PREFIX + _PMAT_BODY_3
+
+
+def _pmat(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "postman_collection_access_key"
+    ]
+
+
+def test_postman_collection_access_key_fixture_sanity():
+    """Guard the fixtures themselves: 26 Crockford base32 characters after PMAT-."""
+    import re as _re
+
+    for body in (_PMAT_BODY, _PMAT_BODY_2, _PMAT_BODY_3):
+        assert _re.fullmatch(r"[0-9A-HJKMNP-TV-Z]{26}", body)
+
+
+def test_postman_collection_access_key_true_positives():
+    """Keys are detected in env, URL query, JSON, YAML and header carriers."""
+    for text in (
+        _PMAT,
+        "POSTMAN_COLLECTION_ACCESS_KEY=" + _PMAT,
+        "https://api.getpostman.com/collections/12345678-abc?access_key=" + _PMAT_2,
+        '{"collection_access_key": "' + _PMAT_3 + '"}',
+        "postman:\n  access_key: " + _PMAT,
+        "export PMAT='" + _PMAT_2 + "'",
+    ):
+        matched = _pmat(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "medium"
+        assert m.provider == "postman"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.90
+        assert text[m.span_start:m.span_end] in (_PMAT, _PMAT_2, _PMAT_3)
+
+
+def test_postman_collection_access_key_context_boost():
+    """postman keywords lift the score above the base."""
+    bare = _pmat(_PMAT)[0].confidence
+    boosted = _pmat("POSTMAN access_key=" + _PMAT + "  # postman collection")[0].confidence
+    assert bare == pytest.approx(0.90, abs=0.001)
+    assert boosted > bare
+
+
+def test_postman_collection_access_key_true_negatives():
+    """Only a free-standing PMAT- + exactly 26 Crockford base32 characters."""
+    for neg in (
+        # Width off by one either way (a longer key matches nothing).
+        _PMAT[:-1],
+        _PMAT + "A",
+        _PMAT + "-",
+        _PMAT + "_old",
+        # Characters outside Crockford base32 (I, L, O, U, lowercase).
+        _PMAT_PREFIX + "I" + _PMAT_BODY[1:],
+        _PMAT_PREFIX + "L" + _PMAT_BODY[1:],
+        _PMAT_PREFIX + "O" + _PMAT_BODY[1:],
+        _PMAT_PREFIX + "U" + _PMAT_BODY[1:],
+        _PMAT_PREFIX + _PMAT_BODY.lower(),
+        # Different / mangled prefix.
+        "PM" + "AK-" + _PMAT_BODY,
+        "pm" + "at-" + _PMAT_BODY,
+        "PM" + "AT_" + _PMAT_BODY,
+        # Carved out of a longer identifier.
+        "x" + _PMAT,
+        "_" + _PMAT,
+        "-" + _PMAT,
+        # Docs placeholders and the vendor's masked example.
+        "access_key=" + _PMAT_PREFIX + "**********************43BR",
+        "access_key=" + _PMAT_PREFIX + "your-access-key",
+        "access_key={{collectionAccessKey}}",
+    ):
+        assert _pmat(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_postman_collection_access_key_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for fill in ("X", "0", "A"):
+        tok = _PMAT_PREFIX + fill * 26
+        matched = _pmat("access_key=" + tok)
+        assert len(matched) == 1, "not detected: " + fill
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_postman_collection_access_key_does_not_collide():
+    """Reported once, as this pattern only; the PMAK- API token keeps its own finding."""
+    for text in (
+        _PMAT,
+        "POSTMAN_COLLECTION_ACCESS_KEY=" + _PMAT,
+        "api_key=" + _PMAT_2,
+        "SECRET_KEY=" + _PMAT_3,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["postman_collection_access_key"], text[:40]
+    pmak = "PM" + "AK-" + "abcdef0123456789abcdef01-abcdef0123456789abcdef0123456789ab"
+    assert _pmat(pmak) == []
+    assert "postman_api_token" in [f.type for f in scan(pmak, min_confidence=0.01)]
+
+
+def test_postman_collection_access_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "POSTMAN_COLLECTION_ACCESS_KEY=" + _PMAT
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PMAT_BODY not in redacted_text
+    assert "POSTMAN_COLLECTION_ACCESS_KEY=" in redacted_text
