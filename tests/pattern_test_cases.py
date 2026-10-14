@@ -514,6 +514,8 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "positives": [
             "OPENAI_API_KEY=sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz12345678",
             "sk-AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd",
+            "sk-" + "admin-" + "Ab3_dE6-gH9jK2mN5pQ8rS1tU4vW7xY0zAb3_dE6-gH9jK2mN5pQ8rS1tU4v"
+            + "T3Blbk" + "FJ" + "v4Ut1Sr8Qp5Nm2Kj9Hg6-Ed3_bAz0Yx7Wv4Ut1Sr8Qp5Nm2Kj9Hg6-Ed3_bA",
         ],
         "negatives": [
             "sk-short",
