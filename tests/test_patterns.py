@@ -2287,6 +2287,38 @@ def test_openai_project_key():
     assert len(openai_findings) == 1
 
 
+def _openai_modern(scope: str, half: int) -> str:
+    """Synthetic modern OpenAI key: sk-<scope>-<half>T3BlbkFJ<half>, url-safe body."""
+    body = ("Ab3_dE6-gH9jK2mN5pQ8rS1tU4vW7xY0z" * 4)[:half]
+    prefix = "sk-" + (scope + "-" if scope else "")
+    return prefix + body + "T3Blbk" + "FJ" + body[::-1]
+
+
+@pytest.mark.parametrize(
+    "scope,half",
+    [("proj", 74), ("svcacct", 74), ("svcacct", 58), ("admin", 58), ("", 20)],
+)
+def test_openai_modern_keys_with_urlsafe_body(scope: str, half: int):
+    """Current OpenAI keys contain - and _ in the body and must match in full."""
+    key = _openai_modern(scope, half)
+    findings = [f for f in scan(f"OPENAI_API_KEY={key}") if f.type == "openai_api_key"]
+    assert len(findings) == 1
+    assert findings[0].span_end - findings[0].span_start == len(key)
+    assert findings[0].severity == "critical"
+
+
+def test_openai_admin_key_bare_is_detected():
+    """sk-admin- keys were previously missed entirely (no finding at all)."""
+    key = _openai_modern("admin", 58)
+    assert "openai_api_key" in [f.type for f in scan(key)]
+
+
+def test_openai_modern_branch_requires_t3blbkfj_anchor():
+    """A url-safe sk- body without the T3BlbkFJ anchor must not take the new branch."""
+    text = "sk-" + "admin-" + "Ab3_dE6-gH9jK2mN5pQ8rS1tU4vW7xY0z" * 3
+    assert [f for f in scan(text, min_confidence=0.0) if f.type == "openai_api_key"] == []
+
+
 # ═══════════════════════════════════════════════
 # ANTHROPIC
 # ═══════════════════════════════════════════════
