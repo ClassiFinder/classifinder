@@ -19077,3 +19077,120 @@ def test_postman_collection_access_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _PMAT_BODY not in redacted_text
     assert "POSTMAN_COLLECTION_ACCESS_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-15 — MailerSend API token (mlsn.)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: SHA-256 hex over
+# 'classifinder-mailersend-synthetic-<n>'. The prefix is split so no contiguous
+# token literal sits in source.
+# Source: https://developers.mailersend.com/tools/cli
+_MLSN_PREFIX = "ml" + "sn."
+_MLSN_BODY = "d30c98a0180293b142c75abecac6ed34425a78ea5af25b4e5dc13c054d089e06"
+_MLSN_BODY_2 = "353382747d481d439447d8f1002ec281ec083e0e5f17fa79e5512c5aa8c64169"
+_MLSN_BODY_3 = "6a1a0599a05dbf6ba2cb7781d7a44bb651a7988d33dc164bfcdb28cc30b0b978"
+_MLSN = _MLSN_PREFIX + _MLSN_BODY
+_MLSN_2 = _MLSN_PREFIX + _MLSN_BODY_2
+_MLSN_3 = _MLSN_PREFIX + _MLSN_BODY_3
+
+
+def _mlsn(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "mailersend_api_token"]
+
+
+def test_mailersend_api_token_fixture_sanity():
+    """Guard the fixtures themselves: 64 lowercase hex characters after mlsn."""
+    import re as _re
+
+    for body in (_MLSN_BODY, _MLSN_BODY_2, _MLSN_BODY_3):
+        assert _re.fullmatch(r"[a-f0-9]{64}", body)
+
+
+def test_mailersend_api_token_true_positives():
+    """Tokens are detected in env, header, JSON, YAML and code carriers."""
+    for text in (
+        _MLSN,
+        "MAILERSEND_API_TOKEN=" + _MLSN,
+        "Authorization: Bearer " + _MLSN_2,
+        '{"api_token": "' + _MLSN_3 + '"}',
+        "mailersend:\n  api_key: " + _MLSN,
+        "const ms = new MailerSend({ apiKey: '" + _MLSN_2 + "' });",
+    ):
+        matched = _mlsn(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "mailersend"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.95
+        assert text[m.span_start:m.span_end] in (_MLSN, _MLSN_2, _MLSN_3)
+
+
+def test_mailersend_api_token_context_boost():
+    """mailersend keywords lift the score above the base."""
+    bare = _mlsn(_MLSN)[0].confidence
+    boosted = _mlsn("MAILERSEND_API_TOKEN=" + _MLSN + "  # api.mailersend.com")[0].confidence
+    assert bare == pytest.approx(0.95, abs=0.001)
+    assert boosted > bare
+
+
+def test_mailersend_api_token_true_negatives():
+    """Only a free-standing mlsn. + exactly 64 lowercase hex characters."""
+    for neg in (
+        # Width off by one either way (a longer token matches nothing).
+        _MLSN[:-1],
+        _MLSN + "a",
+        _MLSN + "-",
+        _MLSN + "_old",
+        # Characters outside lowercase hex.
+        _MLSN_PREFIX + _MLSN_BODY.upper(),
+        _MLSN_PREFIX + "g" + _MLSN_BODY[1:],
+        _MLSN_PREFIX + "Z" + _MLSN_BODY[1:],
+        # Different / mangled prefix.
+        "ml" + "sn_" + _MLSN_BODY,
+        "ml" + "snX" + _MLSN_BODY,
+        "ML" + "SN." + _MLSN_BODY,
+        # Carved out of a longer identifier.
+        "x" + _MLSN,
+        "_" + _MLSN,
+        "-" + _MLSN,
+        # Docs placeholders.
+        'MAILERSEND_API_TOKEN="' + _MLSN_PREFIX + 'your_token_here"',
+        "Authorization: Bearer XXX",
+    ):
+        assert _mlsn(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_mailersend_api_token_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for fill in ("0", "a", "f"):
+        tok = _MLSN_PREFIX + fill * 64
+        matched = _mlsn("MAILERSEND_API_TOKEN=" + tok)
+        assert len(matched) == 1, "not detected: " + fill
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_mailersend_api_token_does_not_collide():
+    """Reported once, as this pattern only — no generic hex finding alongside."""
+    for text in (
+        _MLSN,
+        "MAILERSEND_API_TOKEN=" + _MLSN,
+        "api_key=" + _MLSN_2,
+        "SECRET_KEY=" + _MLSN_3,
+        "Authorization: Bearer " + _MLSN,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["mailersend_api_token"], text[:40]
+
+
+def test_mailersend_api_token_redaction():
+    """Redaction removes the token body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "MAILERSEND_API_TOKEN=" + _MLSN
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _MLSN_BODY not in redacted_text
+    assert "MAILERSEND_API_TOKEN=" in redacted_text
