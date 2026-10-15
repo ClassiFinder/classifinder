@@ -137,6 +137,14 @@ _PMAT_PREFIX_CASES = "PM" + "AT-"
 _PMAT_BODY_CASES = "C6MWE2K1DMZTN0686SA8CPJ3BE"
 _PMAT_CASES = _PMAT_PREFIX_CASES + _PMAT_BODY_CASES
 
+# ── 2026-10-15 ────────────────────────────────────────────────────────────
+# MailerSend API token: 'mlsn.' + 64 lowercase hex. The body is SYNTHETIC
+# (SHA-256 hex over 'classifinder-mailersend-synthetic-4') and the prefix is
+# split so no contiguous token literal sits in source.
+_MLSN_PREFIX_CASES = "ml" + "sn."
+_MLSN_BODY_CASES = "8114c522f6efc144ace8df27de3fa95c763e0464d25ff89cf2ab020393ea9840"
+_MLSN_CASES = _MLSN_PREFIX_CASES + _MLSN_BODY_CASES
+
 # ── 2026-10-09 ────────────────────────────────────────────────────────────
 # MiniMax pay-as-you-go API key: 'sk-api-' + 119 base64url. The body is
 # SYNTHETIC (base64url of SHA-512 over 'classifinder-minimax-synthetic-4-a' +
@@ -7002,6 +7010,23 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "PM" + "AK-" + _PMAT_BODY_CASES,
         ],
         "min_confidence": 0.90,
+    },
+    # ── 2026-10-15 ───────────────────────────────────────────────────────
+    # MailerSend API token — 'mlsn.' + 64 lowercase hex.
+    # Source: https://developers.mailersend.com/tools/cli
+    "mailersend_api_token": {
+        "positives": [
+            "MAILERSEND_API_TOKEN=" + _MLSN_CASES,
+            "Authorization: Bearer " + _MLSN_CASES,
+        ],
+        "negatives": [
+            _MLSN_CASES[:-1],
+            _MLSN_CASES + "a",
+            _MLSN_PREFIX_CASES + _MLSN_BODY_CASES.upper(),
+            "x" + _MLSN_CASES,
+            "ml" + "sn." + "your_token_here",
+        ],
+        "min_confidence": 0.95,
     },
 }
 
