@@ -145,6 +145,14 @@ _MLSN_PREFIX_CASES = "ml" + "sn."
 _MLSN_BODY_CASES = "8114c522f6efc144ace8df27de3fa95c763e0464d25ff89cf2ab020393ea9840"
 _MLSN_CASES = _MLSN_PREFIX_CASES + _MLSN_BODY_CASES
 
+# ── 2026-10-16 ────────────────────────────────────────────────────────────
+# NVIDIA API key: 'nvapi-' + 64 base64url. The body is SYNTHETIC (base64url of
+# SHA-512 over 'classifinder-nvidia-synthetic-4', first 64 chars) and the
+# prefix is split so no contiguous key literal sits in source.
+_NVAPI_PREFIX_CASES = "nv" + "api-"
+_NVAPI_BODY_CASES = "jzocb5AS9QSKA7wuwBuz-48e1VUodEruUxPTThl0G5NJodaE-28BwIVonmrdW7uX"
+_NVAPI_CASES = _NVAPI_PREFIX_CASES + _NVAPI_BODY_CASES
+
 # ── 2026-10-09 ────────────────────────────────────────────────────────────
 # MiniMax pay-as-you-go API key: 'sk-api-' + 119 base64url. The body is
 # SYNTHETIC (base64url of SHA-512 over 'classifinder-minimax-synthetic-4-a' +
@@ -7027,6 +7035,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "ml" + "sn." + "your_token_here",
         ],
         "min_confidence": 0.95,
+    },
+    # ── 2026-10-16 ───────────────────────────────────────────────────────
+    # NVIDIA API key — 'nvapi-' + 64 base64url.
+    # Source: https://docs.nvidia.com/nemo/retriever/26.5.0/extraction/api-keys/
+    "nvidia_api_key": {
+        "positives": [
+            "NVIDIA_API_KEY=" + _NVAPI_CASES,
+            "Authorization: Bearer " + _NVAPI_CASES,
+        ],
+        "negatives": [
+            _NVAPI_CASES[:-1],
+            _NVAPI_CASES + "a",
+            "x" + _NVAPI_CASES,
+            "nv" + "api-" + "your_key_here",
+        ],
+        "min_confidence": 0.90,
     },
 }
 

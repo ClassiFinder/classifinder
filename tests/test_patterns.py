@@ -19194,3 +19194,123 @@ def test_mailersend_api_token_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _MLSN_BODY not in redacted_text
     assert "MAILERSEND_API_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-16 — NVIDIA API key (nvapi-)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base64url of SHA-512 over
+# 'classifinder-nvidia-synthetic-<n>', first 64 characters. The prefix is split
+# so no contiguous key literal sits in source.
+# Source: https://docs.nvidia.com/nemo/retriever/26.5.0/extraction/api-keys/
+_NVAPI_PREFIX = "nv" + "api-"
+_NVAPI_BODY = "PFBHInOClXMBJiCmA8Qqto-hyvZELvoshGPK3BxsrqlR2A_1zj4ktq0Rys6KoDk4"
+_NVAPI_BODY_2 = "7Nlb5St7k3qfN-x_iZZYWkOKi5KjA_z2cEocmkjRkkDb7nQ0IOa-Mj0RSJgvLxk3"
+_NVAPI_BODY_3 = "mvYKPs94dqbqYDny0ty8d4w70HYaUv4j99AV404pAkFF9VoXi5M7A-BoBaRnpG1F"
+_NVAPI = _NVAPI_PREFIX + _NVAPI_BODY
+_NVAPI_2 = _NVAPI_PREFIX + _NVAPI_BODY_2
+_NVAPI_3 = _NVAPI_PREFIX + _NVAPI_BODY_3
+# Body may legitimately START with '-' (so no word boundary after the prefix).
+_NVAPI_DASH = _NVAPI_PREFIX + "-" + _NVAPI_BODY[:63]
+
+
+def _nvapi(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "nvidia_api_key"]
+
+
+def test_nvidia_api_key_fixture_sanity():
+    """Guard the fixtures themselves: 64 base64url characters after nvapi-."""
+    import re as _re
+
+    for body in (_NVAPI_BODY, _NVAPI_BODY_2, _NVAPI_BODY_3, _NVAPI_DASH[len(_NVAPI_PREFIX):]):
+        assert _re.fullmatch(r"[A-Za-z0-9_-]{64}", body)
+
+
+def test_nvidia_api_key_true_positives():
+    """Keys are detected in env, header, JSON, YAML, code carriers and with a leading '-' body."""
+    for text in (
+        _NVAPI,
+        'export NVIDIA_API_KEY="' + _NVAPI + '"',
+        "Authorization: Bearer " + _NVAPI_2,
+        '{"api_key": "' + _NVAPI_3 + '"}',
+        "nvidia:\n  api_key: " + _NVAPI,
+        "client = OpenAI(base_url='https://integrate.api.nvidia.com/v1', api_key='" + _NVAPI_2 + "')",
+        "NGC_API_KEY=" + _NVAPI_DASH,
+    ):
+        matched = _nvapi(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "nvidia"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.90
+        assert text[m.span_start:m.span_end] in (_NVAPI, _NVAPI_2, _NVAPI_3, _NVAPI_DASH)
+
+
+def test_nvidia_api_key_context_boost():
+    """nvidia keywords lift the score above the base."""
+    bare = _nvapi(_NVAPI)[0].confidence
+    boosted = _nvapi("NVIDIA_API_KEY=" + _NVAPI + "  # build.nvidia.com")[0].confidence
+    assert bare == pytest.approx(0.90, abs=0.001)
+    assert boosted > bare
+
+
+def test_nvidia_api_key_true_negatives():
+    """Only a free-standing nvapi- + exactly 64 base64url characters."""
+    for neg in (
+        # Width off by one either way (a longer key matches nothing).
+        _NVAPI[:-1],
+        _NVAPI + "a",
+        _NVAPI + "-",
+        _NVAPI + "_old",
+        # Characters outside the alphabet inside the body.
+        _NVAPI_PREFIX + "!" + _NVAPI_BODY[1:],
+        _NVAPI_PREFIX + "." + _NVAPI_BODY[1:],
+        # Different / mangled prefix.
+        "nv" + "api_" + _NVAPI_BODY,
+        "nv" + "apiX" + _NVAPI_BODY,
+        "NV" + "API-" + _NVAPI_BODY,
+        # Carved out of a longer identifier.
+        "x" + _NVAPI,
+        "_" + _NVAPI,
+        "-" + _NVAPI,
+        # Docs placeholders.
+        'export NVIDIA_API_KEY="' + _NVAPI_PREFIX + '..."',
+        'export NVIDIA_API_KEY="' + _NVAPI_PREFIX + 'your_key_here"',
+        "Authorization: Bearer XXX",
+    ):
+        assert _nvapi(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_nvidia_api_key_masks_score_as_test_values():
+    """Single-character masks are known_test_values (-> ~0.15)."""
+    for fill in ("x", "X", "0", "a"):
+        tok = _NVAPI_PREFIX + fill * 64
+        matched = _nvapi("NVIDIA_API_KEY=" + tok)
+        assert len(matched) == 1, "not detected: " + fill
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_nvidia_api_key_does_not_collide():
+    """Reported once, as this pattern only."""
+    for text in (
+        _NVAPI,
+        "NVIDIA_API_KEY=" + _NVAPI,
+        "api_key=" + _NVAPI_2,
+        "SECRET_KEY=" + _NVAPI_3,
+        "Authorization: Bearer " + _NVAPI,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["nvidia_api_key"], text[:40]
+
+
+def test_nvidia_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "NVIDIA_API_KEY=" + _NVAPI
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _NVAPI_BODY not in redacted_text
+    assert "NVIDIA_API_KEY=" in redacted_text
