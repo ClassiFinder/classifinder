@@ -19314,3 +19314,123 @@ def test_nvidia_api_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _NVAPI_BODY not in redacted_text
     assert "NVIDIA_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-17 — LlamaCloud / LlamaParse API key (llx-)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base62 of SHA-512 over
+# 'classifinder-llamacloud-synthetic-<n>', first 48 characters. The prefix is
+# split so no contiguous key literal sits in source.
+# Source: https://developers.llamaindex.ai/llamaparse/general/api_key
+_LLX_PREFIX = "ll" + "x-"
+_LLX_BODY = "gJ19ktto91HnD738i7dmBu8lUsDkgxNt79HRtJMy9n1UG0eV"
+_LLX_BODY_2 = "CV3eRceAuaUTWIP6nNTgHHc7gbiACddq7r2bjRLr5UYKFv4a"
+_LLX_BODY_3 = "WqLPx3hGc6oNVovTGf0TMKArWzF2KJbM0azJBjhGNN5IMMhj"
+_LLX = _LLX_PREFIX + _LLX_BODY
+_LLX_2 = _LLX_PREFIX + _LLX_BODY_2
+_LLX_3 = _LLX_PREFIX + _LLX_BODY_3
+
+
+def _llx(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "llamacloud_api_key"]
+
+
+def test_llamacloud_api_key_fixture_sanity():
+    """Guard the fixtures themselves: 48 alphanumeric characters after llx-."""
+    import re as _re
+
+    for body in (_LLX_BODY, _LLX_BODY_2, _LLX_BODY_3):
+        assert _re.fullmatch(r"[A-Za-z0-9]{48}", body)
+
+
+def test_llamacloud_api_key_true_positives():
+    """Keys are detected in env, header, JSON, YAML and SDK carriers."""
+    for text in (
+        _LLX,
+        'export LLAMA_CLOUD_API_KEY="' + _LLX + '"',
+        "Authorization: Bearer " + _LLX_2,
+        '{"api_key": "' + _LLX_3 + '"}',
+        "llamacloud:\n  api_key: " + _LLX,
+        "parser = LlamaParse(api_key='" + _LLX_2 + "', result_type='markdown')",
+        "client = LlamaCloud(token=\"" + _LLX_3 + "\")",
+    ):
+        matched = _llx(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "llamacloud"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.95
+        assert text[m.span_start:m.span_end] in (_LLX, _LLX_2, _LLX_3)
+
+
+def test_llamacloud_api_key_context_boost():
+    """llamacloud keywords lift the score above the base."""
+    bare = _llx(_LLX)[0].confidence
+    boosted = _llx("LLAMA_CLOUD_API_KEY=" + _LLX + "  # llamaparse")[0].confidence
+    assert bare == pytest.approx(0.95, abs=0.001)
+    assert boosted > bare
+
+
+def test_llamacloud_api_key_known_test_values():
+    """Single-character masks are pinned to ~0.15 and flagged as test values."""
+    for fill in ("x", "X", "0", "a"):
+        matched = _llx(_LLX_PREFIX + fill * 48)
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_llamacloud_api_key_true_negatives():
+    """Only a free-standing llx- + exactly 48 alphanumeric characters."""
+    for neg in (
+        # Width off by one either way (a longer key matches nothing).
+        _LLX[:-1],
+        _LLX + "a",
+        _LLX + "-",
+        _LLX + "_old",
+        # Characters outside the alphabet inside the body.
+        _LLX_PREFIX + "-" + _LLX_BODY[1:],
+        _LLX_PREFIX + "_" + _LLX_BODY[1:],
+        _LLX_PREFIX + "!" + _LLX_BODY[1:],
+        _LLX_PREFIX + "." + _LLX_BODY[1:],
+        # Different / mangled prefix.
+        "ll" + "x_" + _LLX_BODY,
+        "ll" + "xX" + _LLX_BODY,
+        "LL" + "X-" + _LLX_BODY,
+        "l" + "x-" + _LLX_BODY,
+        # Carved out of a longer identifier.
+        "x" + _LLX,
+        "_" + _LLX,
+        "-" + _LLX,
+        # Docs placeholders.
+        'export LLAMA_CLOUD_API_KEY="' + _LLX_PREFIX + '..."',
+        'export LLAMA_CLOUD_API_KEY="' + _LLX_PREFIX + 'your-api-key-here"',
+        "Authorization: Bearer XXX",
+    ):
+        assert _llx(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_llamacloud_api_key_does_not_collide():
+    """Reported once, as this pattern only."""
+    for text in (
+        _LLX,
+        "LLAMA_CLOUD_API_KEY=" + _LLX,
+        "api_key=" + _LLX_2,
+        "SECRET_KEY=" + _LLX_3,
+        "Authorization: Bearer " + _LLX,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["llamacloud_api_key"], text[:40]
+
+
+def test_llamacloud_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "LLAMA_CLOUD_API_KEY=" + _LLX
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _LLX_BODY not in redacted_text
+    assert "LLAMA_CLOUD_API_KEY=" in redacted_text
