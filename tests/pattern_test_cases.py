@@ -145,6 +145,15 @@ _MLSN_PREFIX_CASES = "ml" + "sn."
 _MLSN_BODY_CASES = "8114c522f6efc144ace8df27de3fa95c763e0464d25ff89cf2ab020393ea9840"
 _MLSN_CASES = _MLSN_PREFIX_CASES + _MLSN_BODY_CASES
 
+# ── 2026-10-17 ────────────────────────────────────────────────────────────
+# LlamaCloud / LlamaParse API key: 'llx-' + 48 alphanumeric. The body is
+# SYNTHETIC (base62 of SHA-512 over 'classifinder-llamacloud-synthetic-4',
+# first 48 chars) and the prefix is split so no contiguous key literal sits
+# in source.
+_LLX_PREFIX_CASES = "ll" + "x-"
+_LLX_BODY_CASES = "Y9OJZm76EhjsuA9ycJQ0a6JDV19nSxLIJRG1yeHdxYvsfEKr"
+_LLX_CASES = _LLX_PREFIX_CASES + _LLX_BODY_CASES
+
 # ── 2026-10-16 ────────────────────────────────────────────────────────────
 # NVIDIA API key: 'nvapi-' + 64 base64url. The body is SYNTHETIC (base64url of
 # SHA-512 over 'classifinder-nvidia-synthetic-4', first 64 chars) and the
@@ -7051,6 +7060,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "nv" + "api-" + "your_key_here",
         ],
         "min_confidence": 0.90,
+    },
+    # ── 2026-10-17 ───────────────────────────────────────────────────────
+    # LlamaCloud / LlamaParse API key — 'llx-' + 48 alphanumeric.
+    # Source: https://developers.llamaindex.ai/llamaparse/general/api_key
+    "llamacloud_api_key": {
+        "positives": [
+            "LLAMA_CLOUD_API_KEY=" + _LLX_CASES,
+            "Authorization: Bearer " + _LLX_CASES,
+        ],
+        "negatives": [
+            _LLX_CASES[:-1],
+            _LLX_CASES + "a",
+            "x" + _LLX_CASES,
+            "ll" + "x-" + "your-api-key-here",
+        ],
+        "min_confidence": 0.95,
     },
 }
 
