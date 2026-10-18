@@ -154,6 +154,15 @@ _LLX_PREFIX_CASES = "ll" + "x-"
 _LLX_BODY_CASES = "Y9OJZm76EhjsuA9ycJQ0a6JDV19nSxLIJRG1yeHdxYvsfEKr"
 _LLX_CASES = _LLX_PREFIX_CASES + _LLX_BODY_CASES
 
+# ── 2026-10-18 ────────────────────────────────────────────────────────────
+# Cartesia API key: 'sk_car_' (+ optional 'admin_') + 22 alphanumeric. The
+# body is SYNTHETIC (base62 of SHA-512 over 'classifinder-cartesia-synthetic-6',
+# first 22 chars) and the prefix is split so no contiguous key literal sits
+# in source.
+_SKCAR_PREFIX_CASES = "sk_" + "car_"
+_SKCAR_BODY_CASES = "pOgcTfwlLjpohS9faKXzaN"
+_SKCAR_CASES = _SKCAR_PREFIX_CASES + _SKCAR_BODY_CASES
+
 # ── 2026-10-16 ────────────────────────────────────────────────────────────
 # NVIDIA API key: 'nvapi-' + 64 base64url. The body is SYNTHETIC (base64url of
 # SHA-512 over 'classifinder-nvidia-synthetic-4', first 64 chars) and the
@@ -7074,6 +7083,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _LLX_CASES + "a",
             "x" + _LLX_CASES,
             "ll" + "x-" + "your-api-key-here",
+        ],
+        "min_confidence": 0.95,
+    },
+    # ── 2026-10-18 ───────────────────────────────────────────────────────
+    # Cartesia API key — 'sk_car_' (+ optional 'admin_') + 22 alphanumeric.
+    # Source: https://docs.cartesia.ai/api-reference/api-keys/get
+    "cartesia_api_key": {
+        "positives": [
+            "CARTESIA_API_KEY=" + _SKCAR_CASES,
+            "X-API-Key: " + _SKCAR_CASES,
+            _SKCAR_PREFIX_CASES + "admin_" + _SKCAR_BODY_CASES,
+        ],
+        "negatives": [
+            _SKCAR_CASES[:-1],
+            _SKCAR_CASES + "a",
+            "x" + _SKCAR_CASES,
+            "sk_" + "car_model_id",
+            "sk_" + "car_" + "your_api_key_here",
         ],
         "min_confidence": 0.95,
     },

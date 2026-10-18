@@ -19434,3 +19434,175 @@ def test_llamacloud_api_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _LLX_BODY not in redacted_text
     assert "LLAMA_CLOUD_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-18 — Cartesia API key (sk_car_ / sk_car_admin_)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base62 of SHA-512 over
+# 'classifinder-cartesia-synthetic-<n>', first 22 characters (the admin
+# over-width sample takes the first 32). The prefix is split so no contiguous
+# key literal sits in source.
+# Source: https://docs.cartesia.ai/api-reference/api-keys/get
+_SKCAR_PREFIX = "sk_" + "car_"
+_SKCAR_ADMIN_PREFIX = _SKCAR_PREFIX + "admin_"
+_SKCAR_BODY = "7Gu1XZ7mfPMGcU6LZMNaGw"
+_SKCAR_BODY_2 = "xOty4LcL1hFJpNgUSIf2LJ"
+_SKCAR_BODY_3 = "xBjIUhsjKZMrgki98Xz9Xa"
+_SKCAR_ADMIN_BODY = "5JLn9hICP9caVND50KoIVq"
+_SKCAR_ADMIN_BODY_32 = "vHyJ9zj3ndTT8xUkkAEQ1QqC6fM3KyVc"
+_SKCAR = _SKCAR_PREFIX + _SKCAR_BODY
+_SKCAR_2 = _SKCAR_PREFIX + _SKCAR_BODY_2
+_SKCAR_3 = _SKCAR_PREFIX + _SKCAR_BODY_3
+_SKCAR_ADMIN = _SKCAR_ADMIN_PREFIX + _SKCAR_ADMIN_BODY
+
+
+def _skcar(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "cartesia_api_key"]
+
+
+def test_cartesia_api_key_fixture_sanity():
+    """Guard the fixtures themselves: 22 alphanumeric characters after the prefix."""
+    import re as _re
+
+    for body in (_SKCAR_BODY, _SKCAR_BODY_2, _SKCAR_BODY_3, _SKCAR_ADMIN_BODY):
+        assert _re.fullmatch(r"[A-Za-z0-9]{22}", body)
+    assert _re.fullmatch(r"[A-Za-z0-9]{32}", _SKCAR_ADMIN_BODY_32)
+
+
+def test_cartesia_api_key_true_positives():
+    """Standard keys are detected in env, header, JSON, YAML and SDK carriers."""
+    for text in (
+        _SKCAR,
+        'export CARTESIA_API_KEY="' + _SKCAR + '"',
+        "X-API-Key: " + _SKCAR_2,
+        "Authorization: Bearer " + _SKCAR_3,
+        '{"api_key": "' + _SKCAR + '"}',
+        "cartesia:\n  api_key: " + _SKCAR_2,
+        "client = Cartesia(api_key='" + _SKCAR_3 + "')",
+        "const client = new CartesiaClient({ apiKey: \"" + _SKCAR + "\" });",
+    ):
+        matched = _skcar(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "cartesia"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.95
+        assert text[m.span_start:m.span_end] in (_SKCAR, _SKCAR_2, _SKCAR_3)
+
+
+def test_cartesia_api_key_admin_true_positive():
+    """An admin key with a 22-character body is detected whole, prefix included."""
+    for text in (
+        _SKCAR_ADMIN,
+        'export CARTESIA_ADMIN_API_KEY="' + _SKCAR_ADMIN + '"',
+        "Authorization: Bearer " + _SKCAR_ADMIN,
+    ):
+        matched = _skcar(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert text[matched[0].span_start:matched[0].span_end] == _SKCAR_ADMIN
+        assert matched[0].confidence >= 0.95
+
+
+def test_cartesia_api_key_context_boost():
+    """cartesia keywords lift the score above the base."""
+    bare = _skcar(_SKCAR)[0].confidence
+    boosted = _skcar("CARTESIA_API_KEY=" + _SKCAR + "  # cartesia sonic tts")[0].confidence
+    assert bare == pytest.approx(0.95, abs=0.001)
+    assert boosted > bare
+
+
+def test_cartesia_api_key_known_test_values():
+    """Single-character masks are pinned to ~0.15 and flagged as test values."""
+    for prefix in (_SKCAR_PREFIX, _SKCAR_ADMIN_PREFIX):
+        for fill in ("x", "X", "0", "a"):
+            matched = _skcar(prefix + fill * 22)
+            assert len(matched) == 1, prefix + fill
+            assert matched[0].is_likely_test_value is True
+            assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_cartesia_api_key_true_negatives():
+    """Only a free-standing sk_car_[admin_] + exactly 22 alphanumeric characters."""
+    for neg in (
+        # Width off by one either way (a longer key matches nothing).
+        _SKCAR[:-1],
+        _SKCAR + "a",
+        _SKCAR + "-",
+        _SKCAR + "_old",
+        _SKCAR_ADMIN[:-1],
+        _SKCAR_ADMIN + "a",
+        # Characters outside the alphabet inside the body.
+        _SKCAR_PREFIX + "-" + _SKCAR_BODY[1:],
+        _SKCAR_PREFIX + "_" + _SKCAR_BODY[1:],
+        _SKCAR_PREFIX + "!" + _SKCAR_BODY[1:],
+        _SKCAR_PREFIX + "." + _SKCAR_BODY[1:],
+        # Different / mangled prefix.
+        "sk-" + "car_" + _SKCAR_BODY,
+        "sk_" + "car-" + _SKCAR_BODY,
+        "SK_" + "CAR_" + _SKCAR_BODY,
+        "sk_" + "cart_" + _SKCAR_BODY,
+        "sk_" + "car_" + "Admin_" + _SKCAR_ADMIN_BODY,
+        # Carved out of a longer identifier.
+        "x" + _SKCAR,
+        "_" + _SKCAR,
+        "-" + _SKCAR,
+        # snake_case identifiers that happen to start with sk_car_ (pipelock's
+        # objection to the bare prefix): too short / wrong charset for the body.
+        "sk_" + "car_model_id",
+        "sk_" + "car_fleet_size = 42",
+        "sk_" + "car_type = 'sedan'",
+        "sk_" + "car_registration_number_v2",
+        # Docs placeholders.
+        'export CARTESIA_API_KEY="' + _SKCAR_PREFIX + '..."',
+        'export CARTESIA_API_KEY="' + _SKCAR_ADMIN_PREFIX + '..."',
+        'export CARTESIA_API_KEY="' + _SKCAR_PREFIX + 'your_api_key_here"',
+        "X-API-Key: XXX",
+    ):
+        assert _skcar(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_cartesia_api_key_admin_over_width_is_not_sliced():
+    """An admin key whose body is NOT 22 characters produces no cartesia finding at
+    all — and in particular never a finding carved out of the middle of the key.
+
+    The admin body width is unmeasured; if it turns out wider than 22 the right
+    outcome is a miss (generic fallback at most), never a mis-sliced span.
+    """
+    over = _SKCAR_ADMIN_PREFIX + _SKCAR_ADMIN_BODY_32
+    for text in (over, "CARTESIA_ADMIN_API_KEY=" + over, "Authorization: Bearer " + over):
+        assert _skcar(text) == [], text[:60]
+        start = text.index(over)
+        for f in scan(text, min_confidence=0.01):
+            matched = text[f.span_start:f.span_end]
+            # Any fallback finding must cover the whole key, not a slice of it.
+            assert not (f.span_start >= start and len(matched) < len(over)), (
+                f"sliced: {f.type} -> {matched}"
+            )
+
+
+def test_cartesia_api_key_does_not_collide():
+    """Reported once, as this pattern only (sk_live_/sk_test_/Checkout sk_ do not fire)."""
+    for text in (
+        _SKCAR,
+        _SKCAR_ADMIN,
+        "CARTESIA_API_KEY=" + _SKCAR,
+        "api_key=" + _SKCAR_2,
+        "SECRET_KEY=" + _SKCAR_3,
+        "Authorization: Bearer " + _SKCAR,
+        "X-API-Key: " + _SKCAR_ADMIN,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["cartesia_api_key"], text[:40]
+
+
+def test_cartesia_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "CARTESIA_API_KEY=" + _SKCAR
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _SKCAR_BODY not in redacted_text
+    assert "CARTESIA_API_KEY=" in redacted_text
