@@ -154,6 +154,14 @@ _LLX_PREFIX_CASES = "ll" + "x-"
 _LLX_BODY_CASES = "Y9OJZm76EhjsuA9ycJQ0a6JDV19nSxLIJRG1yeHdxYvsfEKr"
 _LLX_CASES = _LLX_PREFIX_CASES + _LLX_BODY_CASES
 
+# ── 2026-10-19 ────────────────────────────────────────────────────────────
+# Browserbase API key: 'bb_live_' + 27 base64url. The body is SYNTHETIC
+# (base64url of SHA-512 over 'classifinder-browserbase-synthetic-6', first 27
+# chars) and the prefix is split so no contiguous key literal sits in source.
+_BBLIVE_PREFIX_CASES = "bb_" + "live_"
+_BBLIVE_BODY_CASES = "uV5ztD3l1Yokao1M2UMb8yGUSVZ"
+_BBLIVE_CASES = _BBLIVE_PREFIX_CASES + _BBLIVE_BODY_CASES
+
 # ── 2026-10-18 ────────────────────────────────────────────────────────────
 # Cartesia API key: 'sk_car_' (+ optional 'admin_') + 22 alphanumeric. The
 # body is SYNTHETIC (base62 of SHA-512 over 'classifinder-cartesia-synthetic-6',
@@ -7103,6 +7111,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "sk_" + "car_" + "your_api_key_here",
         ],
         "min_confidence": 0.95,
+    },
+    # ── 2026-10-19 ───────────────────────────────────────────────────────
+    # Browserbase API key — 'bb_live_' + 27 base64url.
+    # Source: https://docs.browserbase.com/integrations/vercel/agent-browser/quickstart
+    "browserbase_api_key": {
+        "positives": [
+            "BROWSERBASE_API_KEY=" + _BBLIVE_CASES,
+            "X-BB-API-Key: " + _BBLIVE_CASES,
+            _BBLIVE_CASES,
+        ],
+        "negatives": [
+            _BBLIVE_CASES[:-1],
+            _BBLIVE_CASES + "a",
+            "x" + _BBLIVE_CASES,
+            "bb_" + "test_" + _BBLIVE_BODY_CASES,
+            "bb_" + "live_" + "your_api_key_here",
+        ],
+        "min_confidence": 0.90,
     },
 }
 
