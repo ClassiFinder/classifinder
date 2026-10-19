@@ -19741,3 +19741,232 @@ def test_browserbase_api_key_redaction():
     redacted_text, _ = redact(text, findings, style="label")
     assert _BBLIVE_BODY not in redacted_text
     assert "BROWSERBASE_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-19 — weekly batch: Persona, LocalStack, Tavily, dbt, Ory, Azure
+# Communication Services, Azure Web PubSub, Prisma Accelerate
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: hex / base62 / base64url / base64 of SHA-512 over
+# 'classifinder-<vendor>-synthetic-<n>'. Prefixes and hosts are split so no
+# contiguous credential literal sits in source (GitHub push protection).
+_WK19_PERSONA_P = "persona_" + "production_"
+_WK19_PERSONA = _WK19_PERSONA_P + "ec1a5d9f-e882-b7dc-5c89-a0bce28cbb1c"
+_WK19_PERSONA_2 = _WK19_PERSONA_P + "7b327606-668e-0053-ef07-c44d3c2d61ac"
+_WK19_LS_P = "ls" + "-"
+_WK19_LS = _WK19_LS_P + "SsHoYv3J-iHei-5Ypf-1gJY-u2FzMN2vYVBW"
+_WK19_LS_2 = _WK19_LS_P + "VxySKKED-KopH-eaw7-HJkW-VgnjHBEEC9XK"
+_WK19_TVLY_P = "tv" + "ly-"
+_WK19_TVLY_BODY = "8qT8Dlx28OiMR2W5HRTyeoxAP9WbDqFt"
+_WK19_TVLY = _WK19_TVLY_P + _WK19_TVLY_BODY
+_WK19_TVLY_DEV = _WK19_TVLY_P + "dev-" + "7fedygdfT6rRAujGPQXESN8oiwuZnXh9"
+_WK19_DBTU_P = "db" + "tu_"
+_WK19_DBTU_BODY = "r7BuNlVZoDmRi32izl_xyveYpYaCe6O_yl8fk3HHjHURtnm9mQ"
+_WK19_DBTU = _WK19_DBTU_P + _WK19_DBTU_BODY
+_WK19_DBTU_2 = _WK19_DBTU_P + "wV5W_CXO-9tBoSOC7xf0CJH4RYmnuvMQ-K2jncBkXhXeiehWZv"
+_WK19_ORY_P = "ory_" + "pat_"
+_WK19_ORY = _WK19_ORY_P + "1d8rq5fIcE3kJHfQThdBsAM6g8qcUrGH"
+_WK19_ORY_2 = _WK19_ORY_P + "phxFMc9AL7NpZbXuuXYw0FiJ6kYGMC72"
+_WK19_ACS_HOST = "https://contoso-acs.communication." + "azure.com/"
+_WK19_ACS_KEY = (
+    "ei9f7uEZaVL0si43f+cNjL4KG4VydCHGl3h1ZlHZTQjtcrR9Jym5AP+PVcpMvCQU" + "j4Ae0+D2gcK/Gkz7suE0Uw=="
+)
+_WK19_ACS = "endpoint=" + _WK19_ACS_HOST + ";accesskey=" + _WK19_ACS_KEY
+_WK19_WPS_HOST = "https://contoso-wps.web" + "pubsub.azure.com"
+_WK19_WPS_KEY = "NaFvhob8Ova8YFOnrV8Xu7djuM7v6d9k" + "QHv6/v9VoV0="
+_WK19_WPS = "Endpoint=" + _WK19_WPS_HOST + ";AccessKey=" + _WK19_WPS_KEY + ";Version=1.0;"
+_WK19_PRISMA_URL = "prisma://" + "accelerate.prisma-data.net/?api_key="
+_WK19_PRISMA_JWT = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJhcGlfa2V5IjoiMmI1ZjVlOGItMDYyOC05MTMxLWU5OWEtYjI0MDdkOTdkZGFiIiwidGVuYW50X2lkIjoiNzJlZmQwMm"
+    "E4NzcwYTBlZjk5MWNjNTIzZDQ3NGFmMWM1ZjY0N2E1MTgyMGJlNmEzOTBlM2Y2ZjQ5MGI5NzJiYSIsImludGVybmFsX3Nl"
+    "Y3JldCI6IjQ2NTEwOWI3LWE1N2QtZmFhMy03ZjMyLWIwYzY5OTg0NTUzZCJ9"
+    ".QKGuFV0iMyst9bSTApq6_IowEGok-EGENuAn4mqqTeA"
+)
+_WK19_PRISMA = _WK19_PRISMA_URL + _WK19_PRISMA_JWT
+
+# (pattern_id, [carrier texts], expected captured span, provider, severity)
+_WK19_TP = [
+    ("persona_production_api_key", ["PERSONA_API_KEY=" + _WK19_PERSONA,
+     "Authorization: Bearer " + _WK19_PERSONA, '{"api_key": "' + _WK19_PERSONA + '"}'],
+     _WK19_PERSONA, "persona", "critical"),
+    ("localstack_auth_token", ["LOCALSTACK_AUTH_TOKEN=" + _WK19_LS,
+     "localstack auth set-token " + _WK19_LS, "env:\n  LOCALSTACK_AUTH_TOKEN: " + _WK19_LS],
+     _WK19_LS, "localstack", "high"),
+    ("tavily_api_key", ["TAVILY_API_KEY=" + _WK19_TVLY,
+     "Authorization: Bearer " + _WK19_TVLY, "client = TavilyClient(api_key='" + _WK19_TVLY + "')"],
+     _WK19_TVLY, "tavily", "high"),
+    ("tavily_api_key", ["TAVILY_API_KEY=" + _WK19_TVLY_DEV], _WK19_TVLY_DEV, "tavily", "high"),
+    ("dbt_cloud_personal_access_token", ["DBT_TOKEN=" + _WK19_DBTU,
+     "Authorization: Token " + _WK19_DBTU, "  token: " + _WK19_DBTU],
+     _WK19_DBTU, "dbt", "high"),
+    ("dbt_cloud_personal_access_token", ["DBT_CLOUD_API_TOKEN=" + _WK19_DBTU_2],
+     _WK19_DBTU_2, "dbt", "high"),
+    ("ory_network_api_key", ["ORY_API_KEY=" + _WK19_ORY,
+     "Authorization: Bearer " + _WK19_ORY, "ory:\n  api_key: " + _WK19_ORY],
+     _WK19_ORY, "ory", "critical"),
+    ("azure_communication_services_connection_string", [_WK19_ACS,
+     'export COMMUNICATION_SERVICES_CONNECTION_STRING="' + _WK19_ACS + '"',
+     _WK19_ACS.replace("contoso-acs.", "contoso-acs.unitedstates."),
+     _WK19_ACS.replace("endpoint=", "Endpoint=").replace("accesskey=", "AccessKey=")],
+     _WK19_ACS_KEY, "azure", "critical"),
+    ("azure_web_pubsub_connection_string", [_WK19_WPS,
+     'AZURE_WEBPUBSUB_CONNECTIONSTRING="' + _WK19_WPS + '"',
+     _WK19_WPS.replace(";Version=1.0;", ""), _WK19_WPS.replace("Endpoint=", "")],
+     _WK19_WPS_KEY, "azure", "critical"),
+    ("prisma_accelerate_api_key", ['DATABASE_URL="' + _WK19_PRISMA + '"',
+     _WK19_PRISMA.replace("prisma://", "prisma+postgres://"),
+     "DATABASE_URL=" + _WK19_PRISMA.replace("net/?", "net?")],
+     _WK19_PRISMA_JWT, "prisma", "critical"),
+]
+
+
+def _wk19(text, pid):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == pid]
+
+
+@pytest.mark.parametrize("pid,texts,secret,provider,severity", _WK19_TP)
+def test_wk19_true_positives(pid, texts, secret, provider, severity):
+    """Each carrier yields exactly one finding of the pattern, spanning the secret."""
+    for text in texts:
+        matched = _wk19(text, pid)
+        assert len(matched) == 1, f"{pid} not detected in: {text[:70]}"
+        m = matched[0]
+        assert text[m.span_start:m.span_end] == secret
+        assert m.provider == provider
+        assert m.severity == severity
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.90
+
+
+@pytest.mark.parametrize("pid,texts,secret,provider,severity", _WK19_TP)
+def test_wk19_reported_once_as_own_pattern(pid, texts, secret, provider, severity):
+    """The secret's span is reported once, as this pattern only — in particular
+    jwt_token / generic_* never survive dedup alongside it."""
+    for text in texts:
+        findings = scan(text, min_confidence=0.01)
+        over = [f for f in findings
+                if f.span_start < text.index(secret) + len(secret)
+                and f.span_end > text.index(secret)]
+        assert [f.type for f in over] == [pid], f"{text[:60]} -> {[f.type for f in over]}"
+
+
+def test_wk19_prisma_beats_jwt_token():
+    """Bare JWT is jwt_token; inside an Accelerate URL the same span is the Prisma key."""
+    assert [f.type for f in scan(_WK19_PRISMA_JWT, min_confidence=0.01)] == ["jwt_token"]
+    types = [f.type for f in scan('DATABASE_URL="' + _WK19_PRISMA + '"', min_confidence=0.01)]
+    assert "prisma_accelerate_api_key" in types
+    assert "jwt_token" not in types
+
+
+_WK19_TEST_VALUES = [
+    ("persona_production_api_key",
+     ["persona_" + "production_" + "-".join(c * n for n in (8, 4, 4, 4, 12)) for c in "0afAF"]),
+    ("localstack_auth_token", ["ls" + "-" + "-".join(c * n for n in (8, 4, 4, 4, 12)) for c in "xXzZ"]),
+    ("tavily_api_key", ["tv" + "ly-" + d + c * 32 for d in ("", "dev-") for c in "xX0a"]),
+    ("dbt_cloud_personal_access_token", ["db" + "tu_" + c * 50 for c in "xX0a"]),
+    ("ory_network_api_key", ["ory_" + "pat_" + c * 32 for c in "xX0a"]),
+    ("azure_communication_services_connection_string",
+     ["endpoint=" + _WK19_ACS_HOST + ";accesskey=" + c * 86 + "==" for c in "AaXx0"]),
+    ("azure_web_pubsub_connection_string",
+     ["Endpoint=" + _WK19_WPS_HOST + ";AccessKey=" + c * 43 + "=;Version=1.0;" for c in "AaXx0"]),
+    ("prisma_accelerate_api_key",
+     [_WK19_PRISMA_URL + "eyJ" + c * 10 + "." + c * 10 + "." + c * 10 for c in "xX0"]),
+]
+
+
+@pytest.mark.parametrize("pid,texts", _WK19_TEST_VALUES)
+def test_wk19_known_test_values(pid, texts):
+    """Single-character masks are pinned to ~0.15 and flagged as test values."""
+    for text in texts:
+        matched = _wk19(text, pid)
+        assert len(matched) == 1, text[:60]
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+_WK19_TN = [
+    ("persona_production_api_key", [
+        _WK19_PERSONA[:-1], _WK19_PERSONA + "a", _WK19_PERSONA + "-", "x" + _WK19_PERSONA,
+        "_" + _WK19_PERSONA, _WK19_PERSONA.replace("ec1a", "ec1g"),
+        "persona_" + "sandbox_" + "ec1a5d9f-e882-b7dc-5c89-a0bce28cbb1c",
+        "Persona_" + "Production_" + "ec1a5d9f-e882-b7dc-5c89-a0bce28cbb1c",
+        _WK19_PERSONA_P + "ec1a5d9fe882b7dc5c89a0bce28cbb1c",
+        'PERSONA_API_KEY="' + _WK19_PERSONA_P + '..."']),
+    ("localstack_auth_token", [
+        _WK19_LS[:-1], _WK19_LS + "a", _WK19_LS + "_", "x" + _WK19_LS, "-" + _WK19_LS,
+        _WK19_LS.replace("-iHei-", "-iHe_-"),
+        # Plain hex UUIDs / GUIDs behind 'ls-' (resource ids), either case.
+        _WK19_LS_P + "ec1a5d9f-e882-b7dc-5c89-a0bce28cbb1c",
+        _WK19_LS_P + "EC1A5D9F-E882-B7DC-5C89-A0BCE28CBB1C",
+        "LS" + "-" + "SsHoYv3J-iHei-5Ypf-1gJY-u2FzMN2vYVBW",
+        "ls -la", "LOCALSTACK_AUTH_TOKEN=<YOUR_AUTH_TOKEN>"]),
+    ("tavily_api_key", [
+        _WK19_TVLY[:-1], _WK19_TVLY + "a", _WK19_TVLY + "-", "x" + _WK19_TVLY,
+        "TVLY-" + _WK19_TVLY_BODY, _WK19_TVLY_P + "prod-" + _WK19_TVLY_BODY,
+        _WK19_TVLY_P + "dev-" + _WK19_TVLY_BODY[:-1], "Bearer " + _WK19_TVLY_P + "YOUR_API_KEY",
+        'TAVILY_API_KEY="' + _WK19_TVLY_P + 'dev-MI9p6..."']),
+    ("dbt_cloud_personal_access_token", [
+        _WK19_DBTU[:-1], _WK19_DBTU + "a", _WK19_DBTU + "-", "x" + _WK19_DBTU,
+        "db" + "tc_" + _WK19_DBTU_BODY, "DBTU_" + _WK19_DBTU_BODY,
+        _WK19_DBTU_P + "." + _WK19_DBTU_BODY[1:], _WK19_DBTU_P + "your_personal_access_token"]),
+    ("ory_network_api_key", [
+        _WK19_ORY[:-1], _WK19_ORY + "a", _WK19_ORY + "_", "factory_" + "pat_" + _WK19_ORY[8:],
+        "x" + _WK19_ORY, "ory_" + "apikey_" + _WK19_ORY[8:], "ory_" + "wak_" + _WK19_ORY[8:],
+        "ory_" + "st_" + _WK19_ORY[8:], _WK19_ORY_P + "-" + _WK19_ORY[9:]]),
+    ("azure_communication_services_connection_string", [
+        "endpoint=" + _WK19_ACS_HOST + ";accesskey=<your_access_key>",
+        "endpoint=" + _WK19_ACS_HOST,
+        _WK19_ACS.replace("communication." + "azure.com", "service.signalr.net"),
+        _WK19_ACS.replace("communication." + "azure.com", "communication.azure.org"),
+        _WK19_ACS.replace(";accesskey=", ";AccountKey="),
+        "accesskey=" + _WK19_ACS_KEY,
+        "endpoint=" + _WK19_ACS_HOST + ";accesskey=" + _WK19_ACS_KEY[:40] + "=="]),
+    ("azure_web_pubsub_connection_string", [
+        "Endpoint=" + _WK19_WPS_HOST + ";AccessKey=<access-key>;Version=1.0;",
+        "Endpoint=" + _WK19_WPS_HOST + ";AuthType=azure.msi;ClientId=abc;Version=1.0;",
+        _WK19_WPS.replace("web" + "pubsub.azure.com", "service.signalr.net"),
+        _WK19_WPS.replace("web" + "pubsub.azure.com", "webpubsub.azure.example"),
+        "AccessKey=" + _WK19_WPS_KEY]),
+    ("prisma_accelerate_api_key", [
+        'DATABASE_URL="' + _WK19_PRISMA_URL + '__API_KEY__"',
+        "prisma+postgres://localhost:51213/?api_key=" + _WK19_PRISMA_JWT,
+        "https://accelerate.prisma-data.net/?api_key=" + _WK19_PRISMA_JWT,
+        _WK19_PRISMA.replace("accelerate.", "accelerate-eu."),
+        _WK19_PRISMA_JWT,
+        "postgresql://user:pw@db.prisma.io:5432/postgres"]),
+]
+
+
+@pytest.mark.parametrize("pid,texts", _WK19_TN)
+def test_wk19_true_negatives(pid, texts):
+    for neg in texts:
+        assert _wk19(neg, pid) == [], f"{pid} wrongly matched: {neg[:70]}"
+
+
+def test_wk19_signalr_and_web_pubsub_are_disjoint():
+    """Same grammar, different hosts: each string fires only its own pattern."""
+    signalr = _WK19_WPS.replace("web" + "pubsub.azure.com", "service.signalr.net")
+    assert [f.type for f in scan(signalr, min_confidence=0.01)] == [
+        "azure_signalr_connection_string"
+    ]
+    assert [f.type for f in scan(_WK19_WPS, min_confidence=0.01)] == [
+        "azure_web_pubsub_connection_string"
+    ]
+
+
+def test_wk19_acs_key_over_width_is_not_sliced():
+    """An ACS key wider than the accepted range gives no ACS finding (no mid-key slice)."""
+    text = "endpoint=" + _WK19_ACS_HOST + ";accesskey=" + _WK19_ACS_KEY[:-2] + "QUJD" + "=="
+    assert _wk19(text, "azure_communication_services_connection_string") == []
+
+
+@pytest.mark.parametrize("pid,texts,secret,provider,severity", _WK19_TP)
+def test_wk19_redaction(pid, texts, secret, provider, severity):
+    """Redaction removes the secret and keeps the surrounding carrier."""
+    from app.engine.redactor import redact
+
+    text = texts[0]
+    redacted_text, _ = redact(text, scan(text, min_confidence=0.01), style="label")
+    assert secret not in redacted_text
+    assert text[: text.index(secret)] in redacted_text

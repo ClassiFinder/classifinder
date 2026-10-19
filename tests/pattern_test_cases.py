@@ -548,6 +548,39 @@ _PKGST_ORT_CASES = _PKGST_ORT_PREFIX_CASES + _PKGST_ORT_BODY_CASES
 _PKGST_UUT_CASES = _PKGST_UUT_PREFIX_CASES + _PKGST_UUT_BODY_CASES
 
 
+# ── 2026-10-19 (weekly batch) ─────────────────────────────────────────────
+# Every body below is SYNTHETIC (hex / base62 / base64url / base64 of SHA-512
+# over 'classifinder-<vendor>-synthetic-<n>') and every prefix or host is split
+# by concatenation so no contiguous credential literal sits in source.
+_PERSONA_PREFIX_CASES = "persona_" + "production_"
+_PERSONA_CASES = _PERSONA_PREFIX_CASES + "4cc5567a-450f-3a7e-8dc6-565664c62715"
+_LS_PREFIX_CASES = "ls" + "-"
+_LS_CASES = _LS_PREFIX_CASES + "C5FJdKd2-gZkb-LYwM-UXqU-ZcIidkmVtrNh"
+_TVLY_PREFIX_CASES = "tv" + "ly-"
+_TVLY_BODY_CASES = "OcH7vNqp604UGXXW4Mt3Yh59bdSNfLJc"
+_TVLY_CASES = _TVLY_PREFIX_CASES + _TVLY_BODY_CASES
+_DBTU_PREFIX_CASES = "db" + "tu_"
+_DBTU_CASES = _DBTU_PREFIX_CASES + "JckCm9t9-4HID6LuxebLA5L3L1jfbN4ZGRWq8ao82gNujMKEcl"
+_ORYPAT_PREFIX_CASES = "ory_" + "pat_"
+_ORYPAT_CASES = _ORYPAT_PREFIX_CASES + "OkbUf4tZI1ikpnokMuYlP9jpH9PBaL3A"
+_ACS_HOST_CASES = "https://contoso-acs.communication." + "azure.com/"
+_ACS_KEY_CASES = (
+    "ZTELYx9K+1BsnREcI6w5521t6OJJhhvK1Gu2Fb2kXxQvVrTs4fmmq43X0iRw4Wm3WqMxpeCB" + "yjcGMxdCrFX/lg=="
+)
+_ACS_CASES = "endpoint=" + _ACS_HOST_CASES + ";accesskey=" + _ACS_KEY_CASES
+_WPS_HOST_CASES = "https://contoso-wps.web" + "pubsub.azure.com"
+_WPS_KEY_CASES = "f5adN76K3X5Dm84S3lWl5vFeQzydawgU" + "rJZsGSMZCTw="
+_WPS_CASES = "Endpoint=" + _WPS_HOST_CASES + ";AccessKey=" + _WPS_KEY_CASES + ";Version=1.0;"
+_PRISMA_URL_CASES = "prisma://" + "accelerate.prisma-data.net/?api_key="
+_PRISMA_JWT_CASES = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJhcGlfa2V5IjoiNmFhZDU1NmUtNmRhZC1mYjg3LWU2MzEtMDEyZDgzMTZhZjU0IiwidGVuYW50X2lkIjoiNGRhY2Y2Mm"
+    "ViYmVmM2I1OTI3ZGExYjBmMmIzMDFmY2Q1Yjc1ODM4ZTEyMTc5MTg2ODljNzJmZDNiY2IwZGIzZSIsImludGVybmFsX3Nl"
+    "Y3JldCI6ImU4Yzc2YTJkLTA4Y2UtZDU2OC1iM2Q0LWQ5YmE1OTk3OTBmNCJ9"
+    ".XkiS9ZaEwmIePLFnFrCtGlh7LB-3xxukeJpOiyGPWjM"
+)
+_PRISMA_CASES = _PRISMA_URL_CASES + _PRISMA_JWT_CASES
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -7129,6 +7162,139 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "bb_" + "live_" + "your_api_key_here",
         ],
         "min_confidence": 0.90,
+    },
+    # ── 2026-10-19 (weekly batch) ────────────────────────────────────────
+    # Persona production API key — 'persona_production_' + hex UUID.
+    # Source: https://docs.withpersona.com/api-keys
+    "persona_production_api_key": {
+        "positives": [
+            "PERSONA_API_KEY=" + _PERSONA_CASES,
+            "Authorization: Bearer " + _PERSONA_CASES,
+            _PERSONA_CASES.upper().replace("PERSONA_PRODUCTION_", _PERSONA_PREFIX_CASES),
+        ],
+        "negatives": [
+            _PERSONA_CASES[:-1],
+            _PERSONA_CASES + "a",
+            "x" + _PERSONA_CASES,
+            "persona_" + "sandbox_" + "4cc5567a-450f-3a7e-8dc6-565664c62715",
+            _PERSONA_PREFIX_CASES + "...",
+        ],
+        "min_confidence": 0.95,
+    },
+    # LocalStack auth token — 'ls-' + 8-4-4-4-12 alphanumeric.
+    # Source: https://docs.localstack.cloud/aws/getting-started/faq/
+    "localstack_auth_token": {
+        "positives": [
+            "LOCALSTACK_AUTH_TOKEN=" + _LS_CASES,
+            "localstack auth set-token " + _LS_CASES,
+            '  - LOCALSTACK_AUTH_TOKEN="' + _LS_CASES + '"',
+        ],
+        "negatives": [
+            _LS_CASES[:-1],
+            _LS_CASES + "a",
+            "x" + _LS_CASES,
+            # An ordinary hex UUID behind 'ls-' is a resource id, not a token.
+            _LS_PREFIX_CASES + "4cc5567a-450f-3a7e-8dc6-565664c62715",
+            _LS_PREFIX_CASES + "4CC5567A-450F-3A7E-8DC6-565664C62715",
+            "ls -la /tmp",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Tavily API key — 'tvly-' / 'tvly-dev-' + 32 alphanumeric.
+    # Source: https://docs.tavily.com/documentation/enterprise/generate-keys
+    "tavily_api_key": {
+        "positives": [
+            "TAVILY_API_KEY=" + _TVLY_CASES,
+            "Authorization: Bearer " + _TVLY_PREFIX_CASES + "dev-" + _TVLY_BODY_CASES,
+            'TavilyClient(api_key="' + _TVLY_CASES + '")',
+        ],
+        "negatives": [
+            _TVLY_CASES[:-1],
+            _TVLY_CASES + "a",
+            "x" + _TVLY_CASES,
+            _TVLY_PREFIX_CASES + "YOUR_API_KEY",
+            _TVLY_PREFIX_CASES + "prod-" + _TVLY_BODY_CASES[:-1],
+        ],
+        "min_confidence": 0.95,
+    },
+    # dbt platform personal access token — 'dbtu_' + 50 base64url.
+    # Source: https://docs.getdbt.com/docs/dbt-cloud-apis/user-tokens
+    "dbt_cloud_personal_access_token": {
+        "positives": [
+            "DBT_TOKEN=" + _DBTU_CASES,
+            "Authorization: Token " + _DBTU_CASES,
+            '  token: "' + _DBTU_CASES + '"',
+        ],
+        "negatives": [
+            _DBTU_CASES[:-1],
+            _DBTU_CASES + "a",
+            "x" + _DBTU_CASES,
+            "db" + "tc_" + _DBTU_CASES[5:],
+            _DBTU_PREFIX_CASES + "your_token_here",
+        ],
+        "min_confidence": 0.95,
+    },
+    # Ory Network project API key — 'ory_pat_' + 32 alphanumeric.
+    # Source: https://www.ory.com/docs/security-compliance/token-formats
+    "ory_network_api_key": {
+        "positives": [
+            "ORY_API_KEY=" + _ORYPAT_CASES,
+            "Authorization: Bearer " + _ORYPAT_CASES,
+            '{"ory_api_key": "' + _ORYPAT_CASES + '"}',
+        ],
+        "negatives": [
+            _ORYPAT_CASES[:-1],
+            _ORYPAT_CASES + "a",
+            "factory_" + "pat_" + _ORYPAT_CASES[8:],
+            "ory_" + "apikey_" + _ORYPAT_CASES[8:],
+            "ory_" + "st_" + _ORYPAT_CASES[8:],
+        ],
+        "min_confidence": 0.95,
+    },
+    # Azure Communication Services connection string.
+    # Source: https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/create-communication-resource
+    "azure_communication_services_connection_string": {
+        "positives": [
+            _ACS_CASES,
+            'COMMUNICATION_SERVICES_CONNECTION_STRING="' + _ACS_CASES + '"',
+            _ACS_CASES.replace("contoso-acs.", "contoso-acs.unitedstates."),
+        ],
+        "negatives": [
+            "endpoint=" + _ACS_HOST_CASES + ";accesskey=<your_access_key>",
+            _ACS_CASES.replace("communication." + "azure.com", "service.signalr.net"),
+            "endpoint=" + _ACS_HOST_CASES,
+        ],
+        "min_confidence": 0.95,
+    },
+    # Azure Web PubSub connection string.
+    # Source: https://learn.microsoft.com/en-us/azure/service-connector/how-to-integrate-web-pubsub
+    "azure_web_pubsub_connection_string": {
+        "positives": [
+            _WPS_CASES,
+            'AZURE_WEBPUBSUB_CONNECTIONSTRING="' + _WPS_CASES + '"',
+            _WPS_CASES.replace("Endpoint=", ""),
+        ],
+        "negatives": [
+            "Endpoint=" + _WPS_HOST_CASES + ";AccessKey=<access-key>;Version=1.0;",
+            "Endpoint=" + _WPS_HOST_CASES + ";AuthType=azure.msi;Version=1.0;",
+            _WPS_CASES.replace("web" + "pubsub.azure.com", "service.signalr.net"),
+        ],
+        "min_confidence": 0.95,
+    },
+    # Prisma Accelerate API key — JWT in a prisma://accelerate.prisma-data.net URL.
+    # Source: https://www.prisma.io/docs/accelerate/getting-started
+    "prisma_accelerate_api_key": {
+        "positives": [
+            'DATABASE_URL="' + _PRISMA_CASES + '"',
+            _PRISMA_CASES.replace("prisma://", "prisma+postgres://"),
+            "datasource db { url = \"" + _PRISMA_CASES + "\" }",
+        ],
+        "negatives": [
+            'DATABASE_URL="' + _PRISMA_URL_CASES + '__API_KEY__"',
+            "prisma+postgres://localhost:51213/?api_key=" + _PRISMA_JWT_CASES,
+            "https://accelerate.prisma-data.net/?api_key=" + _PRISMA_JWT_CASES,
+        ],
+        "min_confidence": 0.95,
     },
 }
 
