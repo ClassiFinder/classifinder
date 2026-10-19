@@ -19609,6 +19609,141 @@ def test_cartesia_api_key_redaction():
 
 
 # ═══════════════════════════════════════════════
+# 2026-10-19 — Browserbase API key (bb_live_)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base64url of SHA-512 over
+# 'classifinder-browserbase-synthetic-<n>', first 27 characters. The prefix is
+# split so no contiguous key literal sits in source.
+# Source: https://docs.browserbase.com/integrations/vercel/agent-browser/quickstart
+_BBLIVE_PREFIX = "bb_" + "live_"
+_BBLIVE_BODY = "UHUC-LsFrXifg35lljYLPm4mDgi"
+_BBLIVE_BODY_2 = "GHjCC0fSRX5674kcjDw2wxepwbt"
+_BBLIVE_BODY_3 = "6Hqnnb3hkw_wME4EHNqrxII81e_"
+_BBLIVE = _BBLIVE_PREFIX + _BBLIVE_BODY
+_BBLIVE_2 = _BBLIVE_PREFIX + _BBLIVE_BODY_2
+_BBLIVE_3 = _BBLIVE_PREFIX + _BBLIVE_BODY_3
+
+
+def _bblive(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "browserbase_api_key"]
+
+
+def test_browserbase_api_key_fixture_sanity():
+    """Guard the fixtures themselves: 27 base64url characters after the prefix."""
+    import re as _re
+
+    for body in (_BBLIVE_BODY, _BBLIVE_BODY_2, _BBLIVE_BODY_3):
+        assert _re.fullmatch(r"[A-Za-z0-9_-]{27}", body)
+
+
+def test_browserbase_api_key_true_positives():
+    """Keys are detected in env, header, JSON, YAML and SDK carriers."""
+    for text in (
+        _BBLIVE,
+        'export BROWSERBASE_API_KEY="' + _BBLIVE + '"',
+        "X-BB-API-Key: " + _BBLIVE_2,
+        '{"apiKey": "' + _BBLIVE_3 + '"}',
+        "browserbase:\n  api_key: " + _BBLIVE_2,
+        "bb = Browserbase(api_key='" + _BBLIVE + "')",
+        "const stagehand = new Stagehand({ apiKey: \"" + _BBLIVE_3 + "\" });",
+    ):
+        matched = _bblive(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "browserbase"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.90
+        assert text[m.span_start:m.span_end] in (_BBLIVE, _BBLIVE_2, _BBLIVE_3)
+
+
+def test_browserbase_api_key_context_boost():
+    """browserbase keywords lift the score above the base."""
+    bare = _bblive(_BBLIVE)[0].confidence
+    boosted = _bblive("BROWSERBASE_API_KEY=" + _BBLIVE + "  # browserbase stagehand")[0].confidence
+    assert bare == pytest.approx(0.90, abs=0.001)
+    assert boosted > bare
+
+
+def test_browserbase_api_key_known_test_values():
+    """Single-character masks are pinned to ~0.15 and flagged as test values."""
+    for fill in ("x", "X", "0", "a"):
+        matched = _bblive(_BBLIVE_PREFIX + fill * 27)
+        assert len(matched) == 1, fill
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_browserbase_api_key_true_negatives():
+    """Only a free-standing bb_live_ + exactly 27 base64url characters."""
+    for neg in (
+        # Width off by one either way (a longer key matches nothing).
+        _BBLIVE[:-1],
+        _BBLIVE + "a",
+        _BBLIVE + "-",
+        _BBLIVE + "_old",
+        # Characters outside the alphabet inside the body.
+        _BBLIVE_PREFIX + "!" + _BBLIVE_BODY[1:],
+        _BBLIVE_PREFIX + "." + _BBLIVE_BODY[1:],
+        _BBLIVE_PREFIX + "+" + _BBLIVE_BODY[1:],
+        # Different / mangled prefix (no bb_test_ sibling is corroborated).
+        "bb_" + "test_" + _BBLIVE_BODY,
+        "bb-" + "live_" + _BBLIVE_BODY,
+        "bb_" + "live-" + _BBLIVE_BODY,
+        "BB_" + "LIVE_" + _BBLIVE_BODY,
+        # Carved out of a longer identifier.
+        "x" + _BBLIVE,
+        "_" + _BBLIVE,
+        "-" + _BBLIVE,
+        # Docs placeholders.
+        'export BROWSERBASE_API_KEY="' + _BBLIVE_PREFIX + '..."',
+        'export BROWSERBASE_API_KEY="' + _BBLIVE_PREFIX + 'your_api_key_here"',
+        "X-BB-API-Key: XXX",
+    ):
+        assert _bblive(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_browserbase_api_key_snake_case_identifier_sinks():
+    """A snake_case identifier that happens to be exactly bb_live_ + 27 characters
+    fits the shape (since '_' is in the body alphabet) but the entropy gate keeps
+    it below the default 0.5 threshold."""
+    for ident in (
+        "bb_" + "live_session_identifier_value_xy",
+        "bb_" + "live_sessions_are_long_running__",
+        "bb_" + "live_view_debugger_url_for_a_ses",
+    ):
+        assert len(ident) == len(_BBLIVE), ident
+        assert [f for f in scan(ident) if f.type == "browserbase_api_key"] == [], ident
+        low = _bblive(ident)
+        assert len(low) == 1 and low[0].confidence < 0.5, ident
+
+
+def test_browserbase_api_key_does_not_collide():
+    """Reported once, as this pattern only."""
+    for text in (
+        _BBLIVE,
+        "BROWSERBASE_API_KEY=" + _BBLIVE,
+        "api_key=" + _BBLIVE_2,
+        "SECRET_KEY=" + _BBLIVE_3,
+        "X-BB-API-Key: " + _BBLIVE,
+        "Authorization: Bearer " + _BBLIVE_2,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["browserbase_api_key"], text[:40]
+
+
+def test_browserbase_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    text = "BROWSERBASE_API_KEY=" + _BBLIVE
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _BBLIVE_BODY not in redacted_text
+    assert "BROWSERBASE_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
 # 2026-10-19 — weekly batch: Persona, LocalStack, Tavily, dbt, Ory, Azure
 # Communication Services, Azure Web PubSub, Prisma Accelerate
 # ═══════════════════════════════════════════════
