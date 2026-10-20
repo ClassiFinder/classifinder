@@ -19970,3 +19970,99 @@ def test_wk19_redaction(pid, texts, secret, provider, severity):
     redacted_text, _ = redact(text, scan(text, min_confidence=0.01), style="label")
     assert secret not in redacted_text
     assert text[: text.index(secret)] in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-20 — Azure Cache for Redis connection string (StackExchange.Redis form)
+# ═══════════════════════════════════════════════
+# Every key is SYNTHETIC: base64 of SHA-256 over
+# 'classifinder-azure-redis-synthetic-<n>'. The host literal is split so no
+# contiguous connection string sits in source (GitHub push protection).
+_ACR_HOST = "contoso-cache.redis.cache." + "windows.net"
+_ACR_KEY = "Az0P6epdFIPSC95E8ClIgYsFVmGD0G" + "+3/MkMI5F48wo="
+_ACR_KEY_2 = "/daspKhVJU9XeQZnkzN4nOa9fQo2MM" + "a8nyWu6Ym9LHw="
+_ACR = _ACR_HOST + ":6380,password=" + _ACR_KEY + ",ssl=True,abortConnect=False"
+_ACR_ID = "azure_cache_for_redis_connection_string"
+
+
+def _acr(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == _ACR_ID]
+
+
+_ACR_TP = [
+    (_ACR, _ACR_KEY),
+    ('REDIS_CONNECTION_STRING="' + _ACR + '"', _ACR_KEY),
+    ('"ConnectionStrings": { "Redis": "' + _ACR + '" }', _ACR_KEY),
+    # Non-TLS port, capitalised key name, space after the comma.
+    (_ACR_HOST + ":6379, Password=" + _ACR_KEY_2 + ",ssl=False", _ACR_KEY_2),
+    # Options before the password, and no explicit port.
+    (_ACR_HOST + ",abortConnect=false,ssl=true,password=" + _ACR_KEY_2, _ACR_KEY_2),
+    (_ACR_HOST.upper() + ":6380,password=" + _ACR_KEY, _ACR_KEY),
+]
+
+
+@pytest.mark.parametrize("text,secret", _ACR_TP)
+def test_acr_true_positives(text, secret):
+    matched = _acr(text)
+    assert len(matched) == 1, f"not detected in: {text[:70]}"
+    m = matched[0]
+    assert text[m.span_start:m.span_end] == secret
+    assert m.provider == "azure"
+    assert m.severity == "critical"
+    assert m.is_likely_test_value is False
+    assert m.confidence >= 0.95
+
+
+@pytest.mark.parametrize("text,secret", _ACR_TP)
+def test_acr_reported_once_as_own_pattern(text, secret):
+    """generic_high_entropy / env_* never survive dedup alongside it."""
+    start = text.index(secret)
+    findings = scan(text, min_confidence=0.01)
+    over = [f for f in findings if f.span_start < start + len(secret) and f.span_end > start]
+    assert [f.type for f in over] == [_ACR_ID], [f.type for f in over]
+
+
+@pytest.mark.parametrize("c", "AaXx0")
+def test_acr_known_test_values(c):
+    text = _ACR_HOST + ":6380,password=" + c * 43 + "=,ssl=True"
+    matched = _acr(text)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _ACR_HOST + ":6380,password=<access-key>,ssl=True,abortConnect=False",
+        _ACR_HOST + ":6380,password=" + _ACR_KEY[:-2] + "=",  # 42 + '=' is too short
+        _ACR_HOST + ":6380,password=" + _ACR_KEY[:-1] + "A=",  # 44 + '=' is too long
+        _ACR_HOST + ":6380,password=" + _ACR_KEY[:-1],  # pad missing
+        _ACR.replace("redis.cache." + "windows.net", "redis.cache.example.net"),
+        _ACR.replace("redis.cache." + "windows.net", "redis.azure.net"),
+        _ACR.replace(":6380,", ":10000,"),
+        "password=" + _ACR_KEY,
+        _ACR_HOST + ":6380,ssl=True,abortConnect=False",
+        # Entra ID (passwordless) — no key in the string.
+        _ACR_HOST + ":6380,ssl=True,abortConnect=False,user=myuser",
+    ],
+)
+def test_acr_true_negatives(text):
+    assert _acr(text) == [], f"wrongly matched: {text[:70]}"
+
+
+def test_acr_disjoint_from_redis_url():
+    """The redis:// URL form stays redis_connection_string; the StackExchange
+    form is this pattern only."""
+    url = "rediss://:" + _ACR_KEY.replace("+", "x").replace("/", "y") + "@" + _ACR_HOST + ":6380"
+    assert _acr(url) == []
+    assert "redis_connection_string" not in [f.type for f in scan(_ACR, min_confidence=0.01)]
+
+
+def test_acr_redaction():
+    from app.engine.redactor import redact
+
+    redacted_text, _ = redact(_ACR, scan(_ACR, min_confidence=0.01), style="label")
+    assert _ACR_KEY not in redacted_text
+    assert _ACR_HOST + ":6380,password=" in redacted_text
+    assert redacted_text.endswith(",ssl=True,abortConnect=False")

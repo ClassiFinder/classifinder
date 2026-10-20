@@ -571,6 +571,9 @@ _ACS_CASES = "endpoint=" + _ACS_HOST_CASES + ";accesskey=" + _ACS_KEY_CASES
 _WPS_HOST_CASES = "https://contoso-wps.web" + "pubsub.azure.com"
 _WPS_KEY_CASES = "f5adN76K3X5Dm84S3lWl5vFeQzydawgU" + "rJZsGSMZCTw="
 _WPS_CASES = "Endpoint=" + _WPS_HOST_CASES + ";AccessKey=" + _WPS_KEY_CASES + ";Version=1.0;"
+_ACR_HOST_CASES = "contoso-cache.redis.cache." + "windows.net"
+_ACR_KEY_CASES = "3M7nlwHUrwWx3NuNNSRRAEC8nC4dor" + "mU+mQIcgwvPmw="
+_ACR_CASES = _ACR_HOST_CASES + ":6380,password=" + _ACR_KEY_CASES + ",ssl=True,abortConnect=False"
 _PRISMA_URL_CASES = "prisma://" + "accelerate.prisma-data.net/?api_key="
 _PRISMA_JWT_CASES = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
@@ -7293,6 +7296,21 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             'DATABASE_URL="' + _PRISMA_URL_CASES + '__API_KEY__"',
             "prisma+postgres://localhost:51213/?api_key=" + _PRISMA_JWT_CASES,
             "https://accelerate.prisma-data.net/?api_key=" + _PRISMA_JWT_CASES,
+        ],
+        "min_confidence": 0.95,
+    },
+    # Azure Cache for Redis connection string (StackExchange.Redis form).
+    # Source: https://learn.microsoft.com/en-us/azure/redis/aspnet-core-output-cache-provider
+    "azure_cache_for_redis_connection_string": {
+        "positives": [
+            _ACR_CASES,
+            'REDIS_CONNECTION_STRING="' + _ACR_CASES + '"',
+            _ACR_CASES.replace(":6380,", ":6379,").replace("password=", "Password="),
+        ],
+        "negatives": [
+            _ACR_HOST_CASES + ":6380,password=<access-key>,ssl=True,abortConnect=False",
+            _ACR_CASES.replace("redis.cache." + "windows.net", "redis.cache.example.net"),
+            "password=" + _ACR_KEY_CASES,
         ],
         "min_confidence": 0.95,
     },
