@@ -574,6 +574,7 @@ _WPS_CASES = "Endpoint=" + _WPS_HOST_CASES + ";AccessKey=" + _WPS_KEY_CASES + ";
 _ACR_HOST_CASES = "contoso-cache.redis.cache." + "windows.net"
 _ACR_KEY_CASES = "3M7nlwHUrwWx3NuNNSRRAEC8nC4dor" + "mU+mQIcgwvPmw="
 _ACR_CASES = _ACR_HOST_CASES + ":6380,password=" + _ACR_KEY_CASES + ",ssl=True,abortConnect=False"
+_ENT_CASES = "Uqv8" + "Q~" + "3rYd_K0xVn.Lq7HbT2wZ-fmC9sJeP4~aGt"
 _PRISMA_URL_CASES = "prisma://" + "accelerate.prisma-data.net/?api_key="
 _PRISMA_JWT_CASES = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
@@ -7313,6 +7314,21 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "password=" + _ACR_KEY_CASES,
         ],
         "min_confidence": 0.95,
+    },
+    # Azure Entra ID application client secret (identifiable 'Q~' form).
+    # Pattern attribution: Microsoft security-utilities (MIT) rule SEC101/156.
+    "azure_entra_id_client_secret": {
+        "positives": [
+            _ENT_CASES,
+            "AZURE_CLIENT_SECRET=" + _ENT_CASES,
+            'client_secret: "' + _ENT_CASES + '"',
+        ],
+        "negatives": [
+            "AZURE_CLIENT_SECRET=<client-secret>",
+            _ENT_CASES.replace("8" + "Q~", "9" + "Q~"),
+            _ENT_CASES + "x",
+        ],
+        "min_confidence": 0.85,
     },
 }
 

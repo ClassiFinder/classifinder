@@ -20066,3 +20066,139 @@ def test_acr_redaction():
     assert _ACR_KEY not in redacted_text
     assert _ACR_HOST + ":6380,password=" in redacted_text
     assert redacted_text.endswith(",ssl=True,abortConnect=False")
+
+
+# ═══════════════════════════════════════════════
+# 2026-10-21 — Azure Entra ID application client secret (structural Q~ form)
+# ═══════════════════════════════════════════════
+# Every value is SYNTHETIC: characters of SHA-512 over
+# 'classifinder-entra-secret-synthetic-<n>' mapped onto the URL-unreserved
+# alphabet. The 'Q~' marker is split from its neighbours so no contiguous
+# secret sits in source (GitHub push protection).
+_ENT_ID = "azure_entra_id_client_secret"
+_ENT_8A = "L-f8" + "Q~" + "WkdIo_AL8XwS5M6yXqx6Z09AgASd25H7Eu"  # '-' in the first 3
+_ENT_8B = "hM18" + "Q~" + "M2BaA0cH4Hpsw3PYcwfnC3L7.UbHH1UxfF"
+_ENT_7A = "d4s7" + "Q~" + "9fIXfGtNedg0GFZB0Ka2cz1HbUJtaxd"  # previous generation
+_ENT_8C = "HVM8" + "Q~" + "FTGAD~amKECKZw3C-~6NTMO3NLJNzrbXSw"  # '-' and '~' in body
+
+
+def _ent(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == _ENT_ID]
+
+
+_ENT_TP = [
+    (_ENT_8B, _ENT_8B),
+    (_ENT_7A, _ENT_7A),
+    ("AZURE_CLIENT_SECRET=" + _ENT_8B, _ENT_8B),
+    ('client_secret: "' + _ENT_8A + '"', _ENT_8A),
+    ('"ClientSecret": "' + _ENT_8C + '",', _ENT_8C),
+    ("az login --service-principal -u $APP_ID -p " + _ENT_7A + " --tenant $T", _ENT_7A),
+    ("The new app password is " + _ENT_8B + ".", _ENT_8B),
+    ("export ARM_CLIENT_SECRET='" + _ENT_8C + "'", _ENT_8C),
+    ("<add key=\"ida:ClientSecret\" value=\"" + _ENT_7A + "\" />", _ENT_7A),
+]
+
+
+@pytest.mark.parametrize("text,secret", _ENT_TP)
+def test_ent_true_positives(text, secret):
+    matched = _ent(text)
+    assert len(matched) == 1, f"not detected in: {text[:70]}"
+    m = matched[0]
+    assert text[m.span_start:m.span_end] == secret
+    assert m.provider == "azure"
+    assert m.severity == "high"
+    assert m.is_likely_test_value is False
+    assert m.confidence >= 0.85
+
+
+@pytest.mark.parametrize("text,secret", _ENT_TP)
+def test_ent_reported_once_as_own_pattern(text, secret):
+    """azure_ad_client_secret (keyword-anchored) and generic_* never survive
+    dedup alongside the structural finding on the same span."""
+    start = text.index(secret)
+    findings = scan(text, min_confidence=0.01)
+    over = [f for f in findings if f.span_start < start + len(secret) and f.span_end > start]
+    assert [f.type for f in over] == [_ENT_ID], [f.type for f in over]
+
+
+def test_ent_keyword_anchored_single_finding():
+    """The collision case: 'AZURE_CLIENT_SECRET=<v>' used to fire
+    azure_ad_client_secret; now exactly one finding, the structural one."""
+    text = "AZURE_CLIENT_SECRET=" + _ENT_8B
+    findings = scan(text)
+    assert [f.type for f in findings] == [_ENT_ID]
+
+
+def test_ent_covers_dash_secret_missed_by_keyword_pattern():
+    """azure_ad_client_secret's charset has no '-', so this was a miss."""
+    text = "AZURE_CLIENT_SECRET=" + _ENT_8C
+    assert "azure_ad_client_secret" not in [f.type for f in scan(text, min_confidence=0.01)]
+    assert len(_ent(text)) == 1
+
+
+def test_ent_keyword_pattern_still_owns_non_q_secrets():
+    """Older-format secrets without the Q~ marker stay azure_ad_client_secret."""
+    legacy = "a1b2c3d4~e5f6.g7h8_i9j0k1l2m3n4o5p6q7"
+    text = "AZURE_CLIENT_SECRET=" + legacy
+    types = [f.type for f in scan(text, min_confidence=0.01)]
+    assert "azure_ad_client_secret" in types
+    assert _ENT_ID not in types
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "yyy7" + "Q~" + "y" * 31,
+        "zzz8" + "Q~" + "z" * 34,
+        "AAA8" + "Q~" + "A" * 34,
+        "xxx7" + "Q~" + "x" * 31,
+        "0008" + "Q~" + "0" * 34,
+    ],
+)
+def test_ent_known_test_values(value):
+    matched = _ent("AZURE_CLIENT_SECRET=" + value)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Marker digit must match the body width: 8Q~ is 34, 7Q~ is 31.
+        "hM17" + "Q~" + "M2BaA0cH4Hpsw3PYcwfnC3L7.UbHH1UxfF",
+        "d4s8" + "Q~" + "9fIXfGtNedg0GFZB0Ka2cz1HbUJtaxd",
+        # Only 7 and 8 are markers.
+        "hM19" + "Q~" + "M2BaA0cH4Hpsw3PYcwfnC3L7.UbHH1UxfF",
+        # One char too short / too long (a longer run is never sliced).
+        _ENT_8B[:-1],
+        _ENT_8B + "A",
+        "X" + _ENT_8B,
+        _ENT_7A + "Zz",
+        # Characters outside the alphabet in the body.
+        "hM18" + "Q~" + "M2BaA0cH4Hpsw3PYc+fnC3L7.UbHH1UxfF",
+        # Marker in the wrong place.
+        "hM1Q8~" + "M2BaA0cH4Hpsw3PYcwfnC3L7.UbHH1Uxf",
+        "AZURE_CLIENT_SECRET=<your-client-secret>",
+        "The tilde operator Q~ is used in R formulas: y ~ x1 + x2",
+    ],
+)
+def test_ent_true_negatives(text):
+    assert _ent(text) == [], f"wrongly matched: {text[:70]}"
+
+
+def test_ent_low_entropy_is_penalised():
+    value = "abc8" + "Q~" + "ab" * 17
+    matched = _ent(value)
+    assert len(matched) == 1
+    assert matched[0].confidence < 0.5
+
+
+def test_ent_redaction():
+    from app.engine.redactor import redact
+
+    text = "AZURE_CLIENT_SECRET=" + _ENT_8C + "\nAZURE_TENANT_ID=x"
+    redacted_text, _ = redact(text, scan(text, min_confidence=0.01), style="label")
+    assert _ENT_8C not in redacted_text
+    assert redacted_text.startswith("AZURE_CLIENT_SECRET=")
+    assert redacted_text.endswith("\nAZURE_TENANT_ID=x")
