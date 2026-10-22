@@ -584,6 +584,13 @@ _PRISMA_JWT_CASES = (
     ".XkiS9ZaEwmIePLFnFrCtGlh7LB-3xxukeJpOiyGPWjM"
 )
 _PRISMA_CASES = _PRISMA_URL_CASES + _PRISMA_JWT_CASES
+# Unix crypt hashes ('$1$' / '$5$' / '$6$'). SYNTHETIC (openssl passwd over
+# 'cf-synth-<n>' with random salts); family identifier split off.
+_UC_MD5_CASES = "$1$" + "k/wFS41r$aox.AFcuH3c8DaQLAnDtu1"
+_UC_SHA256_CASES = "$5$" + "v/Go.3Xg5spS5uzl$E4FXl/syKecfxFDOhzyfcv5HLSlvOZkuUTwMUhOtMj1"
+_UC_SHA512_CASES = "$6$" + "rounds=656000$7FUQuVfd32WDIqlr$" + (
+    "QzkAXudcd/FXrvne2kEihomXdF0pzdMS2yJ5Wg6KjfDt689X1IeQxRm1BFESgzhXe6HEbKR2QYKVAv0W4RIzm1"
+)
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -7329,6 +7336,27 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _ENT_CASES + "x",
         ],
         "min_confidence": 0.85,
+    },
+    # Unix crypt password hash (md5crypt / sha256crypt / sha512crypt) — a
+    # VERIFIER, not a bearer credential, which is why severity is medium.
+    # Source: https://passlib.readthedocs.io/en/stable/lib/passlib.hash.sha256_crypt.html
+    "unix_crypt_password_hash": {
+        "positives": [
+            "root:" + _UC_SHA512_CASES + ":19700:0:99999:7:::",
+            "    passwd: " + _UC_SHA256_CASES,
+            '{"password_hash": "' + _UC_MD5_CASES + '"}',
+        ],
+        "negatives": [
+            # Digest one character short / long.
+            _UC_SHA256_CASES[:-1],
+            _UC_MD5_CASES + "x",
+            # Apache's '$apr1$' is a different family.
+            "$apr1$" + "k/wFS41r$aox.AFcuH3c8DaQLAnDtu1",
+            # Locked shadow entries and prose.
+            "root:!:19700:0:99999:7:::",
+            "sha512crypt hashes start with $6$ and carry an 86-character digest.",
+        ],
+        "min_confidence": 0.90,
     },
 }
 

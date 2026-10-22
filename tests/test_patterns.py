@@ -20202,3 +20202,161 @@ def test_ent_redaction():
     assert _ENT_8C not in redacted_text
     assert redacted_text.startswith("AZURE_CLIENT_SECRET=")
     assert redacted_text.endswith("\nAZURE_TENANT_ID=x")
+
+
+# --- Unix crypt password hash (md5crypt / sha256crypt / sha512crypt) ---------
+# Like bcrypt_password_hash, a VERIFIER rather than a bearer credential, which
+# is why severity is medium. The three modular-crypt families that fill
+# /etc/shadow on Linux: '$1$' (md5crypt, salt <= 8, 22-char digest), '$5$'
+# (sha256crypt, optional 'rounds=N$', salt <= 16, 43-char digest) and '$6$'
+# (sha512crypt, same, 86-char digest). Every hash below is SYNTHETIC
+# (openssl passwd over 'cf-synth-<n>' with random salts) and the family
+# identifier is split off so no contiguous hash literal is committed.
+# Source: https://passlib.readthedocs.io/en/stable/lib/passlib.hash.sha256_crypt.html
+_UC_MD5_A = "$1$" + "u2qH5g7X$42LIO9R3vBQRPipViR2kh0"
+_UC_MD5_B = "$1$" + "Ehy4OlC/$2KOFKxkPeFz/Qc1LvjLA30"
+_UC_SHA256_A = "$5$" + "jxHNNgjqOnBG3QDe$mwNI0nhvJQJjSIXfonfke4U6.gois7YeU0GyKEfBBoA"
+_UC_SHA256_R = "$5$" + "rounds=535000$HCd6.xmn1xdJDrZx$M1uqra3rws3FFpwY57alxNYNkGEHHL8aiN2U3xY9D11"
+_UC_SHA512_DIGEST = (
+    "ZBGawL9QkxSQLOdoe275mFZURuoStiVTJuPRhF.HFTL5Cq.mdQp0JGTRjmCQFouh/zqY7no7VYnqn6dhW5A0z0"
+)
+_UC_SHA512_A = "$6$" + "3plhyZ6SMVpIy2GB$" + _UC_SHA512_DIGEST
+_UC_SHA512_R = "$6$" + "rounds=656000$fuQLtoGaTWULA3D1$" + (
+    "jFW0gwGQqExbPWsiMa0AcP6/K.poguxBGs4aNzAojz56arcf4pjlV7FM1pyYDpAng8SZMFZKJYNX1LDIBryv40"
+)
+
+
+def _uc(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "unix_crypt_password_hash"
+    ]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [_UC_MD5_A, _UC_MD5_B, _UC_SHA256_A, _UC_SHA256_R, _UC_SHA512_A, _UC_SHA512_R],
+)
+def test_unix_crypt_password_hash_true_positives(value):
+    """All three families, with and without the optional rounds field, in the
+    carriers they actually leak through: a shadow line, a cloud-init
+    'passwd:' value and a JSON fixture."""
+    for text in (
+        value,
+        "root:" + value + ":19700:0:99999:7:::",
+        "    passwd: " + value,
+        '{"password_hash": "' + value + '"}',
+    ):
+        matched = _uc(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].provider == "generic"
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start : matched[0].span_end] == value
+
+
+def test_unix_crypt_password_hash_severity_is_medium_because_it_is_not_a_credential():
+    """Same reasoning as bcrypt: a crypt(3) digest authenticates nothing on
+    its own. Escalating it would tell an operator to treat a crackable artifact
+    as an active compromise."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    pattern = next(p for p in PATTERN_REGISTRY if p.id == "unix_crypt_password_hash")
+    assert pattern.severity == "medium"
+    assert pattern.confidence_base >= 0.85
+    assert "hash" in pattern.description.lower()
+    assert "not a usable" in pattern.description.lower()
+    assert "hash" in pattern.recommendation.lower()
+    assert _uc(_UC_SHA512_A)[0].severity == "medium"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # md5crypt: salt is at most 8 characters, digest exactly 22.
+        "$1$" + "u2qH5g7XZ$42LIO9R3vBQRPipViR2kh0",
+        "$1$" + "u2qH5g7X$42LIO9R3vBQRPipViR2kh",
+        "$1$" + "u2qH5g7X$42LIO9R3vBQRPipViR2kh0x",
+        # sha256crypt: digest exactly 43, salt at most 16.
+        "$5$" + "jxHNNgjqOnBG3QDe$mwNI0nhvJQJjSIXfonfke4U6.gois7YeU0GyKEfBBo",
+        "$5$" + "jxHNNgjqOnBG3QDeX$mwNI0nhvJQJjSIXfonfke4U6.gois7YeU0GyKEfBBoA",
+        _UC_SHA256_A + "A",
+        # sha512crypt: digest exactly 86.
+        "$6$" + "3plhyZ6SMVpIy2GB$" + _UC_SHA512_DIGEST[:-1],
+        _UC_SHA512_A + "z",
+        # A sha512-width digest under the sha256 identifier, and vice versa.
+        "$5$" + "3plhyZ6SMVpIy2GB$" + _UC_SHA512_DIGEST,
+        "$6$" + "jxHNNgjqOnBG3QDe$mwNI0nhvJQJjSIXfonfke4U6.gois7YeU0GyKEfBBoA",
+        # Other modular-crypt identifiers are not these families.
+        "$2" + "b$12$km8V8mFDG1DVWpDcZS24VDpDhqgGcz0Kt.BNIUBfQ5vcaj8.6XQ3P",
+        "$apr1$" + "u2qH5g7X$42LIO9R3vBQRPipViR2kh0",
+        "$7$" + "jxHNNgjqOnBG3QDe$mwNI0nhvJQJjSIXfonfke4U6.gois7YeU0GyKEfBBoA",
+        # Locked / disabled shadow entries carry no hash.
+        "root:!:19700:0:99999:7:::",
+        "daemon:*:19700:0:99999:7:::",
+        # Characters outside the crypt alphabet.
+        "$1$" + "u2qH5g7X$42LIO9R3vBQRPipV+R2kh0",
+        # Prose naming the prefix is not a hash.
+        "sha512crypt hashes start with $6$ and carry an 86-character digest.",
+        "Price: $1$ or $5$ per unit",
+    ],
+)
+def test_unix_crypt_password_hash_true_negatives(text):
+    assert _uc(text) == [], "wrongly matched: " + text[:70]
+
+
+@pytest.mark.parametrize(
+    "published",
+    [
+        # passlib's own documented examples, reproduced across the ecosystem.
+        "$5$" + "rounds=80000$wnsT7Yr92oJoP28r$cKhJImk5mfuSKV9b3mumNzlbstFUplKtQXXMo4G6Ep5",
+        "$5$" + "rounds=12345$q3hvJE5mn5jKRsW.$BbbYTFiaImz9rTy03GGi.Jf9YY5bmxN0LU3p3uI1iUB",
+        "$1$" + "5pZSV9va$azfrPr6af3Fc7dLblQXVa0",
+        "$1$" + "3azHgidD$SrJPt7B.9rekpmwJwtON31",
+        # Redaction masks.
+        "$6$" + "x" * 16 + "$" + "x" * 86,
+    ],
+)
+def test_unix_crypt_published_samples_score_as_test_values(published):
+    """confidence_base sits above the 0.85 FP-wordlist gate, so passlib's own
+    published samples are pinned as known_test_values and land at ~0.15."""
+    matched = _uc("password_hash = " + published)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_unix_crypt_password_hash_finds_every_hash_in_a_shadow_file():
+    """The carrier that matters most: a leaked /etc/shadow, one hash per
+    account. Each is a separate exposure and must be reported separately."""
+    shadow = (
+        "root:" + _UC_SHA512_A + ":19700:0:99999:7:::\n"
+        "daemon:*:19700:0:99999:7:::\n"
+        "deploy:" + _UC_SHA256_R + ":19700:0:99999:7:::\n"
+        "legacy:" + _UC_MD5_A + ":19700:0:99999:7:::\n"
+    )
+    matched = _uc(shadow)
+    assert {shadow[f.span_start : f.span_end] for f in matched} == {
+        _UC_SHA512_A, _UC_SHA256_R, _UC_MD5_A,
+    }
+    assert len(matched) == 3
+
+
+def test_unix_crypt_password_hash_does_not_collide_with_bcrypt():
+    """The two hash patterns partition the modular-crypt space: a bcrypt hash
+    is never reported as a Unix crypt hash and vice versa."""
+    bcrypt = "$2" + "b$12$km8V8mFDG1DVWpDcZS24VDpDhqgGcz0Kt.BNIUBfQ5vcaj8.6XQ3P"
+    assert _uc(bcrypt) == []
+    assert [
+        f for f in scan(_UC_SHA512_A, min_confidence=0.01)
+        if f.type == "bcrypt_password_hash"
+    ] == []
+
+
+def test_unix_crypt_password_hash_redaction():
+    from app.engine.redactor import redact
+
+    text = "root:" + _UC_SHA512_A + ":19700:0:99999:7:::"
+    redacted_text, _ = redact(text, scan(text, min_confidence=0.01), style="label")
+    assert _UC_SHA512_A not in redacted_text
+    assert redacted_text.startswith("root:")
+    assert redacted_text.endswith(":19700:0:99999:7:::")
