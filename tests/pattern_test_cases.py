@@ -12,6 +12,9 @@ with the pattern's ID as key. The harness will automatically generate
 true positive, true negative, test value, and collision tests.
 """
 
+import base64 as _pb_b64
+import random as _pb_random
+
 # fmt: off
 
 # A 264-character base64 body, standard charset including '+' and '/'. Used to
@@ -591,6 +594,23 @@ _UC_SHA256_CASES = "$5$" + "v/Go.3Xg5spS5uzl$E4FXl/syKecfxFDOhzyfcv5HLSlvOZkuUTw
 _UC_SHA512_CASES = "$6$" + "rounds=656000$7FUQuVfd32WDIqlr$" + (
     "QzkAXudcd/FXrvne2kEihomXdF0pzdMS2yJ5Wg6KjfDt689X1IeQxRm1BFESgzhXe6HEbKR2QYKVAv0W4RIzm1"
 )
+
+
+# Base64-encoded PEM private keys. SYNTHETIC: the PEM body is base64 of
+# seeded pseudo-random bytes (not a parseable key), and the whole block is
+# encoded at import time so no 'LS0tLS1CRUdJTi...' literal is committed.
+def _pb_case(label: str, nbytes: int = 600, seed: int = 7) -> str:
+    rng = _pb_random.Random(seed)
+    raw = bytes(rng.getrandbits(8) for _ in range(nbytes))
+    body = _pb_b64.b64encode(raw).decode()
+    lines = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    pem = f"-----BEGIN {label}-----\n{lines}\n-----END {label}-----\n"
+    return _pb_b64.b64encode(pem.encode()).decode()
+
+
+_PB_RSA_CASES = _pb_case("RSA PRIVATE KEY")
+_PB_P8_CASES = _pb_case("PRIVATE KEY", 48, seed=8)
+_PB_OSSH_CASES = _pb_case("OPENSSH PRIVATE KEY", 300, seed=9)
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -7355,6 +7375,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Locked shadow entries and prose.
             "root:!:19700:0:99999:7:::",
             "sha512crypt hashes start with $6$ and carry an 86-character digest.",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Base64-encoded PEM private key (Kubernetes Secret data, CI variables).
+    # Source: https://www.rfc-editor.org/rfc/rfc7468 (armor), base64-encoded whole
+    "base64_encoded_pem_private_key": {
+        "positives": [
+            "  tls.key: " + _PB_RSA_CASES,
+            '{"ssh-privatekey": "' + _PB_OSSH_CASES + '"}',
+            "PRIVATE_KEY_B64=" + _PB_P8_CASES,
+        ],
+        "negatives": [
+            # Public keys and certificates, encoded the same way.
+            "  tls.crt: " + _pb_case("CERTIFICATE"),
+            "  pub: " + _pb_case("PUBLIC KEY", 90),
+            "  pub: " + _pb_case("RSA PUBLIC KEY", 270),
+            # Header with no body: just the encoded '-----BEGIN RSA PRIVATE KEY-----'.
+            _PB_RSA_CASES[:40],
         ],
         "min_confidence": 0.90,
     },
