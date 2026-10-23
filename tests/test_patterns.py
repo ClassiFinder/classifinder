@@ -20360,3 +20360,170 @@ def test_unix_crypt_password_hash_redaction():
     assert _UC_SHA512_A not in redacted_text
     assert redacted_text.startswith("root:")
     assert redacted_text.endswith(":19700:0:99999:7:::")
+
+
+# --- Base64-encoded PEM private key -----------------------------------------
+# The form a private key takes in a Kubernetes Secret 'data:' field, a Helm
+# values file or a CI variable: the WHOLE PEM block base64-encoded, so it opens
+# on 'LS0tLS1CRUdJTi'. Every fixture is SYNTHETIC — a PEM armor around seeded
+# pseudo-random bytes, encoded at test time — so no key blob is committed.
+# Source: https://www.rfc-editor.org/rfc/rfc7468
+import random as _pb_rand  # noqa: E402
+
+_PB_LABELS_PRIVATE = (
+    "RSA PRIVATE KEY",
+    "DSA PRIVATE KEY",
+    "EC PRIVATE KEY",
+    "PRIVATE KEY",
+    "OPENSSH PRIVATE KEY",
+    "ENCRYPTED PRIVATE KEY",
+)
+
+
+def _pb_pem(label, nbytes=400, seed=1):
+    rng = _pb_rand.Random(seed)
+    body = _wk_b64.b64encode(bytes(rng.getrandbits(8) for _ in range(nbytes))).decode()
+    lines = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    return f"-----BEGIN {label}-----\n{lines}\n-----END {label}-----\n"
+
+
+def _pb_enc(pem):
+    return _wk_b64.b64encode(pem.encode()).decode()
+
+
+def _pb(text):
+    return [
+        f for f in scan(text, min_confidence=0.01)
+        if f.type == "base64_encoded_pem_private_key"
+    ]
+
+
+def test_base64_encoded_pem_prefixes_are_derived_from_the_real_headers():
+    """Each alternation must be exactly what base64 produces for its header —
+    the scout's hand-computed RSA/DSA prefixes were too short and matched
+    public keys. Re-derive and compare, label by label."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    pattern = next(
+        p for p in PATTERN_REGISTRY if p.id == "base64_encoded_pem_private_key"
+    )
+    for label in _PB_LABELS_PRIVATE + ("EC PARAMETERS",):
+        header = f"-----BEGIN {label}-----".encode()
+        stable = _wk_b64.b64encode(header)[: len(header) // 3 * 4].decode()
+        assert stable.startswith("LS0tLS1CRUdJTi")
+        assert stable[len("LS0tLS1CRUdJTiB"):] in pattern.regex.pattern, label
+
+
+@pytest.mark.parametrize("label", _PB_LABELS_PRIVATE)
+@pytest.mark.parametrize("nbytes", [48, 400, 1200])
+def test_base64_encoded_pem_private_key_true_positives(label, nbytes):
+    encoded = _pb_enc(_pb_pem(label, nbytes))
+    for text in (
+        encoded,
+        "  tls.key: " + encoded,
+        '{"data": {"ssh-privatekey": "' + encoded + '"}}',
+        "export PRIVATE_KEY_B64=" + encoded,
+    ):
+        matched = _pb(text)
+        assert len(matched) == 1, label + " not detected in " + text[:40]
+        assert text[matched[0].span_start : matched[0].span_end] == encoded
+        assert matched[0].severity == "critical"
+        assert matched[0].confidence >= 0.90
+
+
+def test_base64_encoded_pem_ec_parameters_then_key():
+    """'openssl ecparam -genkey' writes EC PARAMETERS first, so the encoded
+    file opens on the parameters header; the whole blob is still the key."""
+    params = "-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n"
+    encoded = _pb_enc(params + _pb_pem("EC PRIVATE KEY", 121))
+    matched = _pb("tls.key: " + encoded)
+    assert len(matched) == 1
+    assert matched[0].span_end - matched[0].span_start == len(encoded)
+
+
+def test_base64_encoded_pem_ec_parameters_alone_is_not_a_secret():
+    params = "-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n"
+    assert _pb("ec.params: " + _pb_enc(params)) == []
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["PUBLIC KEY", "RSA PUBLIC KEY", "CERTIFICATE", "CERTIFICATE REQUEST",
+     "X509 CRL", "PGP PUBLIC KEY BLOCK", "DH PARAMETERS"],
+)
+def test_base64_encoded_pem_public_material_is_not_matched(label):
+    assert _pb("  tls.crt: " + _pb_enc(_pb_pem(label, 600))) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Just the encoded header with no key body after it.
+        _pb_enc("-----BEGIN RSA PRIVATE KEY-----\n"),
+        # The encoded header plus the fixed DER preamble shown in docs.
+        _pb_enc("-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA"),
+        # Raw (unencoded) PEM is ssh_private_key's job, not this pattern's.
+        _pb_pem("RSA PRIVATE KEY"),
+        # Prose naming the prefix.
+        "Kubernetes TLS keys start with LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVkt when encoded.",
+    ],
+)
+def test_base64_encoded_pem_private_key_true_negatives(text):
+    assert _pb(text) == []
+
+
+@pytest.mark.parametrize("label", _PB_LABELS_PRIVATE)
+@pytest.mark.parametrize("body", ["REDACTED", "...", "<your-private-key>"])
+def test_base64_encoded_pem_placeholders_score_as_test_values(label, body):
+    """confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so encoded
+    placeholder blocks from example manifests are pinned explicitly."""
+    encoded = _pb_enc(f"-----BEGIN {label}-----\n{body}\n-----END {label}-----\n")
+    matched = _pb("tls.key: " + encoded)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+@pytest.mark.parametrize("label", _PB_LABELS_PRIVATE)
+@pytest.mark.parametrize("width", [64, 76])
+def test_base64_encoded_pem_line_wrapped_output_is_caught_whole(label, width):
+    """GNU 'base64' wraps at 76 columns and 'openssl base64' at 64, which can
+    leave fewer than 40 body characters on the header's own line. The match
+    must still fire, once, and span every full-width line."""
+    encoded = _pb_enc(_pb_pem(label, 1200))
+    lines = [encoded[i : i + width] for i in range(0, len(encoded), width)]
+    wrapped = "\n".join(lines)
+    matched = _pb("key.b64: |\n" + wrapped + "\nnext: 1")
+    assert len(matched) == 1
+    text = "key.b64: |\n" + wrapped + "\nnext: 1"
+    span = text[matched[0].span_start : matched[0].span_end]
+    full = [ln for ln in lines if len(ln) >= 40]
+    assert span.startswith(lines[0]) and span.endswith(full[-1])
+
+
+def test_base64_encoded_pem_does_not_absorb_the_next_short_line():
+    encoded = _pb_enc(_pb_pem("PRIVATE KEY"))
+    text = encoded + "\nabc\n"
+    matched = _pb(text)
+    assert len(matched) == 1
+    assert text[matched[0].span_start : matched[0].span_end] == encoded
+
+
+def test_base64_encoded_pem_not_caught_by_decoder_and_no_ssh_collision():
+    """The decode-and-rescan pass skips multi-line plaintext, so without this
+    pattern nothing fires; and ssh_private_key must not double-report."""
+    encoded = _pb_enc(_pb_pem("RSA PRIVATE KEY"))
+    findings = scan("tls.key: " + encoded, min_confidence=0.01)
+    assert "ssh_private_key" not in {f.type for f in findings}
+    assert len(_pb("tls.key: " + encoded)) == 1
+
+
+def test_base64_encoded_pem_private_key_redaction():
+    from app.engine.redactor import redact
+
+    encoded = _pb_enc(_pb_pem("PRIVATE KEY"))
+    text = "  tls.key: " + encoded + "\n  tls.crt: x"
+    redacted_text, _ = redact(text, scan(text, min_confidence=0.01), style="label")
+    assert encoded not in redacted_text
+    assert redacted_text.startswith("  tls.key: ")
+    assert redacted_text.endswith("\n  tls.crt: x")
