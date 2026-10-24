@@ -612,6 +612,14 @@ _PB_RSA_CASES = _pb_case("RSA PRIVATE KEY")
 _PB_P8_CASES = _pb_case("PRIVATE KEY", 48, seed=8)
 _PB_OSSH_CASES = _pb_case("OPENSSH PRIVATE KEY", 300, seed=9)
 
+# NuGet.config packageSourceCredentials passwords. SYNTHETIC: a free-form
+# cleartext password, and a DPAPI-shaped base64 blob (the public DPAPI blob
+# header followed by seeded pseudo-random bytes, not a decryptable secret).
+_NUGET_CLEAR_CASES = "Vq3#tLx9" + "!mR2pZw7"
+_NUGET_DPAPI_CASES = "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA" + _pb_b64.b64encode(
+    bytes(_pb_random.Random(24).getrandbits(8) for _ in range(150))
+).decode()
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -7395,6 +7403,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             _PB_RSA_CASES[:40],
         ],
         "min_confidence": 0.90,
+    },
+    # NuGet.config <packageSourceCredentials> password entry. SYNTHETIC values.
+    # Source: https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#packagesourcecredentials
+    "nuget_config_cleartext_password": {
+        "positives": [
+            '<add key="ClearTextPassword" value="' + _NUGET_CLEAR_CASES + '" />',
+            '      <add key="cleartextpassword" value="' + _NUGET_CLEAR_CASES + '"/>',
+            '<add key="Password" value="' + _NUGET_DPAPI_CASES + '" />',
+        ],
+        "negatives": [
+            # Environment-variable and build-system placeholders.
+            '<add key="ClearTextPassword" value="%ContosoPassword%" />',
+            '<add key="ClearTextPassword" value="$(NuGetFeedPassword)" />',
+            '<add key="ClearTextPassword" value="${NUGET_FEED_PASSWORD}" />',
+            '<add key="ClearTextPassword" value="#{NuGetFeedPassword}#" />',
+            # The docs' elided value, and values below the 8-character floor.
+            '<add key="Password" value="..." />',
+            '<add key="ClearTextPassword" value="p4ss!" />',
+            # Sibling keys that are not the credential.
+            '<add key="Username" value="user@contoso.com" />',
+            '<add key="ValidAuthenticationTypes" value="basic, negotiate" />',
+            '<add key="ApiPassword" value="' + _NUGET_CLEAR_CASES + '" />',
+        ],
+        "min_confidence": 0.85,
     },
 }
 

@@ -20527,3 +20527,103 @@ def test_base64_encoded_pem_private_key_redaction():
     assert encoded not in redacted_text
     assert redacted_text.startswith("  tls.key: ")
     assert redacted_text.endswith("\n  tls.crt: x")
+
+
+# --- NuGet.config ClearTextPassword -----------------------------------------
+# A private-feed password stored in a NuGet.config <packageSourceCredentials>
+# entry: '<add key="ClearTextPassword" value="..." />' (cleartext) or
+# '<add key="Password" value="..." />' (DPAPI-encrypted base64). Every value
+# here is SYNTHETIC.
+# Source: https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#packagesourcecredentials
+_NG_CLEAR = "Wd8$kQz2" + "!vN7rHx4"
+_NG_CLEAR_2 = "aZ0-pat+" + "Kq93mf_Lx"
+_NG_DPAPI = "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA" + _wk_b64.b64encode(
+    _wk_hashlib.sha512(b"classifinder-nuget-dpapi-synthetic").digest() * 2
+).decode()
+_NG_CONFIG = (
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    "<configuration>\n"
+    "  <packageSources>\n"
+    '    <add key="Contoso" value="https://pkgs.dev.azure.com/contoso/_packaging/feed/nuget/v3/index.json" />\n'
+    "  </packageSources>\n"
+    "  <packageSourceCredentials>\n"
+    "    <Contoso>\n"
+    '      <add key="Username" value="build@contoso.com" />\n'
+    '      <add key="ClearTextPassword" value="' + _NG_CLEAR + '" />\n'
+    "    </Contoso>\n"
+    "  </packageSourceCredentials>\n"
+    "</configuration>\n"
+)
+
+
+def _ng(text):
+    return _of(text, "nuget_config_cleartext_password")
+
+
+def test_nuget_config_cleartext_password_true_positives():
+    for text, secret in (
+        (_NG_CONFIG, _NG_CLEAR),
+        ('<add key="ClearTextPassword" value="' + _NG_CLEAR_2 + '" />', _NG_CLEAR_2),
+        ('<add key="cleartextpassword" value="' + _NG_CLEAR_2 + '"/>', _NG_CLEAR_2),
+        ('<add  key = "CLEARTEXTPASSWORD"  value = "' + _NG_CLEAR + '" >', _NG_CLEAR),
+        ('<add key="Password" value="' + _NG_DPAPI + '" />', _NG_DPAPI),
+        # A cleartext password that happens to contain 'test' / 'demo' is still
+        # a real credential: priced above the FP-wordlist gate.
+        ('<add key="ClearTextPassword" value="demoTest#9Kq2" />', "demoTest#9Kq2"),
+    ):
+        matched = _ng(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        f = matched[0]
+        assert text[f.span_start:f.span_end] == secret
+        assert f.severity == "high"
+        assert f.provider == "nuget"
+        assert f.is_likely_test_value is False
+        assert f.confidence >= 0.85
+
+
+def test_nuget_config_cleartext_password_true_negatives():
+    for neg in (
+        '<add key="ClearTextPassword" value="%ContosoPassword%" />',
+        '<add key="ClearTextPassword" value="%TestSourcePassword%" />',
+        '<add key="ClearTextPassword" value="$(NuGetFeedPassword)" />',
+        '<add key="ClearTextPassword" value="${NUGET_FEED_PASSWORD}" />',
+        '<add key="ClearTextPassword" value="#{NuGetFeedPassword}#" />',
+        '<add key="ClearTextPassword" value="__NUGET_PASSWORD__" />',
+        '<add key="ClearTextPassword" value="{{ nuget_password }}" />',
+        '<add key="ClearTextPassword" value="[YOUR_PAT]" />',
+        '<add key="Password" value="..." />',
+        '<add key="ClearTextPassword" value="p4ss!" />',
+        '<add key="ClearTextPassword" value="" />',
+        '<add key="Username" value="build@contoso.com" />',
+        '<add key="ValidAuthenticationTypes" value="basic, negotiate" />',
+        '<add key="ApiPassword" value="' + _NG_CLEAR + '" />',
+        '<add key="ClearTextPasswordHint" value="' + _NG_CLEAR + '" />',
+        'dotnet nuget add source URL --password ' + _NG_CLEAR,
+        "Set ClearTextPassword to your feed's personal access token.",
+    ):
+        assert _ng(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_nuget_config_cleartext_password_docs_examples_are_test_values():
+    for example in ("33f!!lloppa", "hal+9ooo_da!sY"):
+        matched = _ng('<add key="ClearTextPassword" value="' + example + '" />')
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_nuget_config_cleartext_password_does_not_collide():
+    assert [f.type for f in scan(_NG_CONFIG, min_confidence=0.01)] == [
+        "nuget_config_cleartext_password"
+    ]
+    # The NuGet API key keeps its own finding.
+    api_key = "oy2" + "k7f3q9x2m8w4r6t1z5c0v7b3n9h2j4g6d8s1a5e3p7l"
+    assert _ng("NUGET_API_KEY=" + api_key) == []
+
+
+def test_nuget_config_cleartext_password_redaction():
+    from app.engine.redactor import redact
+
+    redacted_text, _ = redact(_NG_CONFIG, scan(_NG_CONFIG, min_confidence=0.01), style="label")
+    assert _NG_CLEAR not in redacted_text
+    assert '<add key="Username" value="build@contoso.com" />' in redacted_text
