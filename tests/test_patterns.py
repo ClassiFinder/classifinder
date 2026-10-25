@@ -20627,3 +20627,71 @@ def test_nuget_config_cleartext_password_redaction():
     redacted_text, _ = redact(_NG_CONFIG, scan(_NG_CONFIG, min_confidence=0.01), style="label")
     assert _NG_CLEAR not in redacted_text
     assert '<add key="Username" value="build@contoso.com" />' in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# SLACK LEGACY USER TOKEN (xoxs- / xoxo-)
+# ═══════════════════════════════════════════════
+
+# Synthetic: random digits + 10/18-char hex tails (no real leaked token used).
+_SLU_XOXS = "xoxs-418935276041-150627394802-7395018264-c4e8a19f37"
+_SLU_XOXO = "xoxo-583142-907315-264871-b93fd04a7c2e518d6f"
+
+
+def _slu(text: str) -> list:
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "slack_legacy_user_token"]
+
+
+def test_slack_legacy_user_token_xoxs():
+    matched = _slu("SLACK_TOKEN=" + _SLU_XOXS)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert matched[0].provider == "slack"
+
+
+def test_slack_legacy_user_token_xoxo():
+    matched = _slu('slack_token: "' + _SLU_XOXO + '"')
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+
+
+def test_slack_legacy_user_token_tail_bounds():
+    # 10-hex tail (the common real-world width) and 64-hex ceiling both match.
+    assert len(_slu("xoxs-123456-654321-987654-" + "e7" * 5)) == 1
+    assert len(_slu("xoxs-123456-654321-987654-" + "9f3a" * 16)) == 1
+
+
+def test_slack_legacy_user_token_negatives():
+    for neg in (
+        "xoxs-short",
+        "https://example.com/img/2018-250-xoxo-indieweb-1.jpg",
+        "xoxs-12345-654321-987654-c4e8a19f37",  # first group below 6 digits
+        "xoxs-418935276041-150627394802-c4e8a19f37",  # only two numeric groups
+        "xoxs-418935276041-150627394802-7395018264-c4e8a19f",  # 8-hex tail
+        _SLU_XOXS + "zz",  # tail runs into non-hex alphanumerics
+        "axoxs-418935276041-150627394802-7395018264-c4e8a19f37",  # embedded
+        "xoxx-418935276041-150627394802-7395018264-c4e8a19f37",
+    ):
+        assert _slu(neg) == [], "wrongly matched: " + neg
+
+
+def test_slack_legacy_user_token_known_test_values():
+    for value in (
+        "xoxs-" + "-".join(["0" * 12] * 3) + "-" + "0" * 10,
+        "xoxo-" + "-".join(["0" * 12] * 3) + "-" + "0" * 10,
+    ):
+        matched = _slu("SLACK_TOKEN=" + value)
+        assert len(matched) == 1
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_slack_legacy_user_token_does_not_collide():
+    types = [f.type for f in scan("SLACK_TOKEN=" + _SLU_XOXS, min_confidence=0.01)]
+    assert types == ["slack_legacy_user_token"]
+    # Existing Slack shapes keep their own findings.
+    xoxp = "xoxp-123456789012-123456789012-123456789012-abcdef0123456789abcdef0123456789"
+    assert _slu("SLACK_USER_TOKEN=" + xoxp) == []
+    xoxa = "xoxa-2-511111111-31111111111-3111111111113-0123456789abcdef01"
+    assert _slu("SLACK_WORKSPACE=" + xoxa) == []

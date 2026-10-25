@@ -2222,6 +2222,18 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         "min_confidence": 0.85,
     },
 
+    "slack_legacy_user_token": {
+        "positives": [
+            "SLACK_TOKEN=xoxs-418935276041-150627394802-7395018264-c4e8a19f37",
+            "slack_token: xoxo-583142-907315-264871-b93fd04a7c2e518d6f",
+        ],
+        "negatives": [
+            "xoxs-short",
+            "https://example.com/img/2018-250-xoxo-indieweb-1.jpg",
+        ],
+        "min_confidence": 0.90,
+    },
+
     "slack_session_cookie": {
         "positives": [
             "SLACK_COOKIE=xoxd-abc123ABCDEF456ghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/+abc123ABCDEF456ghijklmnopqrst==",
