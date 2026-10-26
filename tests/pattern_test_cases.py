@@ -620,6 +620,20 @@ _NUGET_DPAPI_CASES = "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA" + _pb_b64.b64encode(
     bytes(_pb_random.Random(24).getrandbits(8) for _ in range(150))
 ).decode()
 
+# Kerberos AS-REP roasting hashes (hashcat mode 18200). SYNTHETIC: seeded
+# pseudo-random hex, built at import time so no contiguous hash is committed.
+_KRB_RNG = _pb_random.Random(20261026)
+
+
+def _krb_hex(n):
+    return "".join(_KRB_RNG.choice("0123456789abcdef") for _ in range(n))
+
+
+_KRB_USER_CASES = (
+    "$krb5asrep$" + "23$svc_backup@CORP.EXAMPLE.LOCAL:" + _krb_hex(32) + "$" + _krb_hex(332)
+)
+_KRB_BARE_CASES = "$krb5asrep$" + "23$" + _krb_hex(32) + "$" + _krb_hex(290)
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -1174,8 +1188,16 @@ PATTERN_TEST_CASES: dict[str, dict] = {
     "1password_secret_key": {
         "positives": [
             "ONEPASSWORD_SECRET_KEY=A3-ASWWYB-798JRY-LJVD4-23DC2-86TVM-H43EB",
+            # Compact 6-11-5-5-5 form (second and third blocks joined), per the
+            # gitleaks (MIT) 1password-secret-key test examples.
+            "ONEPASSWORD_SECRET_KEY=A3-" + "ASWWYB-798JRYLJVD4-23DC2-86TVM-H43EB",
         ],
-        "negatives": ["A3-short"],
+        "negatives": [
+            "A3-short",
+            # 10- and 12-character joined blocks are not a Secret Key shape.
+            "A3-" + "ASWWYB-798JRYLJVD-23DC2-86TVM-H43EB",
+            "A3-" + "ASWWYB-798JRYLJVD4X-23DC2-86TVM-H43EB",
+        ],
         "min_confidence": 0.90,
     },
 
@@ -3050,6 +3072,9 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "negatives": [
             "re_short",
+            # 're_' inside an identifier is not a key prefix.
+            "SQUARE_TOKEN=squa" + "re_sandbox_abcdefghijklmnopqrstuvwxyz",
+            "configu" + "re_logging_handler_for_the_service = True",
         ],
         "min_confidence": 0.80,
     },
@@ -7569,6 +7594,26 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "Authorization: Basic dXNlcjpwYXNzd29yZA==",
         ],
         "min_confidence": 0.80,
+    },
+    # Kerberos AS-REP roasting hash, etype 23 (hashcat 18200). SYNTHETIC values.
+    # Source: https://hashcat.net/wiki/doku.php?id=example_hashes
+    "kerberos_asrep_hash": {
+        "positives": [
+            _KRB_USER_CASES,
+            "[*] " + _KRB_BARE_CASES,
+            '{"hash": "' + _KRB_USER_CASES + '"}',
+        ],
+        "negatives": [
+            # Checksum one hex short; encrypted part below the 64 floor.
+            "$krb5asrep$" + "23$" + _krb_hex(31) + "$" + _krb_hex(300),
+            "$krb5asrep$" + "23$" + _krb_hex(32) + "$" + _krb_hex(40),
+            # Other etypes and the TGS-REP (Kerberoasting) family.
+            "$krb5asrep$" + "18$" + _krb_hex(32) + "$" + _krb_hex(300),
+            "$krb5tgs$" + "23$" + _krb_hex(32) + "$" + _krb_hex(300),
+            # Prose naming the prefix.
+            "AS-REP roasting output starts with $krb5asrep$23$ in hashcat format.",
+        ],
+        "min_confidence": 0.90,
     },
 }
 

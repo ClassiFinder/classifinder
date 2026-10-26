@@ -2550,6 +2550,27 @@ def test_newrelic_user_api_key():
     assert len(nr_findings) == 1
 
 
+def test_newrelic_user_api_key_uppercase_body():
+    """Real NRAK- keys are issued with an UPPERCASE body (Nosey Parker np.newrelic.3,
+    Apache-2.0, example); a lowercase-only body used to drop them to generic_api_key_env."""
+    key = "NRAK-" + "7JCF597RJ492YP6MZWST3HWRNY2"
+    for text in ("NEW_RELIC_API_KEY=" + key, "#ENV NEW_RELIC_LICENSE_KEY=" + key):
+        nr_findings = [f for f in scan(text) if f.type == "newrelic_user_api_key"]
+        assert len(nr_findings) == 1, text
+        assert nr_findings[0].confidence >= 0.90
+        assert nr_findings[0].span_end - nr_findings[0].span_start == len(key)
+
+
+def test_newrelic_user_api_key_mixed_case_body_and_width():
+    """Mixed-case bodies match; a 26- or 28-character body does not."""
+    assert [f.type for f in scan("NRAK-" + "AbCdEfGhIj0123456789KlMnOpQ")] == [
+        "newrelic_user_api_key"
+    ]
+    for body in ("A" * 13 + "1" * 13, "A" * 14 + "1" * 14):
+        types = {f.type for f in scan("NRAK-" + body, min_confidence=0.01)}
+        assert "newrelic_user_api_key" not in types, body
+
+
 # ═══════════════════════════════════════════════
 # GRAFANA
 # ═══════════════════════════════════════════════
@@ -20879,3 +20900,160 @@ def test_b26_authorization_token_header_dict_form_and_dedup():
     ghp = "ghp_" + "Kq7Zt2Wm9Lx4Rb1Nc8Hv5Jd3Fy6Gs0PaUe2N"
     findings = scan("Authorization: token " + ghp, min_confidence=0.01)
     assert "authorization_token_header" not in [f.type for f in findings]
+
+
+# --- Kerberos AS-REP roasting hash (etype 23) ---------------------------------
+# Like bcrypt_password_hash and unix_crypt_password_hash, a crackable artifact
+# rather than a bearer credential, which is why severity is medium. The shape
+# is hashcat mode 18200: '$krb5asrep$23$', an optional 'user@domain:'
+# principal, a 32-hex checksum, '$' and a long hex encrypted part — what
+# Impacket's GetNPUsers.py and Rubeus asreproast print. Every value below is
+# SYNTHETIC (seeded pseudo-random hex, built at test time) and the prefix is
+# split off so no contiguous hash literal is committed.
+# Source: https://hashcat.net/wiki/doku.php?id=example_hashes
+import random as _krb_random  # noqa: E402
+
+_KRB_RNG = _krb_random.Random(1826)
+
+
+def _krb_hex(n):
+    return "".join(_KRB_RNG.choice("0123456789abcdef") for _ in range(n))
+
+
+_KRB_P = "$krb5asrep$" + "23$"
+_KRB_CK = _krb_hex(32)
+_KRB_ENC = _krb_hex(332)
+_KRB_USER = _KRB_P + "svc_backup@CORP.EXAMPLE.LOCAL:" + _KRB_CK + "$" + _KRB_ENC
+_KRB_BARE = _KRB_P + _krb_hex(32) + "$" + _krb_hex(290)
+_KRB_MIN = _KRB_P + "jdoe@corp.local:" + _krb_hex(32) + "$" + _krb_hex(64)
+# hashcat's own published mode-18200 example (pinned as a known test value).
+_KRB_HASHCAT = (
+    _KRB_P + "user@domain.com:3e156ada591263b8aab0965f5aebd837$"
+    + "007497cb51b6c8116d6407a782ea0e1c5402b17db7afa6b05a6d30ed164a9933"
+    + "c754d720e279c6c573679bd27128fe77e5fea1f72334c1193c8ff0b370fadc63"
+    + "68bf2d49bbfdba4c5dccab95e8c8ebfdc75f438a0797dbfb2f8a1a5f4c423f9b"
+    + "fc1fea483342a11bd56a216f4d5158ccc4b224b52894fadfba3957dfe4b6b8f5"
+    + "f9f9fe422811a314768673e0c924340b8ccb84775ce9defaa3baa0910b676ad0"
+    + "036d13032b0dd94e3b13903cc738a7b6d00b0b3c210d1f972a6c7cae9bd3c959"
+    + "acf7565be528fc179118f28c679f6deeee1456f0781eb8154e18e49cb27b64bf"
+    + "74cd7112a0ebae2102ac"
+)
+
+
+def _krb(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "kerberos_asrep_hash"]
+
+
+@pytest.mark.parametrize("value", [_KRB_USER, _KRB_BARE, _KRB_MIN])
+def test_kerberos_asrep_hash_true_positives(value):
+    """With and without the principal, at the 64-hex floor, in the carriers it
+    leaks through: raw tool output, a hashcat input line and a JSON report."""
+    for text in (
+        value,
+        "[*] " + value,
+        "hashes.asrep:" + "\n" + value + "\n",
+        '{"hash": "' + value + '"}',
+    ):
+        matched = _krb(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        assert matched[0].provider == "kerberos"
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start : matched[0].span_end] == value
+
+
+def test_kerberos_asrep_hash_severity_is_medium_because_it_is_not_a_credential():
+    """An AS-REP blob authenticates nothing on its own; its risk is offline
+    cracking of the named account's password. Severity stays medium."""
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    pattern = next(p for p in PATTERN_REGISTRY if p.id == "kerberos_asrep_hash")
+    assert pattern.severity == "medium"
+    assert pattern.confidence_base >= 0.85
+    assert "hash" in pattern.description.lower()
+    assert "not a usable" in pattern.description.lower()
+    assert "pre-authentication" in pattern.recommendation.lower()
+    assert _krb(_KRB_USER)[0].severity == "medium"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Checksum must be exactly 32 hex.
+        _KRB_P + _krb_hex(31) + "$" + _krb_hex(300),
+        _KRB_P + _krb_hex(33) + "$" + _krb_hex(300),
+        # Encrypted part below the 64-hex floor.
+        _KRB_P + _krb_hex(32) + "$" + _krb_hex(63),
+        # Uppercase hex is not what the tools emit.
+        _KRB_P + _krb_hex(32).upper() + "$" + _krb_hex(300).upper(),
+        # A run that continues past the hex alphabet is not truncated into a match.
+        _KRB_BARE + "g",
+        _KRB_BARE + "Z",
+        # Other etypes, and the TGS-REP (Kerberoasting) family.
+        "$krb5asrep$" + "18$" + _krb_hex(32) + "$" + _krb_hex(300),
+        "$krb5asrep$" + "17$" + _krb_hex(32) + "$" + _krb_hex(300),
+        "$krb5tgs$" + "23$*svc$CORP.LOCAL$http/web*$" + _krb_hex(32) + "$" + _krb_hex(300),
+        # Prefix glued to a longer token.
+        "x" + _KRB_BARE,
+        "$" + _KRB_BARE,
+        # Prose and placeholders.
+        "AS-REP roasting output starts with $krb5asrep$23$ in hashcat format.",
+        _KRB_P + "user@domain.com:<checksum>$<edata2>",
+    ],
+)
+def test_kerberos_asrep_hash_true_negatives(text):
+    assert _krb(text) == [], "wrongly matched: " + text[:70]
+
+
+@pytest.mark.parametrize(
+    "published",
+    [
+        _KRB_HASHCAT,
+        _KRB_P + "0" * 32 + "$" + "0" * 64,
+        _KRB_P + "user@domain.com:" + "0" * 32 + "$" + "0" * 64,
+    ],
+)
+def test_kerberos_asrep_published_samples_score_as_test_values(published):
+    """confidence_base sits above the 0.85 FP-wordlist gate, so hashcat's own
+    published example and zero masks are pinned and land at ~0.15."""
+    matched = _krb(published)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_kerberos_asrep_hash_finds_every_hash_in_a_roasting_dump():
+    """GetNPUsers writes one hash per roastable account; each is a separate
+    exposure and must be reported separately."""
+    second = _KRB_P + "sql_svc@CORP.EXAMPLE.LOCAL:" + _krb_hex(32) + "$" + _krb_hex(300)
+    dump = _KRB_USER + "\n" + second + "\n"
+    matched = _krb(dump)
+    assert {dump[f.span_start : f.span_end] for f in matched} == {_KRB_USER, second}
+
+
+def test_kerberos_asrep_hash_does_not_collide_with_other_patterns():
+    """The hex runs inside the blob must not surface as separate generic or
+    hash findings at a reportable confidence."""
+    others = [
+        f for f in scan("hash = " + _KRB_USER, min_confidence=0.5)
+        if f.type != "kerberos_asrep_hash"
+    ]
+    assert others == []
+
+
+def test_kerberos_asrep_hash_beats_a_credit_card_sliver_inside_the_blob():
+    """A digit run inside the hex trips credit_card_number; the whole hash
+    must still win the overlap (it would not as provider 'generic')."""
+    value = _KRB_P + _krb_hex(32) + "$" + _krb_hex(40) + "4111111111111111" + _krb_hex(40)
+    findings = scan(value, min_confidence=0.01)
+    assert [f.type for f in findings] == ["kerberos_asrep_hash"]
+    assert value[findings[0].span_start : findings[0].span_end] == value
+
+
+def test_kerberos_asrep_hash_redaction():
+    from app.engine.redactor import redact
+
+    text = "[*] " + _KRB_USER + "\n[-] done"
+    redacted_text, _ = redact(text, scan(text, min_confidence=0.01), style="label")
+    assert _KRB_ENC not in redacted_text
+    assert redacted_text.startswith("[*] ")
+    assert redacted_text.endswith("\n[-] done")
