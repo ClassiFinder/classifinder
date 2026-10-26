@@ -7440,6 +7440,136 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.85,
     },
+    # ── 2026-10-26 weekly batch. SYNTHETIC values, assembled by concatenation
+    # so no contiguous catalog-shaped key literal sits in the repository.
+    "square_production_application_secret": {
+        "positives": [
+            "SQUARE_APPLICATION_SECRET=sq0csp-" + "Hq7Zt2Kw9_xVb4Nd-R3mLp8Yc6Gf1Js5Ta0Ue2Wo9Ik",
+            'client_secret: "sq0csp-' + 'Wd3Lk8Rz_Pq5Nv2-Bx7Hm4Tc9Gy1Js6Fa0Ue3Mo8Kiw"',
+        ],
+        "negatives": [
+            "sq0csp-short",
+            "sandbox-sq0csp-" + "Hq7Zt2Kw9_xVb4Nd-R3mLp8Yc6Gf1Js5Ta0Ue2Wo9Ik",
+            "sq0csp-" + "Hq7Zt2Kw9_xVb4Nd-R3mLp8Yc6Gf1Js5Ta0Ue2Wo9IkQ",  # 44-char body
+        ],
+        "min_confidence": 0.90,
+    },
+    "square_sandbox_application_secret": {
+        "positives": [
+            "SQUARE_SANDBOX_SECRET=sandbox-sq0csb-" + "Pn4Xw8_Kd2Lr-7Tz5Mq1Hv9Bc3Fy6Js0Ge4Wa8Ru2No",
+            "secret: sandbox-sq0csp-" + "Pn4Xw8_Kd2Lr-7Tz5Mq1Hv9Bc3Fy6Js0Ge4Wa8Ru2No",
+        ],
+        "negatives": [
+            "sandbox-sq0csx-" + "Pn4Xw8_Kd2Lr-7Tz5Mq1Hv9Bc3Fy6Js0Ge4Wa8Ru2No",
+            "sandbox-sq0csb-short",
+        ],
+        "min_confidence": 0.90,
+    },
+    "square_legacy_access_token": {
+        "positives": [
+            "SQUARE_ACCESS_TOKEN=sq0atp-" + "Lw3Rk8Tz5_Nq2Hv7Bx4Jd9",
+            'access_token = "sq0atp-' + 'Gm7Ry2Kc9-Pw4Hb6Nt1Xz8Lq3Fv5"',
+        ],
+        "negatives": [
+            "sq0atp-" + "Lw3Rk8Tz5_Nq2Hv7Bx4",  # 19-char body, under the floor
+            "xsq0atp-" + "Lw3Rk8Tz5_Nq2Hv7Bx4Jd9",
+        ],
+        "min_confidence": 0.90,
+    },
+    "grafana_legacy_api_key": {
+        "positives": [
+            'credential="eyJrIjoi' + 'UW03eFQydkxwOVJrVzRuWnM4WWNIM2ZKZDZHYk4xYUUiLCJuIjoiY2ktZGVwbG95IiwiaWQiOjN9"',
+            "Authorization: Bearer eyJrIjoi" + "UW03eFQydkxwOVJrVzRuWnM4WWNIM2ZKZDZHYk4xYUUiLCJuIjoiY2ktZGVwbG95IiwiaWQiOjN9",
+        ],
+        "negatives": [
+            # Power BI embed token: same 'eyJrIjoi' opening, 36-char GUID "k".
+            "eyJrIjoi" + "MGExYjJjM2QtMTExMS0yMjIyLTMzMzMtNDQ0NDU1NTU2NjY2IiwidCI6IjcyZjk4OGJmLTg2ZjEtNDFhZi05MWFiLTJkN2NkMDExZGI0NyIsImMiOjF9",
+            "eyJrIjoiabc",
+        ],
+        "min_confidence": 0.90,
+    },
+    "newrelic_rest_api_key": {
+        "positives": [
+            'curl -H "X-Api-Key:NRRA-' + '7c1e94b03fa28d65e0b7c4a91f3d826e5b0a47c9d1" https://api.newrelic.com/v2/applications.json',
+            "NEW_RELIC_REST_KEY=NRRA-" + "3b8f0d7e26c1a945fb03e8d7c2a61f4b9e0d5c3a71",
+        ],
+        "negatives": [
+            "NRRA-" + "7c1e94b03fa28d65e0b7c4a91f3d826e5b0a47c9",  # 40 hex
+            "NRRA-" + "7c1e94b03fa28d65e0b7c4a91f3d826e5b0a47c9d1ff",  # 44 hex
+            "NRRA-" + "zc1e94b03fa28d65e0b7c4a91f3d826e5b0a47c9d1",  # non-hex
+        ],
+        "min_confidence": 0.90,
+    },
+    "vault_legacy_service_token": {
+        "positives": [
+            'export VAULT_TOKEN="s.' + 'Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3"',
+            'curl -H "X-Vault-Token: s.' + 'Pr6Kd1Wz8Mq3Lx5Nb7Hc2Fy9" https://vault.corp.local/v1/secret/app',
+            '"client_token": "s.' + 'Zm2Rk7Tq4Wn9Lc1Hx6Bv3Pd8",',
+            "vault login s." + "Jb5Nw2Kr8Tz1Mq6Lh3Xc9Gv4",
+        ],
+        "negatives": [
+            "s.addComponentsFromRegistry()",
+            "this.s." + "a" * 24,
+            "token = s." + "A" * 24,
+            "token = obj.s." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3",
+            "s." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3",  # no token / vault keyword
+            "tokens." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3",
+            "token: s.ReadUint16LengthPrefixed(&b)",
+        ],
+        "min_confidence": 0.75,
+    },
+    "vault_unseal_key": {
+        "positives": [
+            "Unseal Key 1: Tq8Zr2Wm5Kx9Bn3Lv7Hd1Fy4Jc6Gs0Pa8Ue2No5Ri7Xk",
+            "$ vault operator unseal Wb3Nk7Lq1Rz5Tx9Hm2Fc6Jd8Gs4Pv0Ya7Ue1Ko3MiQs=",
+        ],
+        "negatives": [
+            "Tq8Zr2Wm5Kx9Bn3Lv7Hd1Fy4Jc6Gs0Pa8Ue2No5Ri7Xk",  # no label
+            "Unseal Key 1: <redacted>",
+            "Unseal Key 1: Tq8Zr2Wm5Kx9Bn3Lv7Hd1Fy4Jc6Gs0Pa8Ue2No5Ri7XkAAA",  # too long
+        ],
+        "min_confidence": 0.90,
+    },
+    "oculus_app_access_token": {
+        "positives": [
+            'curl -d "access_token=OC|' + '2847193650182736|9f3c1a7e5b2d4c8f0a6e3b9d7c1f5a2e" https://graph.oculus.com/app/achievements',
+            "OCULUS_TOKEN=OC|" + "573920184627351|Kq7Zt2Wm9Lx4Rb1Nc8Hv5Jd3Fy6Gs0Pa",
+        ],
+        "negatives": [
+            "OC|" + "2847193650182736|9f3c1a7e5b2d4c8f",  # short secret
+            "OC|" + "12345|9f3c1a7e5b2d4c8f0a6e3b9d7c1f5a2e",  # short app id
+            "EOC|" + "2847193650182736|9f3c1a7e5b2d4c8f0a6e3b9d7c1f5a2e",
+        ],
+        "min_confidence": 0.90,
+    },
+    "cisco_type8_password_hash": {
+        "positives": [
+            "username netadmin privilege 15 secret 8 $8$" + "Kq3Zt7Wb.Lm9Xr$Hd5Vn2Jc8Fy1Gs4Pa7Ue0No3Ri6Xk9Tq2Zw5Lb8Mv.J",
+            "enable secret 8 $8$" + "Wn5Rk2Lq/Tz8Hb$Mc3Xv7Fy1Jd9Gs4Pa6Ue0No2Ri5Kk8Tq3Zw7Lb1Mv/H",
+        ],
+        "negatives": [
+            "$8$" + "Kq3Zt7Wb.Lm9X$Hd5Vn2Jc8Fy1Gs4Pa7Ue0No3Ri6Xk9Tq2Zw5Lb8Mv.J",  # 13-char salt
+            "$9$" + "Kq3Zt7Wb.Lm9Xr$Hd5Vn2Jc8Fy1Gs4Pa7Ue0No3Ri6Xk9Tq2Zw5Lb8Mv.J",
+            "$$8$" + "Kq3Zt7Wb.Lm9Xr$Hd5Vn2Jc8Fy1Gs4Pa7Ue0No3Ri6Xk9Tq2Zw5Lb8Mv.J",
+        ],
+        "min_confidence": 0.90,
+    },
+    "authorization_token_header": {
+        "positives": [
+            'curl -H "Authorization: Token 5e8b2c71f9a04d36b8e1c7a92f0d4b6e83a1c5d7" https://netbox.corp.local/api/dcim/devices/',
+            "Authorization: Api-Token 7Kq2Wz9Lm4Rb8Tx1Nc6Hv3Jd5Fy0Gs",
+            '"Authorization": "token 3fa91c07d24be85f6a0c9d1e7b42f8a5c3e60d19"',
+        ],
+        "negatives": [
+            "Authorization: Token ${API_TOKEN}",
+            "Authorization: Token <your-token>",
+            "Authorization: Token {{token}}",
+            'headers = {"Authorization": "Token " + api_token}',
+            "Authorization: Bearer 5e8b2c71f9a04d36b8e1c7a92f0d4b6e83a1c5d7",
+            "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+        ],
+        "min_confidence": 0.80,
+    },
 }
 
 # fmt: on
