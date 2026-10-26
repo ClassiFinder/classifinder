@@ -2550,6 +2550,27 @@ def test_newrelic_user_api_key():
     assert len(nr_findings) == 1
 
 
+def test_newrelic_user_api_key_uppercase_body():
+    """Real NRAK- keys are issued with an UPPERCASE body (Nosey Parker np.newrelic.3,
+    Apache-2.0, example); a lowercase-only body used to drop them to generic_api_key_env."""
+    key = "NRAK-" + "7JCF597RJ492YP6MZWST3HWRNY2"
+    for text in ("NEW_RELIC_API_KEY=" + key, "#ENV NEW_RELIC_LICENSE_KEY=" + key):
+        nr_findings = [f for f in scan(text) if f.type == "newrelic_user_api_key"]
+        assert len(nr_findings) == 1, text
+        assert nr_findings[0].confidence >= 0.90
+        assert nr_findings[0].span_end - nr_findings[0].span_start == len(key)
+
+
+def test_newrelic_user_api_key_mixed_case_body_and_width():
+    """Mixed-case bodies match; a 26- or 28-character body does not."""
+    assert [f.type for f in scan("NRAK-" + "AbCdEfGhIj0123456789KlMnOpQ")] == [
+        "newrelic_user_api_key"
+    ]
+    for body in ("A" * 13 + "1" * 13, "A" * 14 + "1" * 14):
+        types = {f.type for f in scan("NRAK-" + body, min_confidence=0.01)}
+        assert "newrelic_user_api_key" not in types, body
+
+
 # ═══════════════════════════════════════════════
 # GRAFANA
 # ═══════════════════════════════════════════════

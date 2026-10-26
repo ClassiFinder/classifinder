@@ -1174,8 +1174,16 @@ PATTERN_TEST_CASES: dict[str, dict] = {
     "1password_secret_key": {
         "positives": [
             "ONEPASSWORD_SECRET_KEY=A3-ASWWYB-798JRY-LJVD4-23DC2-86TVM-H43EB",
+            # Compact 6-11-5-5-5 form (second and third blocks joined), per the
+            # gitleaks (MIT) 1password-secret-key test examples.
+            "ONEPASSWORD_SECRET_KEY=A3-" + "ASWWYB-798JRYLJVD4-23DC2-86TVM-H43EB",
         ],
-        "negatives": ["A3-short"],
+        "negatives": [
+            "A3-short",
+            # 10- and 12-character joined blocks are not a Secret Key shape.
+            "A3-" + "ASWWYB-798JRYLJVD-23DC2-86TVM-H43EB",
+            "A3-" + "ASWWYB-798JRYLJVD4X-23DC2-86TVM-H43EB",
+        ],
         "min_confidence": 0.90,
     },
 
@@ -3050,6 +3058,9 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "negatives": [
             "re_short",
+            # 're_' inside an identifier is not a key prefix.
+            "SQUARE_TOKEN=squa" + "re_sandbox_abcdefghijklmnopqrstuvwxyz",
+            "configu" + "re_logging_handler_for_the_service = True",
         ],
         "min_confidence": 0.80,
     },
