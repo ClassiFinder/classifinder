@@ -20718,6 +20718,190 @@ def test_slack_legacy_user_token_does_not_collide():
     assert _slu("SLACK_WORKSPACE=" + xoxa) == []
 
 
+# ═══════════════════════════════════════════════
+# 2026-10-26 WEEKLY BATCH — Square OAuth secrets + legacy PAT, Grafana legacy
+# API key, New Relic REST key, Vault legacy token + unseal key, Oculus app
+# token, Cisco type 8 hash, 'Authorization: Token' header.
+# All values synthetic and assembled by concatenation (GitHub Push Protection).
+# ═══════════════════════════════════════════════
+
+_B26_SQ_PROD = "sq0csp-" + "Hq7Zt2Kw9_xVb4Nd-R3mLp8Yc6Gf1Js5Ta0Ue2Wo9Ik"
+_B26_SQ_SBX = "sandbox-sq0csb-" + "Pn4Xw8_Kd2Lr-7Tz5Mq1Hv9Bc3Fy6Js0Ge4Wa8Ru2No"
+_B26_SQ_PAT = "sq0atp-" + "Lw3Rk8Tz5_Nq2Hv7Bx4Jd9"
+_B26_GRAFANA = "eyJrIjoi" + "UW03eFQydkxwOVJrVzRuWnM4WWNIM2ZKZDZHYk4xYUUiLCJuIjoiY2ktZGVwbG95IiwiaWQiOjN9"
+_B26_NRRA = "NRRA-" + "7c1e94b03fa28d65e0b7c4a91f3d826e5b0a47c9d1"
+_B26_VAULT_S = "s." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3"
+_B26_UNSEAL = "Tq8Zr2Wm5Kx9Bn3Lv7Hd1Fy4" + "Jc6Gs0Pa8Ue2No5Ri7Xk"
+_B26_OCULUS = "OC|" + "2847193650182736|9f3c1a7e5b2d4c8f0a6e3b9d7c1f5a2e"
+_B26_CISCO8 = "$8$" + "Kq3Zt7Wb.Lm9Xr$Hd5Vn2Jc8Fy1Gs4Pa7Ue0No3Ri6Xk9Tq2Zw5Lb8Mv.J"
+_B26_DRF = "5e8b2c71f9a04d36b8e1c7a92f0d4b6e83a1c5d7"
+
+
+def _b26(text: str, pid: str) -> list:
+    return [f for f in scan(text, min_confidence=0.01) if f.type == pid]
+
+
+@pytest.mark.parametrize(
+    "pid,text,secret,severity,floor",
+    [
+        ("square_production_application_secret", "SQUARE_APPLICATION_SECRET=" + _B26_SQ_PROD,
+         _B26_SQ_PROD, "critical", 0.95),
+        ("square_sandbox_application_secret", "SQUARE_SANDBOX_SECRET=" + _B26_SQ_SBX,
+         _B26_SQ_SBX, "medium", 0.95),
+        ("square_legacy_access_token", "SQUARE_ACCESS_TOKEN=" + _B26_SQ_PAT,
+         _B26_SQ_PAT, "critical", 0.95),
+        ("grafana_legacy_api_key", 'grafana_token = "' + _B26_GRAFANA + '"',
+         _B26_GRAFANA, "high", 0.95),
+        ("newrelic_rest_api_key", 'curl -H "X-Api-Key:' + _B26_NRRA + '"',
+         _B26_NRRA, "high", 0.95),
+        ("vault_legacy_service_token", 'export VAULT_TOKEN="' + _B26_VAULT_S + '"',
+         _B26_VAULT_S, "critical", 0.75),
+        ("vault_unseal_key", "Unseal Key 1: " + _B26_UNSEAL, _B26_UNSEAL, "critical", 0.92),
+        ("oculus_app_access_token", "access_token=" + _B26_OCULUS + "&locale=en_US",
+         _B26_OCULUS, "high", 0.95),
+        ("cisco_type8_password_hash", "username netadmin privilege 15 secret 8 " + _B26_CISCO8,
+         _B26_CISCO8, "medium", 0.95),
+        ("authorization_token_header", 'curl -H "Authorization: Token ' + _B26_DRF + '"',
+         _B26_DRF, "high", 0.80),
+    ],
+)
+def test_b26_true_positive_span_and_severity(pid, text, secret, severity, floor):
+    matched = _b26(text, pid)
+    assert len(matched) == 1
+    f = matched[0]
+    assert text[f.span_start:f.span_end] == secret
+    assert f.severity == severity
+    assert f.confidence >= floor
+    assert f.is_likely_test_value is False
+    # The specific pattern owns its span after dedup.
+    assert [x.type for x in scan(text, min_confidence=0.01)
+            if x.span_start < f.span_end and x.span_end > f.span_start] == [pid]
+
+
+@pytest.mark.parametrize(
+    "pid,text",
+    [
+        ("square_production_application_secret",
+         "secret=sq0csp-" + "iiWQf_JFiv8Z5t__7T6y2CBALOEtEVE9k_cLotSY0F4"),
+        ("square_sandbox_application_secret",
+         "secret=sandbox-sq0csb-" + "desU-1-gr4wkeC2P2JP1Bxi5WrOgS4m6elVPG5ZffVL"),
+        ("square_legacy_access_token", "token=sq0atp-" + "x" * 22),
+        ("grafana_legacy_api_key",
+         "key=eyJrIjoi" + "Y21sM1JRYjB6RnVYSTNLenRWQkFEaWN2bXI2V202U2IiLCJuIjoiYWRtaW5rZXkiLCJpZCI6MX0="),
+        ("newrelic_rest_api_key", "key=NRRA-" + "e270623d47659ff6a48ac5bde6bba223bef47c8c26"),
+        ("vault_legacy_service_token", "VAULT_TOKEN=s." + "Abc123" * 4),
+        ("vault_unseal_key", "Unseal Key: " + "1kDP9lKLzPHZsTzc9TEel3FfclBmKNClhaDhAnDx" + "2J8="),
+        ("oculus_app_access_token", "token=OC|" + "1234567898014273|5f8730a4n51c5f8v8122aaf971b937e7"),
+        ("cisco_type8_password_hash",
+         "secret 8 $8$" + "TnGX/fE4KGHOVU$pEhnEvxrvaynpi8j4f.EMHr6M.FzU8xnZnBr/tJdFWk"),
+        ("authorization_token_header",
+         "Authorization: Token " + "9944b09199c62bcf" + "9418ad846dd0e4bbdfc6ee4b"),
+    ],
+)
+def test_b26_known_test_values(pid, text):
+    matched = _b26(text, pid)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence == pytest.approx(0.15, abs=0.01)
+
+
+def test_b26_square_sandbox_never_fires_production():
+    for env in ("sandbox-sq0csb-", "sandbox-sq0csp-"):
+        text = "SECRET=" + env + "Pn4Xw8_Kd2Lr-7Tz5Mq1Hv9Bc3Fy6Js0Ge4Wa8Ru2No"
+        assert _b26(text, "square_production_application_secret") == []
+        assert len(_b26(text, "square_sandbox_application_secret")) == 1
+
+
+def test_b26_square_new_patterns_do_not_collide_with_eaaa_token():
+    eaaa = "EAAA" + "l5Kq8Zt3Wm9Lx2Rb7Nc4Hv1Jd6Fy0Gs3Pa8Ue5No2Ri9Xk4Tq7Zw1Lb"
+    text = "SQUARE_ACCESS_TOKEN=" + eaaa
+    for pid in ("square_production_application_secret", "square_sandbox_application_secret",
+                "square_legacy_access_token"):
+        assert _b26(text, pid) == []
+    assert _b26("SQUARE_ACCESS_TOKEN=" + _B26_SQ_PAT, "square_access_token") == []
+
+
+def test_b26_grafana_rejects_power_bi_embed_token():
+    # Power BI embed tokens also open 'eyJrIjoi' but carry a 36-char GUID "k".
+    pbi = "eyJrIjoi" + (
+        "MGExYjJjM2QtMTExMS0yMjIyLTMzMzMtNDQ0NDU1NTU2NjY2IiwidCI6IjcyZjk4OGJmLTg2"
+        "ZjEtNDFhZi05MWFiLTJkN2NkMDExZGI0NyIsImMiOjF9"
+    )
+    assert _b26("embedToken=" + pbi, "grafana_legacy_api_key") == []
+
+
+def test_b26_grafana_beats_bearer_token_in_header():
+    findings = scan("Authorization: Bearer " + _B26_GRAFANA, min_confidence=0.01)
+    assert [f.type for f in findings] == ["grafana_legacy_api_key"]
+
+
+def test_b26_newrelic_rest_distinct_from_other_newrelic_keys():
+    assert _b26("key=NRAK-" + "a" * 27, "newrelic_rest_api_key") == []
+    types = [f.type for f in scan("NEW_RELIC_API_KEY=" + _B26_NRRA, min_confidence=0.01)]
+    assert types == ["newrelic_rest_api_key"]
+
+
+def test_b26_vault_legacy_token_required_negatives():
+    for neg in (
+        "s.addComponentsFromRegistry()",
+        "this.s." + "a" * 24,
+        "token = s." + "A" * 24,
+        "token = obj.s." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3",
+        _B26_VAULT_S,  # bare, no token/vault keyword
+        "tokens." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3",
+        "// readUint16LengthPrefixed acts like s.ReadUint16LengthPrefixed, but",
+        "token: s.ReadUint16LengthPrefixed(&b)",
+        "token = s." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3" + "(x)",
+    ):
+        assert _b26(neg, "vault_legacy_service_token") == [], neg
+
+
+def test_b26_vault_legacy_token_contexts():
+    for ctx in (
+        'X-Vault-Token: ',
+        '"client_token": "',
+        "Initial Root Token: ",
+        "vault login ",
+        'token = "',
+    ):
+        assert len(_b26(ctx + _B26_VAULT_S, "vault_legacy_service_token")) == 1, ctx
+    # The modern hvs. token stays with vault_token.
+    hvs = "hvs." + "Hk4Wq9Lz2Tb7Rm1Xv5Nc8Jd3"
+    assert _b26("VAULT_TOKEN=" + hvs, "vault_legacy_service_token") == []
+
+
+def test_b26_vault_unseal_requires_label():
+    assert _b26("key=" + _B26_UNSEAL, "vault_unseal_key") == []
+    assert len(_b26("vault operator unseal " + _B26_UNSEAL, "vault_unseal_key")) == 1
+
+
+def test_b26_cisco_type8_not_unix_crypt():
+    assert _b26("secret 8 " + _B26_CISCO8, "unix_crypt_password_hash") == []
+
+
+def test_b26_authorization_token_header_placeholders_and_schemes():
+    for neg in (
+        "Authorization: Token ${API_TOKEN}",
+        "Authorization: Token <your-token>",
+        "Authorization: Token {{token}}",
+        'headers = {"Authorization": "Token " + api_token}',
+        "Authorization: Bearer " + _B26_DRF,
+        "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+    ):
+        assert _b26(neg, "authorization_token_header") == [], neg
+    # Low-entropy filler is matched but demoted below the default threshold.
+    low = _b26("Authorization: Token " + "a" * 28, "authorization_token_header")
+    assert low and low[0].confidence < 0.5
+
+
+def test_b26_authorization_token_header_dict_form_and_dedup():
+    assert len(_b26('{"Authorization": "Token ' + _B26_DRF + '"}', "authorization_token_header")) == 1
+    # A provider-specific token in the header keeps its own finding.
+    ghp = "ghp_" + "Kq7Zt2Wm9Lx4Rb1Nc8Hv5Jd3Fy6Gs0PaUe2N"
+    findings = scan("Authorization: token " + ghp, min_confidence=0.01)
+    assert "authorization_token_header" not in [f.type for f in findings]
+
+
 # --- Kerberos AS-REP roasting hash (etype 23) ---------------------------------
 # Like bcrypt_password_hash and unix_crypt_password_hash, a crackable artifact
 # rather than a bearer credential, which is why severity is medium. The shape
