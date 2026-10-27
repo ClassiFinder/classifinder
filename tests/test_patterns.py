@@ -21633,3 +21633,52 @@ def test_nomad_acl_token_documentation_secret_id_is_a_test_value():
     matched = _nomad("X-Nomad-Token: " + doc)
     assert len(matched) == 1
     assert matched[0].confidence <= 0.20
+
+
+# --- Rundeck API token ----------------------------------------------------------
+# 32 alphanumerics behind Rundeck's X-Rundeck-Auth-Token header, its authtoken
+# URL parameter or the rd CLI's RD_TOKEN. SYNTHETIC values, split.
+# Source: https://docs.rundeck.com/docs/api/
+_RD = "Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Ya"
+
+
+def _rd(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "rundeck_api_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl -H "X-Rundeck-Auth-Token: ' + _RD + '" https://rundeck.example.com/api/41/projects',
+        "X-Rundeck-Auth-Token:" + _RD,
+        "GET /api/17/projects?authtoken=" + _RD + " HTTP/1.1",
+        "https://rundeck.example.com/api/41/job/abc/run?format=json&authtoken=" + _RD,
+        "export RD_TOKEN=" + _RD,
+        'headers = {"X-Rundeck-Auth-Token": "' + _RD + '"}',
+    ],
+)
+def test_rundeck_api_token_true_positives(text):
+    matched = _rd(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _RD
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "session=" + _RD,
+        "X-Rundeck-Auth-Token: " + _RD + "z",
+        "X-Rundeck-Auth-Token: " + _RD[:-1],
+        "authtoken: " + _RD,
+        "export RD_TOKEN=yourtokenhere",
+    ],
+)
+def test_rundeck_api_token_true_negatives(text):
+    assert _rd(text) == []
+
+
+def test_rundeck_api_token_documentation_example_and_masks_score_low():
+    doc = "E4rNvVRV378knO9d" + "p3d73O0cs1kd0kCd"
+    assert _rd("X-Rundeck-Auth-Token: " + doc)[0].confidence <= 0.20
+    assert _rd("RD_TOKEN=" + "x" * 32)[0].confidence <= 0.20

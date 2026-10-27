@@ -7836,6 +7836,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.85,
     },
+    # Rundeck API token. SYNTHETIC values.
+    # Source: https://docs.rundeck.com/docs/api/
+    "rundeck_api_token": {
+        "positives": [
+            'curl -H "X-Rundeck-Auth-Token: Kq7Wm2Xr9Tz4Vb6N' + 'p1Lc8Hd3Fj5Gs0Ya" https://rundeck.example.com/api/41/projects',
+            "GET /api/41/job/a1b2/run?authtoken=Rt5Yb8Nc2Wq6Hk1M" + "z9Lp3Dx7Gv0Fs4Je HTTP/1.1",
+            "export RD_TOKEN=Bn4Kx8Qw1Zr6Tm3V" + "c9Hy2Lp7Df5Gj0Sa",
+        ],
+        "negatives": [
+            # 32 alphanumerics with no Rundeck anchor.
+            "session=Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Ya",
+            # 33 characters.
+            "X-Rundeck-Auth-Token: Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Yaz",
+            # YAML key rather than the URL parameter (ngrok's 'authtoken:' form).
+            "authtoken: Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Ya",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on
