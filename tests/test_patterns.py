@@ -21577,3 +21577,59 @@ def test_consul_acl_token_documentation_secret_id_is_a_test_value():
     matched = _consul("SecretID:         " + doc)
     assert len(matched) == 1
     assert matched[0].confidence <= 0.20
+
+
+# --- HashiCorp Nomad ACL token --------------------------------------------------
+# A UUID Secret ID is only a finding behind Nomad's X-Nomad-Token header, its
+# NOMAD_TOKEN variable, or the CLI's 'Secret ID =' line. SYNTHETIC values.
+# Source: https://developer.hashicorp.com/nomad/api-docs
+_NOMAD = "7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a71"
+
+
+def _nomad(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "nomad_acl_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl --header "X-Nomad-Token: ' + _NOMAD + '" https://nomad.example.com:4646/v1/jobs',
+        "NOMAD_TOKEN=" + _NOMAD,
+        "export NOMAD_TOKEN='" + _NOMAD + "'",
+        "Accessor ID  = 5b7fd453-d3f7-6814-81dc-fcfe6daedea5\nSecret ID    = " + _NOMAD,
+    ],
+)
+def test_nomad_acl_token_true_positives(text):
+    matched = _nomad(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _NOMAD
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Accessor ID  = " + _NOMAD,
+        "alloc_id=" + _NOMAD,
+        '{"SecretID": "' + _NOMAD + '"}',
+        "NOMAD_TOKEN=" + _NOMAD + "0",
+    ],
+)
+def test_nomad_acl_token_true_negatives(text):
+    assert _nomad(text) == []
+
+
+def test_nomad_and_consul_tokens_do_not_cross_attribute():
+    assert [f.type for f in scan("NOMAD_TOKEN=" + _NOMAD, min_confidence=0.3)] == [
+        "nomad_acl_token"
+    ]
+    assert [f.type for f in scan("CONSUL_HTTP_TOKEN=" + _NOMAD, min_confidence=0.3)] == [
+        "consul_acl_token"
+    ]
+
+
+def test_nomad_acl_token_documentation_secret_id_is_a_test_value():
+    doc = "aa534e09-6a07-0a45-" + "2295-a7f77063d429"
+    matched = _nomad("X-Nomad-Token: " + doc)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20

@@ -7817,6 +7817,25 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.85,
     },
+    # HashiCorp Nomad ACL token Secret ID. SYNTHETIC values.
+    # Source: https://developer.hashicorp.com/nomad/api-docs
+    "nomad_acl_token": {
+        "positives": [
+            'curl --header "X-Nomad-Token: 7a2f9c4e-1b6d-4e8a-' + '93c5-0d8e2f6b4a71" https://nomad.example.com:4646/v1/jobs',
+            "export NOMAD_TOKEN=c5e1a9f3-6d2b-4a7e-" + "b8c0-4f9d1e3a7b25",
+            "Accessor ID  = 1e9c5a3f-7b2d-4d6e-a8f0-2c4b6d8e0f13\n"
+            "Secret ID    = 6b0d4f8a-2e7c-49a1-" + "b3d5-8f1a0c6e4b97",
+        ],
+        "negatives": [
+            # Accessor ID is a public identifier, not the secret.
+            "Accessor ID  = 7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a71",
+            # A UUID with no Nomad anchor.
+            "alloc_id=7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a71",
+            # Malformed UUID.
+            "NOMAD_TOKEN=7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a7",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on
