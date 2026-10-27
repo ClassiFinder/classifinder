@@ -21438,3 +21438,93 @@ def test_convex_deploy_key_true_negatives(text):
 def test_convex_deploy_key_wins_over_jwt_and_generic_patterns():
     findings = scan("CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|" + _CVX_BODY, min_confidence=0.3)
     assert [f.type for f in findings] == ["convex_deploy_key"]
+
+
+# --- GitLab routable token ------------------------------------------------------
+# GitLab's RoutableToken generator: <prefix><base64url payload>.01.<2 base36
+# length><7 base36 CRC32>. Values are SYNTHETIC, generated at test time with
+# that layout so no token literal is committed.
+# Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/authn/token_field/generator/routable_token.rb
+import zlib as _glr_zlib  # noqa: E402
+
+_GLR_RNG = _krb_random.Random(2710)
+
+
+def _glr_b36(n):
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = digits[r] + out
+        if n == 0:
+            return out
+
+
+def _glr_token(prefix, payload="c:1\no:2\nu:3"):
+    raw = bytes(_GLR_RNG.getrandbits(8) for _ in range(16)) + payload.encode()
+    raw += bytes([len(payload)])
+    body = _wk_b64.urlsafe_b64encode(raw).decode().rstrip("=")
+    encoded = prefix + body + ".01." + _glr_b36(len(body)).rjust(2, "0")
+    return encoded + _glr_b36(_glr_zlib.crc32(encoded.encode())).rjust(7, "0")
+
+
+def _glr(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "gitlab_routable_token"]
+
+
+_GLR_PREFIXES = [
+    "glrt-", "glrt-" + "t1_", "glrtr-", "glwt-", "glcbt-", "gldt-",
+    "glft-", "gloas-", "glsoat-", "glagent-", "glffct-", "glimt-",
+]
+
+
+@pytest.mark.parametrize("prefix", _GLR_PREFIXES)
+def test_gitlab_routable_token_true_positives(prefix):
+    token = _glr_token(prefix)
+    for text in ("TOKEN=" + token, 'token: "' + token + '"', "--token " + token):
+        matched = _glr(text)
+        assert len(matched) == 1, text
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start : matched[0].span_end] == token
+
+
+def test_gitlab_routable_token_long_routing_payload():
+    token = _glr_token("glrt-", "c:1\ng:12345678\no:87654321\np:42\nu:7")
+    matched = _glr("CI_RUNNER_TOKEN=" + token)
+    assert len(matched) == 1
+    assert matched[0].span_end - matched[0].span_start == len(token)
+
+
+def test_gitlab_routable_token_with_instance_prefix():
+    token = _glr_token("glrt-")
+    text = "token = acme-" + token
+    matched = _glr(text)
+    assert len(matched) == 1
+    assert text[matched[0].span_start : matched[0].span_end] == token
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "TOKEN=" + _glr_token("glrt-").replace(".01.", ".02."),
+        "TOKEN=" + _glr_token("glrt-")[:-1],
+        "TOKEN=" + _glr_token("glrt-") + "a",
+        "TOKEN=" + _glr_token("glxx-"),
+        "TOKEN=glrt-" + "Ab3dEf9hJk2mNp4qRs6t",
+    ],
+)
+def test_gitlab_routable_token_true_negatives(text):
+    assert _glr(text) == []
+
+
+def test_gitlab_classic_runner_token_keeps_its_own_pattern():
+    findings = scan("TOKEN=glrt-" + "Ab3dEf9hJk2mNp4qRs6t", min_confidence=0.3)
+    assert [f.type for f in findings] == ["gitlab_runner_authentication_token"]
+
+
+@pytest.mark.parametrize(
+    "prefix,owner", [("glpat-", "gitlab_pat"), ("glptt-", "gitlab_pipeline_trigger")]
+)
+def test_gitlab_routable_pat_and_trigger_stay_with_existing_patterns(prefix, owner):
+    findings = scan("TOKEN=" + _glr_token(prefix), min_confidence=0.3)
+    assert [f.type for f in findings] == [owner]

@@ -13,6 +13,7 @@ true positive, true negative, test value, and collision tests.
 """
 
 import base64 as _pb_b64
+import zlib as _pb_zlib
 import random as _pb_random
 
 # fmt: off
@@ -639,6 +640,30 @@ _KRB_BARE_CASES = "$krb5asrep$" + "23$" + _krb_hex(32) + "$" + _krb_hex(290)
 _CONVEX_BODY = _pb_b64.b64encode(
     ('{"v2":"' + "5f8a1c3e9b7d2f4a6c8e" + "0b1d3f5a7c9e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a" + '"}').encode()
 ).decode()
+
+# GitLab routable tokens: <prefix><base64url(16 random bytes + routing payload +
+# length byte)>.01.<2 base36 payload length><7 base36 CRC32>, the layout of
+# GitLab's RoutableToken generator. Seeded, built at import time.
+_GLR_RNG = _pb_random.Random(20261027)
+
+
+def _b36(n):
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = digits[r] + out
+        if n == 0:
+            return out
+
+
+def _gitlab_routable(prefix, payload):
+    raw = bytes(_GLR_RNG.getrandbits(8) for _ in range(16)) + payload.encode()
+    raw += bytes([len(payload)])
+    body = _pb_b64.urlsafe_b64encode(raw).decode().rstrip("=")
+    encoded = prefix + body + ".01." + _b36(len(body)).rjust(2, "0")
+    return encoded + _b36(_pb_zlib.crc32(encoded.encode())).rjust(7, "0")
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -7751,6 +7776,25 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "CONVEX_DEPLOY_KEY=staging:qualified-jaguar-123|" + _CONVEX_BODY,
             # No pipe separator.
             "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123 " + _CONVEX_BODY,
+        ],
+        "min_confidence": 0.90,
+    },
+    # GitLab routable token. SYNTHETIC values generated at import time with the
+    # layout of GitLab's RoutableToken generator (see _gitlab_routable below).
+    # Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/authn/token_field/generator/routable_token.rb
+    "gitlab_routable_token": {
+        "positives": [
+            "CI_RUNNER_TOKEN=" + _gitlab_routable("glrt-" + "t1_", "c:1\no:2\np:3\nu:4"),
+            "token: " + _gitlab_routable("glwt-", "c:1\ng:9\no:2"),
+            "deploy_token=" + _gitlab_routable("gldt-", "c:1\no:2\np:7"),
+        ],
+        "negatives": [
+            # Classic 20-character runner token belongs to its own pattern.
+            "CI_RUNNER_TOKEN=glrt-" + "Ab3dEf9hJk2mNp4qRs6t",
+            # Wrong version segment.
+            "CI_RUNNER_TOKEN=" + _gitlab_routable("glrt-", "c:1\no:2").replace(".01.", ".02."),
+            # Not a GitLab prefix.
+            "TOKEN=" + _gitlab_routable("glxx-", "c:1\no:2"),
         ],
         "min_confidence": 0.90,
     },
