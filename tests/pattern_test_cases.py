@@ -7798,6 +7798,25 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # HashiCorp Consul ACL token SecretID. SYNTHETIC values.
+    # Source: https://developer.hashicorp.com/consul/api-docs/api-structure
+    "consul_acl_token": {
+        "positives": [
+            'curl --header "X-Consul-Token: 3c8e1f5a-7b2d-49e6-' + 'a0c4-d9f2b6e81a37" http://127.0.0.1:8500/v1/kv/app',
+            "export CONSUL_HTTP_TOKEN=8f2a6c1e-4d9b-4e7a-" + "b5c3-1e0d7f9a2b64",
+            "AccessorID:       5e1c9a7f-2b4d-4f8e-a6c0-3d7b9e1f5a28\n"
+            "SecretID:         b4d8f2a6-1c9e-47b3-" + "8a5d-0f6e2c9b7d13",
+        ],
+        "negatives": [
+            # AccessorID is a public identifier, not the secret.
+            "AccessorID:       3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a37",
+            # A UUID with no Consul anchor.
+            "request_id=3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a37",
+            # Malformed UUID.
+            "X-Consul-Token: 3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a3",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on

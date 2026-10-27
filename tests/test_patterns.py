@@ -21528,3 +21528,52 @@ def test_gitlab_classic_runner_token_keeps_its_own_pattern():
 def test_gitlab_routable_pat_and_trigger_stay_with_existing_patterns(prefix, owner):
     findings = scan("TOKEN=" + _glr_token(prefix), min_confidence=0.3)
     assert [f.type for f in findings] == [owner]
+
+
+# --- HashiCorp Consul ACL token -------------------------------------------------
+# A UUID SecretID is only a finding behind Consul's X-Consul-Token header, its
+# CONSUL_HTTP_TOKEN variable, or the CLI's 'SecretID:' label. SYNTHETIC values.
+# Source: https://developer.hashicorp.com/consul/api-docs/api-structure
+_CONSUL = "3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a37"
+
+
+def _consul(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "consul_acl_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl --header "X-Consul-Token: ' + _CONSUL + '" http://127.0.0.1:8500/v1/agent/members',
+        'headers = {"X-Consul-Token": "' + _CONSUL + '"}',
+        "CONSUL_HTTP_TOKEN=" + _CONSUL,
+        "export CONSUL_HTTP_TOKEN='" + _CONSUL + "'",
+        "AccessorID:       986193b5-e2b5-eb26-6264-b524ea60cc6d\nSecretID:         " + _CONSUL,
+    ],
+)
+def test_consul_acl_token_true_positives(text):
+    matched = _consul(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _CONSUL
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "AccessorID:       " + _CONSUL,
+        "request_id=" + _CONSUL,
+        '{"SecretID": "' + _CONSUL + '"}',  # JSON form is shared with Nomad; not claimed
+        "X-Consul-Token: " + _CONSUL + "0",
+        "X-Consul-Token: " + _CONSUL.upper(),
+    ],
+)
+def test_consul_acl_token_true_negatives(text):
+    assert _consul(text) == []
+
+
+def test_consul_acl_token_documentation_secret_id_is_a_test_value():
+    doc = "ec15675e-2999-d789-" + "832e-8c4794daa8d7"
+    matched = _consul("SecretID:         " + doc)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
