@@ -7692,6 +7692,25 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.85,
     },
+    # SonarQube legacy (unprefixed) user token. SYNTHETIC values.
+    # Source: https://github.com/SonarSource/sonarqube/blob/master/server/sonar-webserver-auth/src/main/java/org/sonar/server/usertoken/TokenGeneratorImpl.java
+    "sonarqube_legacy_token": {
+        "positives": [
+            "mvn sonar:sonar -Dsonar.host.url=https://sonarcloud.io -Dsonar.login="
+            + "a3f9c1e7b5d20486f1e3" + "c9a7b5d2e08461f3c9a7",
+            "SONAR_TOKEN=" + "5c8e2a7f1d9b3e604a2c" + "8f1e7d3b9a05c6e2f4b8",
+            "properties { property 'sonar.login', '" + "e1b7d3f9a5c20864e1b7" + "d3f9a5c20864e1b7d3f9' }",
+        ],
+        "negatives": [
+            # npm lockfile integrity hash for a sonarqube-* package.
+            "sonarqube-reporter-1.2.4.tgz#" + "3b335d612137949d2f21" + "fcc6c8c8164db7603227",
+            # Variable reference, not a value.
+            "/d:sonar.login=$(SONAR_LOGIN)",
+            # Bare 40 hex (a SHA-1) with no Sonar anchor.
+            "commit " + "a3f9c1e7b5d20486f1e3" + "c9a7b5d2e08461f3c9a7",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on

@@ -21282,3 +21282,53 @@ def test_jenkins_initial_admin_password_mask_is_a_test_value():
     matched = _jk("Please use the following password to proceed to installation:\n\n" + "0" * 32)
     assert len(matched) == 1
     assert matched[0].confidence <= 0.20
+
+
+# --- SonarQube legacy (unprefixed) user token -----------------------------------
+# SonarQube's TokenGeneratorImpl hex-encodes 20 random bytes; legacy tokens are
+# that raw value with no 'sq<type>_' prefix. Key-name anchored. SYNTHETIC values.
+# Source: https://github.com/SonarSource/sonarqube/blob/master/server/sonar-webserver-auth/src/main/java/org/sonar/server/usertoken/TokenGeneratorImpl.java
+_SQ_HEX = "a3f9c1e7b5d20486f1e3" + "c9a7b5d2e08461f3c9a7"
+
+
+def _sq(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "sonarqube_legacy_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "mvn sonar:sonar -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=" + _SQ_HEX,
+        "properties { property 'sonar.login', '" + _SQ_HEX + "' }",
+        '$sonarLogin = "' + _SQ_HEX + '"',
+        "SONAR_TOKEN=" + _SQ_HEX,
+        'dotnet sonarscanner begin /k:"app" /d:sonar.token="' + _SQ_HEX + '"',
+        "sonar.login: " + _SQ_HEX,
+        "'sonar.token' => '" + _SQ_HEX + "'",
+    ],
+)
+def test_sonarqube_legacy_token_true_positives(text):
+    matched = _sq(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _SQ_HEX
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "sonarqube-reporter-1.2.4.tgz#" + _SQ_HEX,
+        "sonarqube-scanner/-/sonarqube-scanner-2.5.0.tgz#" + _SQ_HEX,
+        "/d:sonar.login=$(SONAR_LOGIN)",
+        "sonar.login=" + _SQ_HEX + "0",
+        "sonar.login=" + _SQ_HEX.upper(),
+        "commit " + _SQ_HEX,
+    ],
+)
+def test_sonarqube_legacy_token_true_negatives(text):
+    assert _sq(text) == []
+
+
+def test_sonarqube_legacy_token_leaves_prefixed_tokens_to_sonar_api_token():
+    findings = scan("SONAR_TOKEN=squ_" + _SQ_HEX, min_confidence=0.01)
+    assert [f.type for f in findings] == ["sonar_api_token"]
