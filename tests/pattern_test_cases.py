@@ -7711,6 +7711,25 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.85,
     },
+    # Kubernetes bootstrap token. SYNTHETIC values.
+    # Source: https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+    "kubernetes_bootstrap_token": {
+        "positives": [
+            "kubeadm join 10.0.0.5:6443 --token q7r2xk." + "9m4tz1w8bc6np3vd"
+            + " --discovery-token-ca-cert-hash sha256:" + "ab" * 32,
+            'bootstrapTokens:\n- token: "w3n8pd.' + 'k2v7c1q9x4h6m0zr"\n  ttl: "24h0m0s"',
+            "users:\n- name: tls-bootstrap-token-user\n  user:\n    token: h5c0ma." + "t8q3w6e1y9u4i7oz",
+        ],
+        "negatives": [
+            # A 6.16 run with no kubeadm anchor.
+            "build q7r2xk." + "9m4tz1w8bc6np3vd",
+            # The CA hash flag is not a token.
+            "--discovery-token-ca-cert-hash q7r2xk." + "9m4tz1w8bc6np3vd",
+            # Secret part one character long.
+            "kubeadm join --token q7r2xk." + "9m4tz1w8bc6np3vdx",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on

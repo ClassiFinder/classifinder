@@ -21332,3 +21332,59 @@ def test_sonarqube_legacy_token_true_negatives(text):
 def test_sonarqube_legacy_token_leaves_prefixed_tokens_to_sonar_api_token():
     findings = scan("SONAR_TOKEN=squ_" + _SQ_HEX, min_confidence=0.01)
     assert [f.type for f in findings] == ["sonar_api_token"]
+
+
+# --- Kubernetes bootstrap token -------------------------------------------------
+# [a-z0-9]{6}\.[a-z0-9]{16} per the bootstrap-tokens reference, anchored on the
+# kubeadm --token flag family or a 'token:' field because the bare shape has no
+# literal component. Values are SYNTHETIC and split.
+# Source: https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+_K8S_BT = "q7r2xk." + "9m4tz1w8bc6np3vd"
+
+
+def _k8s_bt(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "kubernetes_bootstrap_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "kubeadm join 10.0.0.5:6443 --token " + _K8S_BT
+        + " --discovery-token-ca-cert-hash sha256:" + "ab" * 32,
+        "kubeadm join --token=" + _K8S_BT + " 10.0.0.5:6443",
+        "kubeadm join 10.0.0.5:6443 --discovery-token " + _K8S_BT,
+        "kubeadm join --tls-bootstrap-token " + _K8S_BT,
+        'bootstrapTokens:\n- groups:\n  - system:bootstrappers:kubeadm:default-node-token\n'
+        '  token: "' + _K8S_BT + '"\n  ttl: 24h0m0s',
+        "users:\n- name: kubelet-bootstrap\n  user:\n    token: " + _K8S_BT,
+    ],
+)
+def test_kubernetes_bootstrap_token_true_positives(text):
+    matched = _k8s_bt(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _K8S_BT
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "build " + _K8S_BT,
+        "--discovery-token-ca-cert-hash " + _K8S_BT,
+        "kubeadm join --token " + _K8S_BT + "x",
+        "kubeadm join --token " + _K8S_BT.upper(),
+        "token: " + _K8S_BT + ".extra",
+    ],
+)
+def test_kubernetes_bootstrap_token_true_negatives(text):
+    assert _k8s_bt(text) == []
+
+
+@pytest.mark.parametrize(
+    "doc_sample",
+    ["abcdef.0123456789abcdef", "abcdef.1234567890abcdef", "07401b.f395accd246ae52d"],
+)
+def test_kubernetes_bootstrap_token_documentation_samples_are_test_values(doc_sample):
+    matched = _k8s_bt("kubeadm join 1.2.3.4:6443 --token " + doc_sample)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
