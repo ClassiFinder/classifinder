@@ -21221,3 +21221,64 @@ def test_splunk_hec_token_documentation_example_is_a_test_value():
     matched = _hec('curl -H "Authorization: Splunk ' + doc + '"')
     assert len(matched) == 1
     assert matched[0].confidence <= 0.20
+
+
+# --- Jenkins setup-wizard initial admin password --------------------------------
+# Jenkins core SetupWizard writes UUID.randomUUID() without dashes, lowercased
+# (32 hex), to secrets/initialAdminPassword and logs it in a fixed banner.
+# Values are SYNTHETIC and split.
+# Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/install/SetupWizard.java
+_JK_PW = "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316"
+_JK_BANNER = (
+    "*" * 61 + "\n\n"
+    "Jenkins initial setup is required. An admin user has been created and a"
+    " password generated.\n"
+    "Please use the following password to proceed to installation:\n\n"
+    + _JK_PW
+    + "\n\nThis may also be found at: /var/jenkins_home/secrets/initialAdminPassword\n\n"
+    + "*" * 61
+)
+
+
+def _jk(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "jenkins_initial_admin_password"
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _JK_BANNER,
+        _JK_BANNER.replace("\n", "\r\n"),
+        "2026-10-27 10:01:02.345+0000 [id=32] INFO jenkins.install.SetupWizard#init: \n\n"
+        + _JK_BANNER,
+        "$ docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword\n" + _JK_PW,
+        "$ sudo cat /var/lib/jenkins/secrets/initialAdminPassword\n" + _JK_PW + "\n$ ",
+    ],
+)
+def test_jenkins_initial_admin_password_true_positives(text):
+    matched = _jk(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _JK_PW
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "md5sum: " + _JK_PW,
+        "commit " + _JK_PW,
+        "see secrets/initialAdminPassword " + _JK_PW,
+        "proceed to installation:\n\n" + _JK_PW + "ab",
+        "proceed to installation:\n\n" + _JK_PW.upper(),
+    ],
+)
+def test_jenkins_initial_admin_password_true_negatives(text):
+    assert _jk(text) == []
+
+
+def test_jenkins_initial_admin_password_mask_is_a_test_value():
+    matched = _jk("Please use the following password to proceed to installation:\n\n" + "0" * 32)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20

@@ -7670,6 +7670,28 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.85,
     },
+    # Jenkins setup-wizard initial admin password. SYNTHETIC values.
+    # Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/install/SetupWizard.java
+    "jenkins_initial_admin_password": {
+        "positives": [
+            "Please use the following password to proceed to installation:\n\n"
+            + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316"
+            + "\n\nThis may also be found at: /var/jenkins_home/secrets/initialAdminPassword",
+            "$ sudo cat /var/lib/jenkins/secrets/initialAdminPassword\n"
+            + "9b3e70c4a1f2d856" + "0e7c4b9a2d1f8e63\n",
+            "PS> type C:\\ProgramData\\Jenkins\\.jenkins\\secrets\\initialAdminPassword\r\n"
+            + "c2a7e19f4b0d8356" + "a1e4f7c92b6d0e38",
+        ],
+        "negatives": [
+            # 32 hex with no Jenkins anchor (an MD5, a commit-ish).
+            "md5: " + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316",
+            # Path mentioned, value on the same line (not the cat output form).
+            "see secrets/initialAdminPassword " + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316",
+            # 34 hex after the banner.
+            "proceed to installation:\n\n" + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316ab",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on
