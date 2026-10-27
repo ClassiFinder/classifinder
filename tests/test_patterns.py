@@ -21746,3 +21746,84 @@ def test_elasticsearch_api_key_documentation_example_is_a_test_value():
     matched = _es("Authorization: ApiKey " + _ES_DOC)
     assert len(matched) == 1
     assert matched[0].confidence <= 0.20
+
+
+# --- Phase (phase.dev) service / user token ---------------------------------------
+# 'pss_service:' or 'pss_user:' + 'v<digits>:' + four colon-separated 64-hex
+# segments (token value, key-exchange public key, keyshare, wrap key), per the
+# vendor SDKs' own PssServicePattern / PssUserPattern validators. SYNTHETIC
+# values, split so no scannable token literal exists in source.
+# Source: https://github.com/phasehq/golang-sdk/blob/main/phase/misc/const.go
+_PH_SEGS = (
+    "3f9a1c7e5b2d0846f1e3c9a7b5d2e084" + "61f3c9a7b5d2e08461f3c9a7b5d2e084",
+    "a7c3e9f1b5d7024681a3c5e7f9b1d3e5" + "0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e",
+    "5e1d9c3b7a2f6e0d4c8b2a6f0e4d8c2b" + "6a0f4e8d2c6b0a4f8e2d6c0b4a8f2e6d",
+    "c4b8a2f6e0d4c8b2a6f0e4d8c2b6a0f4" + "e8d2c6b0a4f8e2d6c0b4a8f2e6d0c4b8",
+)
+_PH_BODY = ":".join(_PH_SEGS)
+_PH_SVC = "pss_service:v2:" + _PH_BODY
+_PH_USR = "pss_user:v1:" + _PH_BODY
+
+
+def _ph(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "phase_service_token"]
+
+
+def test_phase_service_token_segments_are_64_hex():
+    assert all(len(s) == 64 for s in _PH_SEGS)
+
+
+@pytest.mark.parametrize(
+    "text,token",
+    [
+        ("PHASE_SERVICE_TOKEN=" + _PH_SVC, _PH_SVC),
+        ("export PHASE_SERVICE_TOKEN='" + _PH_SVC + "'", _PH_SVC),
+        ('phase:\n  token: "' + _PH_USR + '"', _PH_USR),
+        ("PHASE_SERVICE_TOKEN=" + _PH_SVC.replace("v2", "v10", 1), _PH_SVC.replace("v2", "v10", 1)),
+        ("token=" + _PH_SVC.upper().replace("PSS_SERVICE:V2", "pss_service:v2"),
+         _PH_SVC.upper().replace("PSS_SERVICE:V2", "pss_service:v2")),
+    ],
+)
+def test_phase_service_token_true_positives(text, token):
+    matched = _ph(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+    assert text[matched[0].span_start : matched[0].span_end] == token
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Three segments only.
+        "pss_service:v2:" + ":".join(_PH_SEGS[:3]),
+        # Last segment one hex short.
+        "pss_service:v2:" + _PH_BODY[:-1],
+        # Last segment one hex long.
+        "pss_service:v2:" + _PH_BODY + "a",
+        # Missing version.
+        "pss_service:" + _PH_BODY,
+        # Non-hex character in a segment.
+        "pss_service:v2:" + _PH_BODY[:-1] + "g",
+        # Unknown token family.
+        "pss_admin:v1:" + _PH_BODY,
+        # Embedded after a word character (e.g. Shopify's shpss_ family).
+        "shpss_service:v2:" + _PH_BODY,
+        # Prose naming the layout.
+        "pss_service:v2:<token_value>:<kx_pub>:<share_a>:<wrap_key>",
+    ],
+)
+def test_phase_service_token_true_negatives(text):
+    assert _ph(text) == []
+
+
+def test_phase_service_token_all_zero_placeholder_is_a_test_value():
+    placeholder = "pss_service:v2:" + ":".join(["0" * 64] * 4)
+    matched = _ph("PHASE_SERVICE_TOKEN=" + placeholder)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_phase_service_token_does_not_collide_with_shopify():
+    findings = scan("PHASE_SERVICE_TOKEN=" + _PH_SVC, min_confidence=0.01)
+    assert {f.type for f in findings} == {"phase_service_token"}

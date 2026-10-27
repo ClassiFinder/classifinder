@@ -7878,6 +7878,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Phase (phase.dev) service / user token. SYNTHETIC values.
+    # Source: https://github.com/phasehq/golang-sdk/blob/main/phase/misc/const.go
+    "phase_service_token": {
+        "positives": [
+            "PHASE_SERVICE_TOKEN=pss_service:v2:"
+            + "3f9a1c7e5b2d0846f1e3c9a7b5d2e0846" + "1f3c9a7b5d2e08461f3c9a7b5d2e084"
+            + ":" + "a7c3e9f1b5d7024681a3c5e7f9b1d3e5" + "0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e"
+            + ":" + "5e1d9c3b7a2f6e0d4c8b2a6f0e4d8c2b" + "6a0f4e8d2c6b0a4f8e2d6c0b4a8f2e6d"
+            + ":" + "c4b8a2f6e0d4c8b2a6f0e4d8c2b6a0f4" + "e8d2c6b0a4f8e2d6c0b4a8f2e6d0c4b8",
+            "export PHASE_SERVICE_TOKEN='pss_user:v1:"
+            + "9b2e4f6a8c0d2e4f6a8b0c2d4e6f8a0b" + "2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f"
+            + ":" + "1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d" + "3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b"
+            + ":" + "7f6e5d4c3b2a19087f6e5d4c3b2a1908" + "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6"
+            + ":" + "0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f" + "a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1'",
+        ],
+        "negatives": [
+            # Only three 64-hex segments after the version.
+            "pss_service:v2:"
+            + "3f9a1c7e5b2d0846f1e3c9a7b5d2e0846" + "1f3c9a7b5d2e08461f3c9a7b5d2e084"
+            + ":" + "a7c3e9f1b5d7024681a3c5e7f9b1d3e5" + "0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e"
+            + ":" + "5e1d9c3b7a2f6e0d4c8b2a6f0e4d8c2b" + "6a0f4e8d2c6b0a4f8e2d6c0b4a8f2e6d",
+            # Prose naming the prefix but carrying no token.
+            "Phase service tokens look like pss_service:v2:<token>:<kx_pub>:<share>:<wrap>",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
