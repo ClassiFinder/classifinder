@@ -7634,6 +7634,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # JetBrains YouTrack / Hub permanent token. SYNTHETIC values.
+    # Source: https://www.jetbrains.com/help/youtrack/devportal/authentication-with-permanent-token.html
+    "youtrack_permanent_token": {
+        "positives": [
+            "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp.Q0kgc3luYw==." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a",
+            "Authorization: Bearer perm:" + "YWxpY2U=.UmVsZWFzZSBib3Q=." + "h4Tz8Wq1Lm6Nc0Vb3Xr9Ks2Yd7Pf5G",
+            'token: "perm:' + 'ZGV2b3Bz.R3JhZmFuYQ.' + 'Pa3Nf8Lk1Qz6Wm0Rt9Vy4Hb2Jc7Xd5"',
+        ],
+        "negatives": [
+            # Random tail one character short.
+            "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp.Q0kgc3luYw==." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0",
+            # Only two segments.
+            "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a",
+            # Not the 'perm:' literal.
+            "YOUTRACK_TOKEN=prem:" + "c3ZjLWNp.Q0kgc3luYw==." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

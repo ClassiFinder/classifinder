@@ -21117,3 +21117,58 @@ def test_deepl_api_free_key_redacts_whole_key():
     findings = scan(text, min_confidence=0.5)
     redacted, _ = redact(text, findings)
     assert _DEEPL_KEY not in redacted
+
+
+# --- JetBrains YouTrack / Hub permanent token -----------------------------------
+# 'perm:' + base64(login) + '.' + base64(token name) + '.' + 30 alphanumeric, as
+# printed in JetBrains' own guide. Values are SYNTHETIC and split so no
+# contiguous token literal is committed.
+# Source: https://www.jetbrains.com/help/youtrack/devportal/authentication-with-permanent-token.html
+_YT_TAIL = "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a"
+_YT_TOKEN = "perm:" + "c3ZjLWNp.Q0kgc3luYw==." + _YT_TAIL
+_YT_DOC_EXAMPLES = (
+    "perm:" + "cm9vdA==.dG9rZW4=." + "rNZ38ije7uiWwnUTRDdyFDdUkoPUPi",
+    "perm:" + "am9obi5kb2U=.UG9zdG1hbiBKb2huIERvZQ==." + "jJe0eYhhkV271j1lCpfknNYOEakNk7",
+)
+
+
+def _yt(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "youtrack_permanent_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "YOUTRACK_TOKEN=" + _YT_TOKEN,
+        "curl -H 'Authorization: Bearer " + _YT_TOKEN + "' https://yt.example.com/api/issues",
+        '{"youtrack": {"token": "' + _YT_TOKEN + '"}}',
+        "perm:" + "ZGV2b3Bz.R3JhZmFuYQ." + _YT_TAIL,  # unpadded base64 segments
+    ],
+)
+def test_youtrack_permanent_token_true_positives(text):
+    matched = _yt(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    value = text[matched[0].span_start : matched[0].span_end]
+    assert value.startswith("perm:") and value.endswith(_YT_TAIL)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "YOUTRACK_TOKEN=" + _YT_TOKEN[:-1],  # 29-char tail
+        "YOUTRACK_TOKEN=" + _YT_TOKEN + "b",  # 31-char tail
+        "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp." + _YT_TAIL,  # two segments only
+        "the perm:abc.def.ghi flag",  # prose
+    ],
+)
+def test_youtrack_permanent_token_true_negatives(text):
+    assert _yt(text) == []
+
+
+@pytest.mark.parametrize("example", _YT_DOC_EXAMPLES)
+def test_youtrack_permanent_token_documentation_examples_are_test_values(example):
+    matched = _yt("Authorization: Bearer " + example)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+    assert matched[0].is_likely_test_value
