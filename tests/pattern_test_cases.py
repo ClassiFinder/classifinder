@@ -634,6 +634,12 @@ _KRB_USER_CASES = (
 )
 _KRB_BARE_CASES = "$krb5asrep$" + "23$" + _krb_hex(32) + "$" + _krb_hex(290)
 
+# Convex deploy key body: base64 of a {"v2": ...} JSON object, built at import
+# time so no contiguous key is committed.
+_CONVEX_BODY = _pb_b64.b64encode(
+    ('{"v2":"' + "5f8a1c3e9b7d2f4a6c8e" + "0b1d3f5a7c9e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a" + '"}').encode()
+).decode()
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -7729,6 +7735,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "kubeadm join --token q7r2xk." + "9m4tz1w8bc6np3vdx",
         ],
         "min_confidence": 0.85,
+    },
+    # Convex deploy key. SYNTHETIC values (base64 JSON body built at import).
+    # Source: https://docs.convex.dev/cli/deploy-key-types
+    "convex_deploy_key": {
+        "positives": [
+            "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|" + _CONVEX_BODY,
+            'CONVEX_DEPLOY_KEY="preview:acme-team:web-app|' + _CONVEX_BODY + '"',
+            "export CONVEX_DEPLOY_KEY='dev:joyful-capybara-123|" + _CONVEX_BODY + "'",
+        ],
+        "negatives": [
+            # The documentation's elided form.
+            "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|eyJ2...0=",
+            # Unknown key type.
+            "CONVEX_DEPLOY_KEY=staging:qualified-jaguar-123|" + _CONVEX_BODY,
+            # No pipe separator.
+            "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123 " + _CONVEX_BODY,
+        ],
+        "min_confidence": 0.90,
     },
 }
 

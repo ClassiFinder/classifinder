@@ -21388,3 +21388,53 @@ def test_kubernetes_bootstrap_token_documentation_samples_are_test_values(doc_sa
     matched = _k8s_bt("kubeadm join 1.2.3.4:6443 --token " + doc_sample)
     assert len(matched) == 1
     assert matched[0].confidence <= 0.20
+
+
+# --- Convex deploy key ----------------------------------------------------------
+# '<type>:<name>[:<project>]|eyJ2...' per Convex's deploy-key guide; the body is
+# base64 JSON. Values are SYNTHETIC, built at test time.
+# Source: https://docs.convex.dev/cli/deploy-key-types
+_CVX_BODY = _wk_b64.b64encode(
+    ('{"v2":"' + "9c2e4a6b8d0f1a3c5e7b" + "9d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b6d8f" + '"}').encode()
+).decode()
+
+
+def _cvx(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "convex_deploy_key"]
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "prod:qualified-jaguar-123|" + _CVX_BODY,
+        "preview:acme-team:web-app|" + _CVX_BODY,
+        "dev:joyful-capybara-123|" + _CVX_BODY,
+        "project:acme-team:web-app|" + _CVX_BODY,
+    ],
+)
+def test_convex_deploy_key_true_positives(key):
+    for text in ("CONVEX_DEPLOY_KEY=" + key, 'CONVEX_DEPLOY_KEY="' + key + '"'):
+        matched = _cvx(text)
+        assert len(matched) == 1
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+        assert text[matched[0].span_start : matched[0].span_end] == key
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|eyJ2...0=",
+        "CONVEX_DEPLOY_KEY=staging:qualified-jaguar-123|" + _CVX_BODY,
+        "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123 " + _CVX_BODY,
+        "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|eyJh" + _CVX_BODY[4:],
+        "xprod:qualified-jaguar-123|" + _CVX_BODY,
+    ],
+)
+def test_convex_deploy_key_true_negatives(text):
+    assert _cvx(text) == []
+
+
+def test_convex_deploy_key_wins_over_jwt_and_generic_patterns():
+    findings = scan("CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|" + _CVX_BODY, min_confidence=0.3)
+    assert [f.type for f in findings] == ["convex_deploy_key"]
