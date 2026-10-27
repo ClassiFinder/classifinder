@@ -665,6 +665,12 @@ def _gitlab_routable(prefix, payload):
     return encoded + _b36(_pb_zlib.crc32(encoded.encode())).rjust(7, "0")
 
 
+# Elasticsearch encoded API keys: base64 of '<20-char id>:<22-char api_key>'.
+# SYNTHETIC, built at import time.
+_ES_KEY_A = _pb_b64.b64encode(("Tq3mZb8LRpWx2cN9vD4k" + ":" + "Hn7Ys1Qe5Vt0Kr3Mw8Jb2A").encode()).decode()
+_ES_KEY_B = _pb_b64.b64encode(("pL9xW2qT7vR4nZ6mK1sB" + ":" + "c8Fd3Gh5Jk0Lq2Wx9Er4Ty").encode()).decode()
+
+
 PATTERN_TEST_CASES: dict[str, dict] = {
 
     # ── AI / ML ──────────────────────────────────────────────────────────
@@ -7853,6 +7859,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "authtoken: Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Ya",
         ],
         "min_confidence": 0.85,
+    },
+    # Elasticsearch / Kibana encoded API key. SYNTHETIC values (built above).
+    # Source: https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-create-api-key
+    "elasticsearch_api_key": {
+        "positives": [
+            'curl -H "Authorization: ApiKey ' + _ES_KEY_A + '" https://es.example.com:9200/_search',
+            "ELASTIC_API_KEY=" + _ES_KEY_B,
+            'headers = {"Authorization": "ApiKey ' + _ES_KEY_A + '"}',
+        ],
+        "negatives": [
+            # Encoded key with no Elastic anchor.
+            "blob " + _ES_KEY_A,
+            # Basic auth is a different scheme (basic_auth_header).
+            "Authorization: Basic " + _ES_KEY_A,
+            # ':' not at byte 20 (wrong landmark).
+            "Authorization: ApiKey " + _ES_KEY_A[:27] + "7" + _ES_KEY_A[28:],
+        ],
+        "min_confidence": 0.90,
     },
 }
 

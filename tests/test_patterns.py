@@ -21682,3 +21682,67 @@ def test_rundeck_api_token_documentation_example_and_masks_score_low():
     doc = "E4rNvVRV378knO9d" + "p3d73O0cs1kd0kCd"
     assert _rd("X-Rundeck-Auth-Token: " + doc)[0].confidence <= 0.20
     assert _rd("RD_TOKEN=" + "x" * 32)[0].confidence <= 0.20
+
+
+# --- Elasticsearch / Kibana encoded API key -------------------------------------
+# base64('<20-char id>:<api_key>'): the ':' is byte 20, so character 27 of the
+# base64 is always '6'. Anchored on the 'ApiKey' scheme or an Elastic API-key
+# variable. Values are SYNTHETIC, built at test time.
+# Source: https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-create-api-key
+_ES_KEY = _wk_b64.b64encode(("Tq3mZb8LRpWx2cN9vD4k" + ":" + "Hn7Ys1Qe5Vt0Kr3Mw8Jb2A").encode()).decode()
+_ES_DOC = "VnVhQ2ZHY0JDZGJrUW0tZTVhT3g6" + "dWkybHAyYXhUTm1zeWFrdzl0dk5udw=="
+
+
+def _es(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "elasticsearch_api_key"]
+
+
+def test_elasticsearch_api_key_landmark_holds_for_any_id():
+    import random as _es_random
+
+    rng = _es_random.Random(927)
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    for _ in range(50):
+        key_id = "".join(rng.choice(alphabet) for _ in range(20))
+        secret = "".join(rng.choice(alphabet) for _ in range(22))
+        encoded = _wk_b64.b64encode((key_id + ":" + secret).encode()).decode()
+        assert encoded[27] == "6"
+        assert len(_es("Authorization: ApiKey " + encoded)) == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl -H "Authorization: ApiKey ' + _ES_KEY + '" https://es.example.com:9200/_search',
+        'headers={"Authorization": "ApiKey ' + _ES_KEY + '"}',
+        "authorization: apikey " + _ES_KEY,
+        "ELASTIC_API_KEY=" + _ES_KEY,
+        'ES_API_KEY: "' + _ES_KEY + '"',
+        "export ELASTICSEARCH_API_KEY='" + _ES_KEY + "'",
+    ],
+)
+def test_elasticsearch_api_key_true_positives(text):
+    matched = _es(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert text[matched[0].span_start : matched[0].span_end] == _ES_KEY
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "blob " + _ES_KEY,
+        "api_key=" + _ES_KEY,  # too generic an anchor on its own
+        "Authorization: Basic " + _ES_KEY,
+        "Authorization: ApiKey " + _ES_KEY[:27] + "7" + _ES_KEY[28:],
+        "Authorization: ApiKey $ELASTIC_API_KEY",
+    ],
+)
+def test_elasticsearch_api_key_true_negatives(text):
+    assert _es(text) == []
+
+
+def test_elasticsearch_api_key_documentation_example_is_a_test_value():
+    matched = _es("Authorization: ApiKey " + _ES_DOC)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
