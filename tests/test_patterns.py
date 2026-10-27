@@ -21057,3 +21057,692 @@ def test_kerberos_asrep_hash_redaction():
     assert _KRB_ENC not in redacted_text
     assert redacted_text.startswith("[*] ")
     assert redacted_text.endswith("\n[-] done")
+
+
+# --- DeepL API Free authentication key -----------------------------------------
+# DeepL marks Free-plan keys with a ':fx' suffix after a dashed GUID; that suffix
+# is the entire anchor. Values are SYNTHETIC and split so no contiguous key
+# literal is committed.
+# Source: https://developers.deepl.com/docs/getting-started/auth
+_DEEPL_KEY = "3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f" + ":fx"
+_DEEPL_DOC_EXAMPLE = "279a2e9d-83b3-c416-" + "7e2d-f721593e42a0" + ":fx"
+
+
+def _deepl(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "deepl_api_free_key"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DEEPL_AUTH_KEY=" + _DEEPL_KEY,
+        "Authorization: DeepL-Auth-Key " + _DEEPL_KEY,
+        'deepl.Translator("' + _DEEPL_KEY + '")',
+        "auth_key: '" + _DEEPL_KEY.upper().replace(":FX", ":fx") + "'",
+    ],
+)
+def test_deepl_api_free_key_true_positives(text):
+    matched = _deepl(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    value = text[matched[0].span_start : matched[0].span_end]
+    assert value.endswith(":fx") and len(value) == 39
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DEEPL_AUTH_KEY=" + _DEEPL_KEY[:-3],  # Pro key / any bare GUID
+        "ref " + _DEEPL_KEY + "a",  # suffix must end the token
+        "x" + _DEEPL_KEY,  # left boundary
+        "DEEPL_AUTH_KEY=" + _DEEPL_KEY.replace("-", "", 1),  # wrong layout
+    ],
+)
+def test_deepl_api_free_key_true_negatives(text):
+    assert _deepl(text) == []
+
+
+def test_deepl_api_free_key_documentation_example_is_a_test_value():
+    matched = _deepl("DEEPL_AUTH_KEY=" + _DEEPL_DOC_EXAMPLE)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+    assert matched[0].is_likely_test_value
+
+
+def test_deepl_api_free_key_redacts_whole_key():
+    from app.engine.redactor import redact
+
+    text = "DEEPL_AUTH_KEY=" + _DEEPL_KEY
+    findings = scan(text, min_confidence=0.5)
+    redacted, _ = redact(text, findings)
+    assert _DEEPL_KEY not in redacted
+
+
+# --- JetBrains YouTrack / Hub permanent token -----------------------------------
+# 'perm:' + base64(login) + '.' + base64(token name) + '.' + 30 alphanumeric, as
+# printed in JetBrains' own guide. Values are SYNTHETIC and split so no
+# contiguous token literal is committed.
+# Source: https://www.jetbrains.com/help/youtrack/devportal/authentication-with-permanent-token.html
+_YT_TAIL = "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a"
+_YT_TOKEN = "perm:" + "c3ZjLWNp.Q0kgc3luYw==." + _YT_TAIL
+_YT_DOC_EXAMPLES = (
+    "perm:" + "cm9vdA==.dG9rZW4=." + "rNZ38ije7uiWwnUTRDdyFDdUkoPUPi",
+    "perm:" + "am9obi5kb2U=.UG9zdG1hbiBKb2huIERvZQ==." + "jJe0eYhhkV271j1lCpfknNYOEakNk7",
+)
+
+
+def _yt(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "youtrack_permanent_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "YOUTRACK_TOKEN=" + _YT_TOKEN,
+        "curl -H 'Authorization: Bearer " + _YT_TOKEN + "' https://yt.example.com/api/issues",
+        '{"youtrack": {"token": "' + _YT_TOKEN + '"}}',
+        "perm:" + "ZGV2b3Bz.R3JhZmFuYQ." + _YT_TAIL,  # unpadded base64 segments
+    ],
+)
+def test_youtrack_permanent_token_true_positives(text):
+    matched = _yt(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    value = text[matched[0].span_start : matched[0].span_end]
+    assert value.startswith("perm:") and value.endswith(_YT_TAIL)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "YOUTRACK_TOKEN=" + _YT_TOKEN[:-1],  # 29-char tail
+        "YOUTRACK_TOKEN=" + _YT_TOKEN + "b",  # 31-char tail
+        "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp." + _YT_TAIL,  # two segments only
+        "the perm:abc.def.ghi flag",  # prose
+    ],
+)
+def test_youtrack_permanent_token_true_negatives(text):
+    assert _yt(text) == []
+
+
+@pytest.mark.parametrize("example", _YT_DOC_EXAMPLES)
+def test_youtrack_permanent_token_documentation_examples_are_test_values(example):
+    matched = _yt("Authorization: Bearer " + example)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+    assert matched[0].is_likely_test_value
+
+
+# --- Splunk HTTP Event Collector token ------------------------------------------
+# A dashed GUID is only a finding behind Splunk's own 'Authorization: Splunk'
+# scheme or an HEC token field name. Values are SYNTHETIC and split.
+# Source: https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/9.4/get-data-with-http-event-collector/format-events-for-http-event-collector
+_HEC = "b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b64"
+
+
+def _hec(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "splunk_hec_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl -H "Authorization: Splunk ' + _HEC + '" https://splunk.example.com:8088/services/collector',
+        'headers={"Authorization": "Splunk ' + _HEC + '"}',
+        "authorization: splunk " + _HEC.upper(),
+        "SPLUNK_HEC_TOKEN=" + _HEC,
+        "hec_token: '" + _HEC + "'",
+        "splunk-hec-token = " + _HEC,
+    ],
+)
+def test_splunk_hec_token_true_positives(text):
+    matched = _hec(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end].lower() == _HEC
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "request_id=" + _HEC,
+        "Authorization: Bearer " + _HEC,
+        "Authorization: Splunk " + _HEC + "0",
+        "Splunk " + _HEC,  # scheme word without the Authorization header
+    ],
+)
+def test_splunk_hec_token_true_negatives(text):
+    assert _hec(text) == []
+
+
+def test_splunk_hec_token_documentation_example_is_a_test_value():
+    doc = "12345678-1234-1234-" + "1234-1234567890AB"
+    matched = _hec('curl -H "Authorization: Splunk ' + doc + '"')
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+# --- Jenkins setup-wizard initial admin password --------------------------------
+# Jenkins core SetupWizard writes UUID.randomUUID() without dashes, lowercased
+# (32 hex), to secrets/initialAdminPassword and logs it in a fixed banner.
+# Values are SYNTHETIC and split.
+# Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/install/SetupWizard.java
+_JK_PW = "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316"
+_JK_BANNER = (
+    "*" * 61 + "\n\n"
+    "Jenkins initial setup is required. An admin user has been created and a"
+    " password generated.\n"
+    "Please use the following password to proceed to installation:\n\n"
+    + _JK_PW
+    + "\n\nThis may also be found at: /var/jenkins_home/secrets/initialAdminPassword\n\n"
+    + "*" * 61
+)
+
+
+def _jk(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "jenkins_initial_admin_password"
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _JK_BANNER,
+        _JK_BANNER.replace("\n", "\r\n"),
+        "2026-10-27 10:01:02.345+0000 [id=32] INFO jenkins.install.SetupWizard#init: \n\n"
+        + _JK_BANNER,
+        "$ docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword\n" + _JK_PW,
+        "$ sudo cat /var/lib/jenkins/secrets/initialAdminPassword\n" + _JK_PW + "\n$ ",
+    ],
+)
+def test_jenkins_initial_admin_password_true_positives(text):
+    matched = _jk(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _JK_PW
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "md5sum: " + _JK_PW,
+        "commit " + _JK_PW,
+        "see secrets/initialAdminPassword " + _JK_PW,
+        "proceed to installation:\n\n" + _JK_PW + "ab",
+        "proceed to installation:\n\n" + _JK_PW.upper(),
+    ],
+)
+def test_jenkins_initial_admin_password_true_negatives(text):
+    assert _jk(text) == []
+
+
+def test_jenkins_initial_admin_password_mask_is_a_test_value():
+    matched = _jk("Please use the following password to proceed to installation:\n\n" + "0" * 32)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+# --- SonarQube legacy (unprefixed) user token -----------------------------------
+# SonarQube's TokenGeneratorImpl hex-encodes 20 random bytes; legacy tokens are
+# that raw value with no 'sq<type>_' prefix. Key-name anchored. SYNTHETIC values.
+# Source: https://github.com/SonarSource/sonarqube/blob/master/server/sonar-webserver-auth/src/main/java/org/sonar/server/usertoken/TokenGeneratorImpl.java
+_SQ_HEX = "a3f9c1e7b5d20486f1e3" + "c9a7b5d2e08461f3c9a7"
+
+
+def _sq(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "sonarqube_legacy_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "mvn sonar:sonar -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=" + _SQ_HEX,
+        "properties { property 'sonar.login', '" + _SQ_HEX + "' }",
+        '$sonarLogin = "' + _SQ_HEX + '"',
+        "SONAR_TOKEN=" + _SQ_HEX,
+        'dotnet sonarscanner begin /k:"app" /d:sonar.token="' + _SQ_HEX + '"',
+        "sonar.login: " + _SQ_HEX,
+        "'sonar.token' => '" + _SQ_HEX + "'",
+    ],
+)
+def test_sonarqube_legacy_token_true_positives(text):
+    matched = _sq(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _SQ_HEX
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "sonarqube-reporter-1.2.4.tgz#" + _SQ_HEX,
+        "sonarqube-scanner/-/sonarqube-scanner-2.5.0.tgz#" + _SQ_HEX,
+        "/d:sonar.login=$(SONAR_LOGIN)",
+        "sonar.login=" + _SQ_HEX + "0",
+        "sonar.login=" + _SQ_HEX.upper(),
+        "commit " + _SQ_HEX,
+    ],
+)
+def test_sonarqube_legacy_token_true_negatives(text):
+    assert _sq(text) == []
+
+
+def test_sonarqube_legacy_token_leaves_prefixed_tokens_to_sonar_api_token():
+    findings = scan("SONAR_TOKEN=squ_" + _SQ_HEX, min_confidence=0.01)
+    assert [f.type for f in findings] == ["sonar_api_token"]
+
+
+# --- Kubernetes bootstrap token -------------------------------------------------
+# [a-z0-9]{6}\.[a-z0-9]{16} per the bootstrap-tokens reference, anchored on the
+# kubeadm --token flag family or a 'token:' field because the bare shape has no
+# literal component. Values are SYNTHETIC and split.
+# Source: https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+_K8S_BT = "q7r2xk." + "9m4tz1w8bc6np3vd"
+
+
+def _k8s_bt(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "kubernetes_bootstrap_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "kubeadm join 10.0.0.5:6443 --token " + _K8S_BT
+        + " --discovery-token-ca-cert-hash sha256:" + "ab" * 32,
+        "kubeadm join --token=" + _K8S_BT + " 10.0.0.5:6443",
+        "kubeadm join 10.0.0.5:6443 --discovery-token " + _K8S_BT,
+        "kubeadm join --tls-bootstrap-token " + _K8S_BT,
+        'bootstrapTokens:\n- groups:\n  - system:bootstrappers:kubeadm:default-node-token\n'
+        '  token: "' + _K8S_BT + '"\n  ttl: 24h0m0s',
+        "users:\n- name: kubelet-bootstrap\n  user:\n    token: " + _K8S_BT,
+    ],
+)
+def test_kubernetes_bootstrap_token_true_positives(text):
+    matched = _k8s_bt(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _K8S_BT
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "build " + _K8S_BT,
+        "--discovery-token-ca-cert-hash " + _K8S_BT,
+        "kubeadm join --token " + _K8S_BT + "x",
+        "kubeadm join --token " + _K8S_BT.upper(),
+        "token: " + _K8S_BT + ".extra",
+    ],
+)
+def test_kubernetes_bootstrap_token_true_negatives(text):
+    assert _k8s_bt(text) == []
+
+
+@pytest.mark.parametrize(
+    "doc_sample",
+    ["abcdef.0123456789abcdef", "abcdef.1234567890abcdef", "07401b.f395accd246ae52d"],
+)
+def test_kubernetes_bootstrap_token_documentation_samples_are_test_values(doc_sample):
+    matched = _k8s_bt("kubeadm join 1.2.3.4:6443 --token " + doc_sample)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+# --- Convex deploy key ----------------------------------------------------------
+# '<type>:<name>[:<project>]|eyJ2...' per Convex's deploy-key guide; the body is
+# base64 JSON. Values are SYNTHETIC, built at test time.
+# Source: https://docs.convex.dev/cli/deploy-key-types
+_CVX_BODY = _wk_b64.b64encode(
+    ('{"v2":"' + "9c2e4a6b8d0f1a3c5e7b" + "9d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b6d8f" + '"}').encode()
+).decode()
+
+
+def _cvx(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "convex_deploy_key"]
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "prod:qualified-jaguar-123|" + _CVX_BODY,
+        "preview:acme-team:web-app|" + _CVX_BODY,
+        "dev:joyful-capybara-123|" + _CVX_BODY,
+        "project:acme-team:web-app|" + _CVX_BODY,
+    ],
+)
+def test_convex_deploy_key_true_positives(key):
+    for text in ("CONVEX_DEPLOY_KEY=" + key, 'CONVEX_DEPLOY_KEY="' + key + '"'):
+        matched = _cvx(text)
+        assert len(matched) == 1
+        assert matched[0].confidence >= 0.90
+        assert matched[0].severity == "critical"
+        assert text[matched[0].span_start : matched[0].span_end] == key
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|eyJ2...0=",
+        "CONVEX_DEPLOY_KEY=staging:qualified-jaguar-123|" + _CVX_BODY,
+        "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123 " + _CVX_BODY,
+        "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|eyJh" + _CVX_BODY[4:],
+        "xprod:qualified-jaguar-123|" + _CVX_BODY,
+    ],
+)
+def test_convex_deploy_key_true_negatives(text):
+    assert _cvx(text) == []
+
+
+def test_convex_deploy_key_wins_over_jwt_and_generic_patterns():
+    findings = scan("CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|" + _CVX_BODY, min_confidence=0.3)
+    assert [f.type for f in findings] == ["convex_deploy_key"]
+
+
+# --- GitLab routable token ------------------------------------------------------
+# GitLab's RoutableToken generator: <prefix><base64url payload>.01.<2 base36
+# length><7 base36 CRC32>. Values are SYNTHETIC, generated at test time with
+# that layout so no token literal is committed.
+# Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/authn/token_field/generator/routable_token.rb
+import zlib as _glr_zlib  # noqa: E402
+
+_GLR_RNG = _krb_random.Random(2710)
+
+
+def _glr_b36(n):
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = digits[r] + out
+        if n == 0:
+            return out
+
+
+def _glr_token(prefix, payload="c:1\no:2\nu:3"):
+    raw = bytes(_GLR_RNG.getrandbits(8) for _ in range(16)) + payload.encode()
+    raw += bytes([len(payload)])
+    body = _wk_b64.urlsafe_b64encode(raw).decode().rstrip("=")
+    encoded = prefix + body + ".01." + _glr_b36(len(body)).rjust(2, "0")
+    return encoded + _glr_b36(_glr_zlib.crc32(encoded.encode())).rjust(7, "0")
+
+
+def _glr(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "gitlab_routable_token"]
+
+
+_GLR_PREFIXES = [
+    "glrt-", "glrt-" + "t1_", "glrtr-", "glwt-", "glcbt-", "gldt-",
+    "glft-", "gloas-", "glsoat-", "glagent-", "glffct-", "glimt-",
+]
+
+
+@pytest.mark.parametrize("prefix", _GLR_PREFIXES)
+def test_gitlab_routable_token_true_positives(prefix):
+    token = _glr_token(prefix)
+    for text in ("TOKEN=" + token, 'token: "' + token + '"', "--token " + token):
+        matched = _glr(text)
+        assert len(matched) == 1, text
+        assert matched[0].confidence >= 0.90
+        assert text[matched[0].span_start : matched[0].span_end] == token
+
+
+def test_gitlab_routable_token_long_routing_payload():
+    token = _glr_token("glrt-", "c:1\ng:12345678\no:87654321\np:42\nu:7")
+    matched = _glr("CI_RUNNER_TOKEN=" + token)
+    assert len(matched) == 1
+    assert matched[0].span_end - matched[0].span_start == len(token)
+
+
+def test_gitlab_routable_token_with_instance_prefix():
+    token = _glr_token("glrt-")
+    text = "token = acme-" + token
+    matched = _glr(text)
+    assert len(matched) == 1
+    assert text[matched[0].span_start : matched[0].span_end] == token
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "TOKEN=" + _glr_token("glrt-").replace(".01.", ".02."),
+        "TOKEN=" + _glr_token("glrt-")[:-1],
+        "TOKEN=" + _glr_token("glrt-") + "a",
+        "TOKEN=" + _glr_token("glxx-"),
+        "TOKEN=glrt-" + "Ab3dEf9hJk2mNp4qRs6t",
+    ],
+)
+def test_gitlab_routable_token_true_negatives(text):
+    assert _glr(text) == []
+
+
+def test_gitlab_classic_runner_token_keeps_its_own_pattern():
+    findings = scan("TOKEN=glrt-" + "Ab3dEf9hJk2mNp4qRs6t", min_confidence=0.3)
+    assert [f.type for f in findings] == ["gitlab_runner_authentication_token"]
+
+
+@pytest.mark.parametrize(
+    "prefix,owner", [("glpat-", "gitlab_pat"), ("glptt-", "gitlab_pipeline_trigger")]
+)
+def test_gitlab_routable_pat_and_trigger_stay_with_existing_patterns(prefix, owner):
+    findings = scan("TOKEN=" + _glr_token(prefix), min_confidence=0.3)
+    assert [f.type for f in findings] == [owner]
+
+
+# --- HashiCorp Consul ACL token -------------------------------------------------
+# A UUID SecretID is only a finding behind Consul's X-Consul-Token header, its
+# CONSUL_HTTP_TOKEN variable, or the CLI's 'SecretID:' label. SYNTHETIC values.
+# Source: https://developer.hashicorp.com/consul/api-docs/api-structure
+_CONSUL = "3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a37"
+
+
+def _consul(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "consul_acl_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl --header "X-Consul-Token: ' + _CONSUL + '" http://127.0.0.1:8500/v1/agent/members',
+        'headers = {"X-Consul-Token": "' + _CONSUL + '"}',
+        "CONSUL_HTTP_TOKEN=" + _CONSUL,
+        "export CONSUL_HTTP_TOKEN='" + _CONSUL + "'",
+        "AccessorID:       986193b5-e2b5-eb26-6264-b524ea60cc6d\nSecretID:         " + _CONSUL,
+    ],
+)
+def test_consul_acl_token_true_positives(text):
+    matched = _consul(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _CONSUL
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "AccessorID:       " + _CONSUL,
+        "request_id=" + _CONSUL,
+        '{"SecretID": "' + _CONSUL + '"}',  # JSON form is shared with Nomad; not claimed
+        "X-Consul-Token: " + _CONSUL + "0",
+        "X-Consul-Token: " + _CONSUL.upper(),
+    ],
+)
+def test_consul_acl_token_true_negatives(text):
+    assert _consul(text) == []
+
+
+def test_consul_acl_token_documentation_secret_id_is_a_test_value():
+    doc = "ec15675e-2999-d789-" + "832e-8c4794daa8d7"
+    matched = _consul("SecretID:         " + doc)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+# --- HashiCorp Nomad ACL token --------------------------------------------------
+# A UUID Secret ID is only a finding behind Nomad's X-Nomad-Token header, its
+# NOMAD_TOKEN variable, or the CLI's 'Secret ID =' line. SYNTHETIC values.
+# Source: https://developer.hashicorp.com/nomad/api-docs
+_NOMAD = "7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a71"
+
+
+def _nomad(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "nomad_acl_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl --header "X-Nomad-Token: ' + _NOMAD + '" https://nomad.example.com:4646/v1/jobs',
+        "NOMAD_TOKEN=" + _NOMAD,
+        "export NOMAD_TOKEN='" + _NOMAD + "'",
+        "Accessor ID  = 5b7fd453-d3f7-6814-81dc-fcfe6daedea5\nSecret ID    = " + _NOMAD,
+    ],
+)
+def test_nomad_acl_token_true_positives(text):
+    matched = _nomad(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _NOMAD
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Accessor ID  = " + _NOMAD,
+        "alloc_id=" + _NOMAD,
+        '{"SecretID": "' + _NOMAD + '"}',
+        "NOMAD_TOKEN=" + _NOMAD + "0",
+    ],
+)
+def test_nomad_acl_token_true_negatives(text):
+    assert _nomad(text) == []
+
+
+def test_nomad_and_consul_tokens_do_not_cross_attribute():
+    assert [f.type for f in scan("NOMAD_TOKEN=" + _NOMAD, min_confidence=0.3)] == [
+        "nomad_acl_token"
+    ]
+    assert [f.type for f in scan("CONSUL_HTTP_TOKEN=" + _NOMAD, min_confidence=0.3)] == [
+        "consul_acl_token"
+    ]
+
+
+def test_nomad_acl_token_documentation_secret_id_is_a_test_value():
+    doc = "aa534e09-6a07-0a45-" + "2295-a7f77063d429"
+    matched = _nomad("X-Nomad-Token: " + doc)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+# --- Rundeck API token ----------------------------------------------------------
+# 32 alphanumerics behind Rundeck's X-Rundeck-Auth-Token header, its authtoken
+# URL parameter or the rd CLI's RD_TOKEN. SYNTHETIC values, split.
+# Source: https://docs.rundeck.com/docs/api/
+_RD = "Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Ya"
+
+
+def _rd(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "rundeck_api_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl -H "X-Rundeck-Auth-Token: ' + _RD + '" https://rundeck.example.com/api/41/projects',
+        "X-Rundeck-Auth-Token:" + _RD,
+        "GET /api/17/projects?authtoken=" + _RD + " HTTP/1.1",
+        "https://rundeck.example.com/api/41/job/abc/run?format=json&authtoken=" + _RD,
+        "export RD_TOKEN=" + _RD,
+        'headers = {"X-Rundeck-Auth-Token": "' + _RD + '"}',
+    ],
+)
+def test_rundeck_api_token_true_positives(text):
+    matched = _rd(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end] == _RD
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "session=" + _RD,
+        "X-Rundeck-Auth-Token: " + _RD + "z",
+        "X-Rundeck-Auth-Token: " + _RD[:-1],
+        "authtoken: " + _RD,
+        "export RD_TOKEN=yourtokenhere",
+    ],
+)
+def test_rundeck_api_token_true_negatives(text):
+    assert _rd(text) == []
+
+
+def test_rundeck_api_token_documentation_example_and_masks_score_low():
+    doc = "E4rNvVRV378knO9d" + "p3d73O0cs1kd0kCd"
+    assert _rd("X-Rundeck-Auth-Token: " + doc)[0].confidence <= 0.20
+    assert _rd("RD_TOKEN=" + "x" * 32)[0].confidence <= 0.20
+
+
+# --- Elasticsearch / Kibana encoded API key -------------------------------------
+# base64('<20-char id>:<api_key>'): the ':' is byte 20, so character 27 of the
+# base64 is always '6'. Anchored on the 'ApiKey' scheme or an Elastic API-key
+# variable. Values are SYNTHETIC, built at test time.
+# Source: https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-create-api-key
+_ES_KEY = _wk_b64.b64encode(("Tq3mZb8LRpWx2cN9vD4k" + ":" + "Hn7Ys1Qe5Vt0Kr3Mw8Jb2A").encode()).decode()
+_ES_DOC = "VnVhQ2ZHY0JDZGJrUW0tZTVhT3g6" + "dWkybHAyYXhUTm1zeWFrdzl0dk5udw=="
+
+
+def _es(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "elasticsearch_api_key"]
+
+
+def test_elasticsearch_api_key_landmark_holds_for_any_id():
+    import random as _es_random
+
+    rng = _es_random.Random(927)
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    for _ in range(50):
+        key_id = "".join(rng.choice(alphabet) for _ in range(20))
+        secret = "".join(rng.choice(alphabet) for _ in range(22))
+        encoded = _wk_b64.b64encode((key_id + ":" + secret).encode()).decode()
+        assert encoded[27] == "6"
+        assert len(_es("Authorization: ApiKey " + encoded)) == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl -H "Authorization: ApiKey ' + _ES_KEY + '" https://es.example.com:9200/_search',
+        'headers={"Authorization": "ApiKey ' + _ES_KEY + '"}',
+        "authorization: apikey " + _ES_KEY,
+        "ELASTIC_API_KEY=" + _ES_KEY,
+        'ES_API_KEY: "' + _ES_KEY + '"',
+        "export ELASTICSEARCH_API_KEY='" + _ES_KEY + "'",
+    ],
+)
+def test_elasticsearch_api_key_true_positives(text):
+    matched = _es(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert text[matched[0].span_start : matched[0].span_end] == _ES_KEY
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "blob " + _ES_KEY,
+        "api_key=" + _ES_KEY,  # too generic an anchor on its own
+        "Authorization: Basic " + _ES_KEY,
+        "Authorization: ApiKey " + _ES_KEY[:27] + "7" + _ES_KEY[28:],
+        "Authorization: ApiKey $ELASTIC_API_KEY",
+    ],
+)
+def test_elasticsearch_api_key_true_negatives(text):
+    assert _es(text) == []
+
+
+def test_elasticsearch_api_key_documentation_example_is_a_test_value():
+    matched = _es("Authorization: ApiKey " + _ES_DOC)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20

@@ -13,6 +13,7 @@ true positive, true negative, test value, and collision tests.
 """
 
 import base64 as _pb_b64
+import zlib as _pb_zlib
 import random as _pb_random
 
 # fmt: off
@@ -633,6 +634,42 @@ _KRB_USER_CASES = (
     "$krb5asrep$" + "23$svc_backup@CORP.EXAMPLE.LOCAL:" + _krb_hex(32) + "$" + _krb_hex(332)
 )
 _KRB_BARE_CASES = "$krb5asrep$" + "23$" + _krb_hex(32) + "$" + _krb_hex(290)
+
+# Convex deploy key body: base64 of a {"v2": ...} JSON object, built at import
+# time so no contiguous key is committed.
+_CONVEX_BODY = _pb_b64.b64encode(
+    ('{"v2":"' + "5f8a1c3e9b7d2f4a6c8e" + "0b1d3f5a7c9e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a" + '"}').encode()
+).decode()
+
+# GitLab routable tokens: <prefix><base64url(16 random bytes + routing payload +
+# length byte)>.01.<2 base36 payload length><7 base36 CRC32>, the layout of
+# GitLab's RoutableToken generator. Seeded, built at import time.
+_GLR_RNG = _pb_random.Random(20261027)
+
+
+def _b36(n):
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = digits[r] + out
+        if n == 0:
+            return out
+
+
+def _gitlab_routable(prefix, payload):
+    raw = bytes(_GLR_RNG.getrandbits(8) for _ in range(16)) + payload.encode()
+    raw += bytes([len(payload)])
+    body = _pb_b64.urlsafe_b64encode(raw).decode().rstrip("=")
+    encoded = prefix + body + ".01." + _b36(len(body)).rjust(2, "0")
+    return encoded + _b36(_pb_zlib.crc32(encoded.encode())).rjust(7, "0")
+
+
+# Elasticsearch encoded API keys: base64 of '<20-char id>:<22-char api_key>'.
+# SYNTHETIC, built at import time.
+_ES_KEY_A = _pb_b64.b64encode(("Tq3mZb8LRpWx2cN9vD4k" + ":" + "Hn7Ys1Qe5Vt0Kr3Mw8Jb2A").encode()).decode()
+_ES_KEY_B = _pb_b64.b64encode(("pL9xW2qT7vR4nZ6mK1sB" + ":" + "c8Fd3Gh5Jk0Lq2Wx9Er4Ty").encode()).decode()
+
 
 PATTERN_TEST_CASES: dict[str, dict] = {
 
@@ -7612,6 +7649,232 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "$krb5tgs$" + "23$" + _krb_hex(32) + "$" + _krb_hex(300),
             # Prose naming the prefix.
             "AS-REP roasting output starts with $krb5asrep$23$ in hashcat format.",
+        ],
+        "min_confidence": 0.90,
+    },
+    # DeepL API Free authentication key (GUID + ':fx'). SYNTHETIC values.
+    # Source: https://developers.deepl.com/docs/getting-started/auth
+    "deepl_api_free_key": {
+        "positives": [
+            "DEEPL_AUTH_KEY=3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f:fx",
+            "Authorization: DeepL-Auth-Key 8b0e4d2a-1c6f-4a9e-" + "b3d7-5e2f9a1c0d8b:fx",
+            'translator = deepl.Translator("c7a2e9f1-0b4d-4c8e-' + 'a6f3-9d1b2e5c7a04:fx")',
+        ],
+        "negatives": [
+            # A DeepL API Pro key is the bare GUID; without ':fx' it is
+            # indistinguishable from any other GUID and is not matched.
+            "DEEPL_AUTH_KEY=3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f",
+            # Suffix must end the token.
+            "ref 3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f:fxa",
+            # One hex short in the last group.
+            "DEEPL_AUTH_KEY=3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7:fx",
+        ],
+        "min_confidence": 0.90,
+    },
+    # JetBrains YouTrack / Hub permanent token. SYNTHETIC values.
+    # Source: https://www.jetbrains.com/help/youtrack/devportal/authentication-with-permanent-token.html
+    "youtrack_permanent_token": {
+        "positives": [
+            "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp.Q0kgc3luYw==." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a",
+            "Authorization: Bearer perm:" + "YWxpY2U=.UmVsZWFzZSBib3Q=." + "h4Tz8Wq1Lm6Nc0Vb3Xr9Ks2Yd7Pf5G",
+            'token: "perm:' + 'ZGV2b3Bz.R3JhZmFuYQ.' + 'Pa3Nf8Lk1Qz6Wm0Rt9Vy4Hb2Jc7Xd5"',
+        ],
+        "negatives": [
+            # Random tail one character short.
+            "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp.Q0kgc3luYw==." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0",
+            # Only two segments.
+            "YOUTRACK_TOKEN=perm:" + "c3ZjLWNp." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a",
+            # Not the 'perm:' literal.
+            "YOUTRACK_TOKEN=prem:" + "c3ZjLWNp.Q0kgc3luYw==." + "Q7mK2pX9vB4nR8tL1wZ6yH3jF5dS0a",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Splunk HTTP Event Collector token. SYNTHETIC values.
+    # Source: https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/9.4/get-data-with-http-event-collector/format-events-for-http-event-collector
+    "splunk_hec_token": {
+        "positives": [
+            'curl -H "Authorization: Splunk b7e41c2a-9d3f-4a6e-' + '8c15-2f0a7d9e3b64" https://splunk.example.com:8088/services/collector',
+            'headers = {"Authorization": "Splunk 4f8a2c6e-1b9d-4e3a-' + 'a7c5-0d2e6f9b1c38"}',
+            "SPLUNK_HEC_TOKEN=9c3e7a1f-5b2d-4c8e-" + "b6a4-1e0f3d7c9a52",
+        ],
+        "negatives": [
+            # A GUID with no Splunk anchor is not a finding.
+            "request_id=b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b64",
+            # Some other auth scheme.
+            "X-Trace: Splunkish b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b64",
+            # Malformed GUID.
+            "Authorization: Splunk b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b6",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Jenkins setup-wizard initial admin password. SYNTHETIC values.
+    # Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/install/SetupWizard.java
+    "jenkins_initial_admin_password": {
+        "positives": [
+            "Please use the following password to proceed to installation:\n\n"
+            + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316"
+            + "\n\nThis may also be found at: /var/jenkins_home/secrets/initialAdminPassword",
+            "$ sudo cat /var/lib/jenkins/secrets/initialAdminPassword\n"
+            + "9b3e70c4a1f2d856" + "0e7c4b9a2d1f8e63\n",
+            "PS> type C:\\ProgramData\\Jenkins\\.jenkins\\secrets\\initialAdminPassword\r\n"
+            + "c2a7e19f4b0d8356" + "a1e4f7c92b6d0e38",
+        ],
+        "negatives": [
+            # 32 hex with no Jenkins anchor (an MD5, a commit-ish).
+            "md5: " + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316",
+            # Path mentioned, value on the same line (not the cat output form).
+            "see secrets/initialAdminPassword " + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316",
+            # 34 hex after the banner.
+            "proceed to installation:\n\n" + "4f1d8c2a9e7b3065" + "d1a4c8f2e9b70316ab",
+        ],
+        "min_confidence": 0.85,
+    },
+    # SonarQube legacy (unprefixed) user token. SYNTHETIC values.
+    # Source: https://github.com/SonarSource/sonarqube/blob/master/server/sonar-webserver-auth/src/main/java/org/sonar/server/usertoken/TokenGeneratorImpl.java
+    "sonarqube_legacy_token": {
+        "positives": [
+            "mvn sonar:sonar -Dsonar.host.url=https://sonarcloud.io -Dsonar.login="
+            + "a3f9c1e7b5d20486f1e3" + "c9a7b5d2e08461f3c9a7",
+            "SONAR_TOKEN=" + "5c8e2a7f1d9b3e604a2c" + "8f1e7d3b9a05c6e2f4b8",
+            "properties { property 'sonar.login', '" + "e1b7d3f9a5c20864e1b7" + "d3f9a5c20864e1b7d3f9' }",
+        ],
+        "negatives": [
+            # npm lockfile integrity hash for a sonarqube-* package.
+            "sonarqube-reporter-1.2.4.tgz#" + "3b335d612137949d2f21" + "fcc6c8c8164db7603227",
+            # Variable reference, not a value.
+            "/d:sonar.login=$(SONAR_LOGIN)",
+            # Bare 40 hex (a SHA-1) with no Sonar anchor.
+            "commit " + "a3f9c1e7b5d20486f1e3" + "c9a7b5d2e08461f3c9a7",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Kubernetes bootstrap token. SYNTHETIC values.
+    # Source: https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+    "kubernetes_bootstrap_token": {
+        "positives": [
+            "kubeadm join 10.0.0.5:6443 --token q7r2xk." + "9m4tz1w8bc6np3vd"
+            + " --discovery-token-ca-cert-hash sha256:" + "ab" * 32,
+            'bootstrapTokens:\n- token: "w3n8pd.' + 'k2v7c1q9x4h6m0zr"\n  ttl: "24h0m0s"',
+            "users:\n- name: tls-bootstrap-token-user\n  user:\n    token: h5c0ma." + "t8q3w6e1y9u4i7oz",
+        ],
+        "negatives": [
+            # A 6.16 run with no kubeadm anchor.
+            "build q7r2xk." + "9m4tz1w8bc6np3vd",
+            # The CA hash flag is not a token.
+            "--discovery-token-ca-cert-hash q7r2xk." + "9m4tz1w8bc6np3vd",
+            # Secret part one character long.
+            "kubeadm join --token q7r2xk." + "9m4tz1w8bc6np3vdx",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Convex deploy key. SYNTHETIC values (base64 JSON body built at import).
+    # Source: https://docs.convex.dev/cli/deploy-key-types
+    "convex_deploy_key": {
+        "positives": [
+            "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|" + _CONVEX_BODY,
+            'CONVEX_DEPLOY_KEY="preview:acme-team:web-app|' + _CONVEX_BODY + '"',
+            "export CONVEX_DEPLOY_KEY='dev:joyful-capybara-123|" + _CONVEX_BODY + "'",
+        ],
+        "negatives": [
+            # The documentation's elided form.
+            "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123|eyJ2...0=",
+            # Unknown key type.
+            "CONVEX_DEPLOY_KEY=staging:qualified-jaguar-123|" + _CONVEX_BODY,
+            # No pipe separator.
+            "CONVEX_DEPLOY_KEY=prod:qualified-jaguar-123 " + _CONVEX_BODY,
+        ],
+        "min_confidence": 0.90,
+    },
+    # GitLab routable token. SYNTHETIC values generated at import time with the
+    # layout of GitLab's RoutableToken generator (see _gitlab_routable below).
+    # Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/authn/token_field/generator/routable_token.rb
+    "gitlab_routable_token": {
+        "positives": [
+            "CI_RUNNER_TOKEN=" + _gitlab_routable("glrt-" + "t1_", "c:1\no:2\np:3\nu:4"),
+            "token: " + _gitlab_routable("glwt-", "c:1\ng:9\no:2"),
+            "deploy_token=" + _gitlab_routable("gldt-", "c:1\no:2\np:7"),
+        ],
+        "negatives": [
+            # Classic 20-character runner token belongs to its own pattern.
+            "CI_RUNNER_TOKEN=glrt-" + "Ab3dEf9hJk2mNp4qRs6t",
+            # Wrong version segment.
+            "CI_RUNNER_TOKEN=" + _gitlab_routable("glrt-", "c:1\no:2").replace(".01.", ".02."),
+            # Not a GitLab prefix.
+            "TOKEN=" + _gitlab_routable("glxx-", "c:1\no:2"),
+        ],
+        "min_confidence": 0.90,
+    },
+    # HashiCorp Consul ACL token SecretID. SYNTHETIC values.
+    # Source: https://developer.hashicorp.com/consul/api-docs/api-structure
+    "consul_acl_token": {
+        "positives": [
+            'curl --header "X-Consul-Token: 3c8e1f5a-7b2d-49e6-' + 'a0c4-d9f2b6e81a37" http://127.0.0.1:8500/v1/kv/app',
+            "export CONSUL_HTTP_TOKEN=8f2a6c1e-4d9b-4e7a-" + "b5c3-1e0d7f9a2b64",
+            "AccessorID:       5e1c9a7f-2b4d-4f8e-a6c0-3d7b9e1f5a28\n"
+            "SecretID:         b4d8f2a6-1c9e-47b3-" + "8a5d-0f6e2c9b7d13",
+        ],
+        "negatives": [
+            # AccessorID is a public identifier, not the secret.
+            "AccessorID:       3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a37",
+            # A UUID with no Consul anchor.
+            "request_id=3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a37",
+            # Malformed UUID.
+            "X-Consul-Token: 3c8e1f5a-7b2d-49e6-" + "a0c4-d9f2b6e81a3",
+        ],
+        "min_confidence": 0.85,
+    },
+    # HashiCorp Nomad ACL token Secret ID. SYNTHETIC values.
+    # Source: https://developer.hashicorp.com/nomad/api-docs
+    "nomad_acl_token": {
+        "positives": [
+            'curl --header "X-Nomad-Token: 7a2f9c4e-1b6d-4e8a-' + '93c5-0d8e2f6b4a71" https://nomad.example.com:4646/v1/jobs',
+            "export NOMAD_TOKEN=c5e1a9f3-6d2b-4a7e-" + "b8c0-4f9d1e3a7b25",
+            "Accessor ID  = 1e9c5a3f-7b2d-4d6e-a8f0-2c4b6d8e0f13\n"
+            "Secret ID    = 6b0d4f8a-2e7c-49a1-" + "b3d5-8f1a0c6e4b97",
+        ],
+        "negatives": [
+            # Accessor ID is a public identifier, not the secret.
+            "Accessor ID  = 7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a71",
+            # A UUID with no Nomad anchor.
+            "alloc_id=7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a71",
+            # Malformed UUID.
+            "NOMAD_TOKEN=7a2f9c4e-1b6d-4e8a-" + "93c5-0d8e2f6b4a7",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Rundeck API token. SYNTHETIC values.
+    # Source: https://docs.rundeck.com/docs/api/
+    "rundeck_api_token": {
+        "positives": [
+            'curl -H "X-Rundeck-Auth-Token: Kq7Wm2Xr9Tz4Vb6N' + 'p1Lc8Hd3Fj5Gs0Ya" https://rundeck.example.com/api/41/projects',
+            "GET /api/41/job/a1b2/run?authtoken=Rt5Yb8Nc2Wq6Hk1M" + "z9Lp3Dx7Gv0Fs4Je HTTP/1.1",
+            "export RD_TOKEN=Bn4Kx8Qw1Zr6Tm3V" + "c9Hy2Lp7Df5Gj0Sa",
+        ],
+        "negatives": [
+            # 32 alphanumerics with no Rundeck anchor.
+            "session=Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Ya",
+            # 33 characters.
+            "X-Rundeck-Auth-Token: Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Yaz",
+            # YAML key rather than the URL parameter (ngrok's 'authtoken:' form).
+            "authtoken: Kq7Wm2Xr9Tz4Vb6N" + "p1Lc8Hd3Fj5Gs0Ya",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Elasticsearch / Kibana encoded API key. SYNTHETIC values (built above).
+    # Source: https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-create-api-key
+    "elasticsearch_api_key": {
+        "positives": [
+            'curl -H "Authorization: ApiKey ' + _ES_KEY_A + '" https://es.example.com:9200/_search',
+            "ELASTIC_API_KEY=" + _ES_KEY_B,
+            'headers = {"Authorization": "ApiKey ' + _ES_KEY_A + '"}',
+        ],
+        "negatives": [
+            # Encoded key with no Elastic anchor.
+            "blob " + _ES_KEY_A,
+            # Basic auth is a different scheme (basic_auth_header).
+            "Authorization: Basic " + _ES_KEY_A,
+            # ':' not at byte 20 (wrong landmark).
+            "Authorization: ApiKey " + _ES_KEY_A[:27] + "7" + _ES_KEY_A[28:],
         ],
         "min_confidence": 0.90,
     },
