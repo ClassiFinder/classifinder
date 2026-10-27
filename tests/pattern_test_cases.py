@@ -7615,6 +7615,25 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # DeepL API Free authentication key (GUID + ':fx'). SYNTHETIC values.
+    # Source: https://developers.deepl.com/docs/getting-started/auth
+    "deepl_api_free_key": {
+        "positives": [
+            "DEEPL_AUTH_KEY=3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f:fx",
+            "Authorization: DeepL-Auth-Key 8b0e4d2a-1c6f-4a9e-" + "b3d7-5e2f9a1c0d8b:fx",
+            'translator = deepl.Translator("c7a2e9f1-0b4d-4c8e-' + 'a6f3-9d1b2e5c7a04:fx")',
+        ],
+        "negatives": [
+            # A DeepL API Pro key is the bare GUID; without ':fx' it is
+            # indistinguishable from any other GUID and is not matched.
+            "DEEPL_AUTH_KEY=3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f",
+            # Suffix must end the token.
+            "ref 3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f:fxa",
+            # One hex short in the last group.
+            "DEEPL_AUTH_KEY=3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7:fx",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

@@ -21057,3 +21057,63 @@ def test_kerberos_asrep_hash_redaction():
     assert _KRB_ENC not in redacted_text
     assert redacted_text.startswith("[*] ")
     assert redacted_text.endswith("\n[-] done")
+
+
+# --- DeepL API Free authentication key -----------------------------------------
+# DeepL marks Free-plan keys with a ':fx' suffix after a dashed GUID; that suffix
+# is the entire anchor. Values are SYNTHETIC and split so no contiguous key
+# literal is committed.
+# Source: https://developers.deepl.com/docs/getting-started/auth
+_DEEPL_KEY = "3f1c9b2e-7a4d-4e8b-" + "9c1f-2d6a8e0b4c7f" + ":fx"
+_DEEPL_DOC_EXAMPLE = "279a2e9d-83b3-c416-" + "7e2d-f721593e42a0" + ":fx"
+
+
+def _deepl(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "deepl_api_free_key"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DEEPL_AUTH_KEY=" + _DEEPL_KEY,
+        "Authorization: DeepL-Auth-Key " + _DEEPL_KEY,
+        'deepl.Translator("' + _DEEPL_KEY + '")',
+        "auth_key: '" + _DEEPL_KEY.upper().replace(":FX", ":fx") + "'",
+    ],
+)
+def test_deepl_api_free_key_true_positives(text):
+    matched = _deepl(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    value = text[matched[0].span_start : matched[0].span_end]
+    assert value.endswith(":fx") and len(value) == 39
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DEEPL_AUTH_KEY=" + _DEEPL_KEY[:-3],  # Pro key / any bare GUID
+        "ref " + _DEEPL_KEY + "a",  # suffix must end the token
+        "x" + _DEEPL_KEY,  # left boundary
+        "DEEPL_AUTH_KEY=" + _DEEPL_KEY.replace("-", "", 1),  # wrong layout
+    ],
+)
+def test_deepl_api_free_key_true_negatives(text):
+    assert _deepl(text) == []
+
+
+def test_deepl_api_free_key_documentation_example_is_a_test_value():
+    matched = _deepl("DEEPL_AUTH_KEY=" + _DEEPL_DOC_EXAMPLE)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+    assert matched[0].is_likely_test_value
+
+
+def test_deepl_api_free_key_redacts_whole_key():
+    from app.engine.redactor import redact
+
+    text = "DEEPL_AUTH_KEY=" + _DEEPL_KEY
+    findings = scan(text, min_confidence=0.5)
+    redacted, _ = redact(text, findings)
+    assert _DEEPL_KEY not in redacted
