@@ -21172,3 +21172,52 @@ def test_youtrack_permanent_token_documentation_examples_are_test_values(example
     assert len(matched) == 1
     assert matched[0].confidence <= 0.20
     assert matched[0].is_likely_test_value
+
+
+# --- Splunk HTTP Event Collector token ------------------------------------------
+# A dashed GUID is only a finding behind Splunk's own 'Authorization: Splunk'
+# scheme or an HEC token field name. Values are SYNTHETIC and split.
+# Source: https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/9.4/get-data-with-http-event-collector/format-events-for-http-event-collector
+_HEC = "b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b64"
+
+
+def _hec(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "splunk_hec_token"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'curl -H "Authorization: Splunk ' + _HEC + '" https://splunk.example.com:8088/services/collector',
+        'headers={"Authorization": "Splunk ' + _HEC + '"}',
+        "authorization: splunk " + _HEC.upper(),
+        "SPLUNK_HEC_TOKEN=" + _HEC,
+        "hec_token: '" + _HEC + "'",
+        "splunk-hec-token = " + _HEC,
+    ],
+)
+def test_splunk_hec_token_true_positives(text):
+    matched = _hec(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert text[matched[0].span_start : matched[0].span_end].lower() == _HEC
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "request_id=" + _HEC,
+        "Authorization: Bearer " + _HEC,
+        "Authorization: Splunk " + _HEC + "0",
+        "Splunk " + _HEC,  # scheme word without the Authorization header
+    ],
+)
+def test_splunk_hec_token_true_negatives(text):
+    assert _hec(text) == []
+
+
+def test_splunk_hec_token_documentation_example_is_a_test_value():
+    doc = "12345678-1234-1234-" + "1234-1234567890AB"
+    matched = _hec('curl -H "Authorization: Splunk ' + doc + '"')
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20

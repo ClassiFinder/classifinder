@@ -7652,6 +7652,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Splunk HTTP Event Collector token. SYNTHETIC values.
+    # Source: https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/9.4/get-data-with-http-event-collector/format-events-for-http-event-collector
+    "splunk_hec_token": {
+        "positives": [
+            'curl -H "Authorization: Splunk b7e41c2a-9d3f-4a6e-' + '8c15-2f0a7d9e3b64" https://splunk.example.com:8088/services/collector',
+            'headers = {"Authorization": "Splunk 4f8a2c6e-1b9d-4e3a-' + 'a7c5-0d2e6f9b1c38"}',
+            "SPLUNK_HEC_TOKEN=9c3e7a1f-5b2d-4c8e-" + "b6a4-1e0f3d7c9a52",
+        ],
+        "negatives": [
+            # A GUID with no Splunk anchor is not a finding.
+            "request_id=b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b64",
+            # Some other auth scheme.
+            "X-Trace: Splunkish b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b64",
+            # Malformed GUID.
+            "Authorization: Splunk b7e41c2a-9d3f-4a6e-" + "8c15-2f0a7d9e3b6",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on
