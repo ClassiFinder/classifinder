@@ -21827,3 +21827,93 @@ def test_phase_service_token_all_zero_placeholder_is_a_test_value():
 def test_phase_service_token_does_not_collide_with_shopify():
     findings = scan("PHASE_SERVICE_TOKEN=" + _PH_SVC, min_confidence=0.01)
     assert {f.type for f in findings} == {"phase_service_token"}
+
+
+# --- Appwrite standard API key ----------------------------------------------------
+# 'standard_' + bin2hex(random_bytes(128)) = 'standard_' + 256 lowercase hex, per
+# the vendor's own key generator (Keys/Create.php; API_KEY_STANDARD = 'standard' in
+# app/init/constants.php). SYNTHETIC values, split so no scannable key literal
+# exists in source.
+# Source: https://github.com/appwrite/appwrite/blob/main/src/Appwrite/Platform/Modules/Project/Http/Project/Keys/Create.php
+_AW_BODY = (
+    "0fb2bdf89cab24509cae44a06a15a3c4" + "065e180985b239caea145ced41608e61"
+    "dee398de2c289d8639af223960c934db" + "b772409db8598f6870ebebc52b748441"
+    "f3eb152844240b75a4554fc2eb3c2009" + "31fde9f8971450be1283cf2fc8c96220"
+    "655492c6e95bf59f3f2115a87d1893d5" + "dbe93b47968402d8802380b1918558c1"
+)
+_AW_BODY2 = (
+    "53a67d1927cd2bb314bb89cf4ecb5f67" + "656b2f61993b87d96be7cdcdc2ce9f3c"
+    "b3f821bb7b418de3cd9fcd1396c048ea" + "902c6658a13deb8ef031fe5e6c00b81d"
+    "2f2ee845cfb3b1babdd592139fa3a1fc" + "3a62892f655971f4035151f00906e05b"
+    "8360c9ce29d9edc2bedb18ab76ea20f4" + "94b952ce5d53bbea29090fbce0f21320"
+)
+_AW_KEY = "standard_" + _AW_BODY
+_AW_KEY2 = "standard_" + _AW_BODY2
+
+
+def _aw(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "appwrite_standard_api_key"]
+
+
+def test_appwrite_standard_api_key_body_is_256_hex():
+    assert len(_AW_BODY) == 256 and len(_AW_BODY2) == 256
+    assert set(_AW_BODY + _AW_BODY2) <= set("0123456789abcdef")
+
+
+@pytest.mark.parametrize(
+    "text,key",
+    [
+        ("APPWRITE_API_KEY=" + _AW_KEY, _AW_KEY),
+        ("export APPWRITE_KEY='" + _AW_KEY + "'", _AW_KEY),
+        ('appwrite:\n  api_key: "' + _AW_KEY2 + '"', _AW_KEY2),
+        ("client.setKey('" + _AW_KEY2 + "');", _AW_KEY2),
+        ("X-Appwrite-Key: " + _AW_KEY, _AW_KEY),
+        # Bare key with no context — the fixed 256-hex body is the anchor.
+        (_AW_KEY, _AW_KEY),
+    ],
+)
+def test_appwrite_standard_api_key_true_positives(text, key):
+    matched = _aw(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+    assert text[matched[0].span_start : matched[0].span_end] == key
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # One hex short.
+        "APPWRITE_API_KEY=standard_" + _AW_BODY[:-1],
+        # One hex long.
+        "APPWRITE_API_KEY=standard_" + _AW_BODY + "a",
+        # Uppercase hex — bin2hex only emits lowercase.
+        "APPWRITE_API_KEY=standard_" + _AW_BODY.upper(),
+        # Non-hex character in the body.
+        "APPWRITE_API_KEY=standard_" + _AW_BODY[:-1] + "g",
+        # Sibling key type with a different generator (out of scope).
+        "APPWRITE_API_KEY=organization_" + _AW_BODY,
+        # Embedded after a word character.
+        "API_KEY_standard_" + _AW_BODY,
+        "nonstandard_" + _AW_BODY,
+        # Missing underscore.
+        "standard" + _AW_BODY,
+        # Prose naming the format.
+        "Appwrite standard keys look like standard_<256 hex characters>",
+        "the standard_deviation of the sample was 0.42",
+    ],
+)
+def test_appwrite_standard_api_key_true_negatives(text):
+    assert _aw(text) == []
+
+
+def test_appwrite_standard_api_key_all_zero_placeholder_is_a_test_value():
+    placeholder = "standard_" + "0" * 256
+    matched = _aw("APPWRITE_API_KEY=" + placeholder)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_appwrite_standard_api_key_beats_generic_env_match():
+    findings = scan("APPWRITE_API_KEY=" + _AW_KEY, min_confidence=0.01)
+    assert {f.type for f in findings} == {"appwrite_standard_api_key"}

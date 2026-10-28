@@ -7904,6 +7904,34 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Appwrite standard API key. SYNTHETIC values.
+    # Source: https://github.com/appwrite/appwrite/blob/main/src/Appwrite/Platform/Modules/Project/Http/Project/Keys/Create.php
+    "appwrite_standard_api_key": {
+        "positives": [
+            "APPWRITE_API_KEY=standard_"
+            + "0fb2bdf89cab24509cae44a06a15a3c4" + "065e180985b239caea145ced41608e61"
+            + "dee398de2c289d8639af223960c934db" + "b772409db8598f6870ebebc52b748441"
+            + "f3eb152844240b75a4554fc2eb3c2009" + "31fde9f8971450be1283cf2fc8c96220"
+            + "655492c6e95bf59f3f2115a87d1893d5" + "dbe93b47968402d8802380b1918558c1",
+            "const client = new Client().setKey('standard_"
+            + "53a67d1927cd2bb314bb89cf4ecb5f67" + "656b2f61993b87d96be7cdcdc2ce9f3c"
+            + "b3f821bb7b418de3cd9fcd1396c048ea" + "902c6658a13deb8ef031fe5e6c00b81d"
+            + "2f2ee845cfb3b1babdd592139fa3a1fc" + "3a62892f655971f4035151f00906e05b"
+            + "8360c9ce29d9edc2bedb18ab76ea20f4" + "94b952ce5d53bbea29090fbce0f21320"
+            + "');",
+        ],
+        "negatives": [
+            # 255 hex characters — one short of the generator's 128 bytes.
+            "APPWRITE_API_KEY=standard_"
+            + "0fb2bdf89cab24509cae44a06a15a3c4" + "065e180985b239caea145ced41608e61"
+            + "dee398de2c289d8639af223960c934db" + "b772409db8598f6870ebebc52b748441"
+            + "f3eb152844240b75a4554fc2eb3c2009" + "31fde9f8971450be1283cf2fc8c96220"
+            + "655492c6e95bf59f3f2115a87d1893d5" + "dbe93b47968402d8802380b1918558c1"[:-1],
+            # Prose naming the prefix but carrying no key.
+            "Appwrite standard keys start with standard_ followed by 256 hex characters",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
