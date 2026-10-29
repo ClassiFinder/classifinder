@@ -7932,6 +7932,27 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Gitpod personal access token. SYNTHETIC values.
+    # Source: https://github.com/gitpod-io/gitpod/blob/main/components/public-api-server/pkg/auth/personal_access_token.go
+    "gitpod_personal_access_token": {
+        "positives": [
+            "GITPOD_TOKEN=gitpod_pat_"
+            + "78XGVcivLGtZ-OxH2zCmeLaXakBROf7W053R8Y_CpbQ"
+            + "." + "YbP2jCMASD16kUMN1831jiDgf0gf5oj7Spte8Vuc",
+            "Authorization: Bearer gitpod_pat_"
+            + "dRKemoUdmrOuwjWf4uaIs0UE3--O3wn6Nn9bihLIkmU"
+            + "." + "DtNX1ycbEsspKgFY868a86IImocgP7tizmo6UhMG",
+        ],
+        "negatives": [
+            # Value one character short of generateTokenValue(40).
+            "GITPOD_TOKEN=gitpod_pat_"
+            + "78XGVcivLGtZ-OxH2zCmeLaXakBROf7W053R8Y_CpbQ"
+            + "." + "YbP2jCMASD16kUMN1831jiDgf0gf5oj7Spte8Vu",
+            # Prose naming the prefix but carrying no token.
+            "Gitpod personal access tokens start with gitpod_pat_ followed by a signature",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
