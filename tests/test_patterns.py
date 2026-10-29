@@ -21917,3 +21917,97 @@ def test_appwrite_standard_api_key_all_zero_placeholder_is_a_test_value():
 def test_appwrite_standard_api_key_beats_generic_env_match():
     findings = scan("APPWRITE_API_KEY=" + _AW_KEY, min_confidence=0.01)
     assert {f.type for f in findings} == {"appwrite_standard_api_key"}
+
+
+# --- Gitpod personal access token ---------------------------------------------------
+# 'gitpod_pat_' + base64.RawURLEncoding(HMAC-SHA256 signature) (43 chars) + '.' +
+# generateTokenValue(40) (40 alphanumerics), per the vendor's own generator
+# (components/public-api-server/pkg/auth/personal_access_token.go). SYNTHETIC values,
+# split so no scannable token literal exists in source.
+# Source: https://github.com/gitpod-io/gitpod/blob/main/components/public-api-server/pkg/auth/personal_access_token.go
+_GP_SIG = "78XGVcivLGtZ-OxH2zCmeLaXakBROf7W053R8Y_CpbQ"
+_GP_VAL = "YbP2jCMASD16kUMN1831jiDgf0gf5oj7Spte8Vuc"
+_GP_SIG2 = "dRKemoUdmrOuwjWf4uaIs0UE3--O3wn6Nn9bihLIkmU"
+_GP_VAL2 = "DtNX1ycbEsspKgFY868a86IImocgP7tizmo6UhMG"
+_GP_TOK = "gitpod_pat_" + _GP_SIG + "." + _GP_VAL
+_GP_TOK2 = "gitpod_pat_" + _GP_SIG2 + "." + _GP_VAL2
+
+
+def _gp(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "gitpod_personal_access_token"
+    ]
+
+
+def test_gitpod_personal_access_token_fixture_widths():
+    assert len(_GP_SIG) == 43 and len(_GP_SIG2) == 43
+    assert len(_GP_VAL) == 40 and len(_GP_VAL2) == 40
+    # A 32-byte HMAC-SHA256 digest in unpadded base64url is always 43 characters.
+    assert len(_wk_b64.urlsafe_b64encode(b"\x00" * 32).rstrip(b"=")) == 43
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("GITPOD_TOKEN=" + _GP_TOK, _GP_TOK),
+        ("export GITPOD_PAT='" + _GP_TOK + "'", _GP_TOK),
+        ("Authorization: Bearer " + _GP_TOK2, _GP_TOK2),
+        ('{"token": "' + _GP_TOK2 + '"}', _GP_TOK2),
+        ("gitpod login --token " + _GP_TOK, _GP_TOK),
+        # Bare token with no context — the literal prefix + fixed layout is the anchor.
+        (_GP_TOK2, _GP_TOK2),
+    ],
+)
+def test_gitpod_personal_access_token_true_positives(text, tok):
+    matched = _gp(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Signature one short / one long.
+        "GITPOD_TOKEN=gitpod_pat_" + _GP_SIG[:-1] + "." + _GP_VAL,
+        "GITPOD_TOKEN=gitpod_pat_" + _GP_SIG + "A." + _GP_VAL,
+        # Value one short / one long.
+        "GITPOD_TOKEN=gitpod_pat_" + _GP_SIG + "." + _GP_VAL[:-1],
+        "GITPOD_TOKEN=gitpod_pat_" + _GP_SIG + "." + _GP_VAL + "x",
+        # Non-alphanumeric character in the value (generateTokenValue is 0-9A-Za-z).
+        "GITPOD_TOKEN=gitpod_pat_" + _GP_SIG + "." + _GP_VAL[:-1] + "-",
+        # Missing the '.' separator.
+        "GITPOD_TOKEN=gitpod_pat_" + _GP_SIG + _GP_VAL,
+        # Embedded after a word character.
+        "mygitpod_pat_" + _GP_SIG + "." + _GP_VAL,
+        # Prose naming the format.
+        "Gitpod PATs look like gitpod_pat_<signature>.<value>",
+    ],
+)
+def test_gitpod_personal_access_token_true_negatives(text):
+    assert _gp(text) == []
+
+
+def test_gitpod_personal_access_token_vendor_doc_example_is_a_test_value():
+    # The example printed in the vendor's own doc comment.
+    example = (
+        "gitpod_pat_" + "ko8KC1tJ-GkqIwqNliwF4tBUk2Jd5nEe9qOWqYfobtY"
+        + "." + "6ZDQVanpaTKj9hQuji0thCe8KFCcmEDGpsaTkSSb"
+    )
+    matched = _gp("GITPOD_TOKEN=" + example)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_gitpod_personal_access_token_placeholder_is_a_test_value():
+    placeholder = "gitpod_pat_" + "A" * 43 + "." + "0" * 40
+    matched = _gp("GITPOD_TOKEN=" + placeholder)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_gitpod_personal_access_token_does_not_collide():
+    # Not shadowed by ory_network_api_key ('ory_pat_') or any generic pattern.
+    findings = scan("GITPOD_TOKEN=" + _GP_TOK, min_confidence=0.01)
+    assert {f.type for f in findings} == {"gitpod_personal_access_token"}
