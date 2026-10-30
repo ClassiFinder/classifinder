@@ -7953,6 +7953,27 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # dotenv-vault DOTENV_KEY. SYNTHETIC values.
+    # Source: https://github.com/motdotla/dotenv/blob/v16.4.5/lib/main.js
+    "dotenv_vault_key": {
+        "positives": [
+            'DOTENV_KEY="dotenv://:key_'
+            + "8f738da60c5fcedafa5114e504df7fd2" + "057df9f2f02ac8d18aa6937e9d1e0f02"
+            + '@dotenvx.com/vault/.env.vault?environment=production"',
+            "DOTENV_KEY=dotenv://:key_"
+            + "00d64bb7d4beaae488b218b5913327b2" + "e27b1775fba25b71a009be0e553fbf1b"
+            + "@dotenv.org/vault/.env.vault?environment=ci",
+        ],
+        "negatives": [
+            # Key one hex character short of the vendor's 64.
+            "DOTENV_KEY=dotenv://:key_"
+            + "00d64bb7d4beaae488b218b5913327b2" + "e27b1775fba25b71a009be0e553fbf1"
+            + "@dotenv.org/vault/.env.vault?environment=ci",
+            # The vendor's own truncated documentation placeholder.
+            "dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

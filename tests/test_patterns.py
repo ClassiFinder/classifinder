@@ -22011,3 +22011,105 @@ def test_gitpod_personal_access_token_does_not_collide():
     # Not shadowed by ory_network_api_key ('ory_pat_') or any generic pattern.
     findings = scan("GITPOD_TOKEN=" + _GP_TOK, min_confidence=0.01)
     assert {f.type for f in findings} == {"gitpod_personal_access_token"}
+
+
+# --- dotenv-vault DOTENV_KEY ----------------------------------------------------------
+# 'dotenv://:key_' + 64 lowercase hex + '@' + dotenvx.com / dotenv.org +
+# '/vault/.env.vault?environment=<env>', per the vendor's own parser (_parseVault /
+# decrypt in motdotla/dotenv lib/main.js, which reads the last 64 hex characters as
+# the AES-256-GCM key). SYNTHETIC values, split so no scannable key literal exists in
+# source. Only 'key_<hex>' is the secret span.
+# Source: https://github.com/motdotla/dotenv/blob/v16.4.5/lib/main.js
+_DV_HEX = "8f738da60c5fcedafa5114e504df7fd2" + "057df9f2f02ac8d18aa6937e9d1e0f02"
+_DV_HEX2 = "44c5fdb06563b4b2743570aa08a7f3a0" + "e3f4dde396615d172bf0f4d6faa971ae"
+_DV_KEY = "key_" + _DV_HEX
+_DV_KEY2 = "key_" + _DV_HEX2
+
+
+def _dv_uri(key, host="dotenvx.com", env="production"):
+    return "dotenv://:" + key + "@" + host + "/vault/.env.vault?environment=" + env
+
+
+def _dv(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "dotenv_vault_key"]
+
+
+def test_dotenv_vault_key_fixture_widths():
+    assert len(_DV_HEX) == 64 and len(_DV_HEX2) == 64
+
+
+@pytest.mark.parametrize(
+    "text,key",
+    [
+        ('DOTENV_KEY="' + _dv_uri(_DV_KEY) + '"', _DV_KEY),
+        ("export DOTENV_KEY='" + _dv_uri(_DV_KEY2, env="ci") + "'", _DV_KEY2),
+        # Legacy dotenv-vault host.
+        ("DOTENV_KEY=" + _dv_uri(_DV_KEY, host="dotenv.org", env="staging"), _DV_KEY),
+        # GitHub Actions / YAML secret value.
+        ("  DOTENV_KEY: " + _dv_uri(_DV_KEY2, env="development"), _DV_KEY2),
+        # Bare URI with no variable name — the scheme + host + vault path is the anchor.
+        (_dv_uri(_DV_KEY), _DV_KEY),
+    ],
+)
+def test_dotenv_vault_key_true_positives(text, key):
+    matched = _dv(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == key
+
+
+def test_dotenv_vault_key_comma_separated_rotation_finds_both():
+    # The vendor accepts a comma-separated list of keys during rotation.
+    text = "DOTENV_KEY=" + _dv_uri(_DV_KEY) + "," + _dv_uri(_DV_KEY2)
+    assert {text[f.span_start : f.span_end] for f in _dv(text)} == {_DV_KEY, _DV_KEY2}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Key one short / non-hex character.
+        "DOTENV_KEY=" + _dv_uri("key_" + _DV_HEX[:-1]),
+        "DOTENV_KEY=" + _dv_uri("key_" + _DV_HEX[:-1] + "g"),
+        # Key one long — not a vendor-generated width.
+        "DOTENV_KEY=" + _dv_uri("key_" + _DV_HEX + "a"),
+        # Missing the environment parameter (the vendor rejects these).
+        "DOTENV_KEY=dotenv://:" + _DV_KEY + "@dotenvx.com/vault/.env.vault",
+        # Unrelated host.
+        "DOTENV_KEY=" + _dv_uri(_DV_KEY, host="example.com"),
+        # The vendor's own truncated documentation placeholder.
+        "dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development",
+        # Prose naming the format.
+        "Set DOTENV_KEY to dotenv://:key_<64 hex>@dotenvx.com/vault/.env.vault?environment=prod",
+    ],
+)
+def test_dotenv_vault_key_true_negatives(text):
+    assert _dv(text) == []
+
+
+@pytest.mark.parametrize(
+    "hexpart",
+    [
+        # Keys printed in the vendor's own test suite (tests/test-config-vault.js).
+        "ddcaa26504cd70a6fef9801901c39815" + "38563a1767c297cb8416e8a38c62fe00",
+        "2c4d267b8c3865f921311612e6927366" + "6cc76c008acb577d3e22bc3046fba386",
+        "c04959b64473e43dd60c56a536ef8481" + "388528b16759736d89515c25eec69247",
+        # Placeholder shape.
+        "0" * 64,
+    ],
+)
+def test_dotenv_vault_key_vendor_examples_are_test_values(hexpart):
+    matched = _dv("DOTENV_KEY=" + _dv_uri("key_" + hexpart, env="development"))
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_dotenv_vault_key_does_not_collide():
+    # Not shadowed by a generic URI-credential, env-var or high-entropy pattern.
+    for text in (
+        "DOTENV_KEY=" + _dv_uri(_DV_KEY),
+        'DOTENV_KEY="' + _dv_uri(_DV_KEY) + '"',
+        _dv_uri(_DV_KEY2, host="dotenv.org"),
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"dotenv_vault_key"}, text
