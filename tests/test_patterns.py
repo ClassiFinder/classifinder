@@ -22113,3 +22113,94 @@ def test_dotenv_vault_key_does_not_collide():
     ):
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"dotenv_vault_key"}, text
+
+
+# --- Lightdash personal access / service-account token ------------------------------
+# 'ldpat_' / 'ldsvc_' (AuthTokenPrefix in packages/common/src/types/auth.ts) +
+# crypto.randomBytes(16).toString('hex') (PersonalAccessTokenModel.create()), i.e.
+# exactly 32 lowercase hex. SYNTHETIC values, split so no scannable token literal
+# exists in source.
+# Source: https://github.com/lightdash/lightdash/blob/main/packages/common/src/types/auth.ts
+_LD_HEX = "42f2e092ac5c288a718288c3871667ce"
+_LD_HEX2 = "0d7d22611e6b0c581917f4d3e92bd759"
+_LD_PAT = "ld" + "pat_" + _LD_HEX
+_LD_SVC = "ld" + "svc_" + _LD_HEX2
+
+
+def _ld(text):
+    return [
+        f
+        for f in scan(text, min_confidence=0.01)
+        if f.type == "lightdash_personal_access_token"
+    ]
+
+
+def test_lightdash_personal_access_token_fixture_widths():
+    assert len(_LD_HEX) == 32 and len(_LD_HEX2) == 32
+    # 16 random bytes hex-encoded is always 32 characters.
+    assert len(bytes(16).hex()) == 32
+    assert len(_LD_PAT) == 38 and len(_LD_SVC) == 38
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("LIGHTDASH_API_KEY=" + _LD_PAT, _LD_PAT),
+        ("export LIGHTDASH_API_KEY='" + _LD_SVC + "'", _LD_SVC),
+        ("Authorization: ApiKey " + _LD_PAT, _LD_PAT),
+        ("Authorization: Bearer " + _LD_SVC, _LD_SVC),
+        ('{"token": "' + _LD_PAT + '"}', _LD_PAT),
+        # Bare token with no context — the literal prefix + fixed width is the anchor.
+        (_LD_SVC, _LD_SVC),
+    ],
+)
+def test_lightdash_personal_access_token_true_positives(text, tok):
+    matched = _ld(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long.
+        "LIGHTDASH_API_KEY=ld" + "pat_" + _LD_HEX[:-1],
+        "LIGHTDASH_API_KEY=ld" + "pat_" + _LD_HEX + "a",
+        # Uppercase hex (the generator emits lowercase).
+        "LIGHTDASH_API_KEY=ld" + "pat_" + _LD_HEX.upper(),
+        # Non-hex character in the body.
+        "LIGHTDASH_API_KEY=ld" + "pat_" + _LD_HEX[:-1] + "g",
+        # OAuth prefixes are out of scope.
+        "LIGHTDASH_API_KEY=ld" + "app_" + _LD_HEX,
+        "LIGHTDASH_API_KEY=ld" + "ref_" + _LD_HEX,
+        # Embedded after a word character.
+        "myld" + "pat_" + _LD_HEX,
+        # Prose naming the format.
+        "Lightdash service-account tokens look like ldsvc_<32 hex>",
+    ],
+)
+def test_lightdash_personal_access_token_true_negatives(text):
+    assert _ld(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        "ld" + "pat_" + "0" * 32,
+        "ld" + "svc_" + "a" * 32,
+        "ld" + "pat_" + "0123456789abcdef" * 2,
+    ],
+)
+def test_lightdash_personal_access_token_placeholders_are_test_values(tok):
+    matched = _ld("LIGHTDASH_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_lightdash_personal_access_token_does_not_collide():
+    # Not shadowed by generic_api_key_env / generic_high_entropy or any other pattern.
+    for text in ("LIGHTDASH_API_KEY=" + _LD_PAT, "LIGHTDASH_API_KEY=" + _LD_SVC):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"lightdash_personal_access_token"}, text

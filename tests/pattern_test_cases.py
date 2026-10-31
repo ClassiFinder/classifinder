@@ -7974,6 +7974,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Lightdash personal access / service-account token. SYNTHETIC values
+    # (first 32 hex of SHA-256 over 'classifinder-lightdash-synthetic-<n>').
+    # Source: https://github.com/lightdash/lightdash/blob/main/packages/common/src/types/auth.ts
+    "lightdash_personal_access_token": {
+        "positives": [
+            "LIGHTDASH_API_KEY=ld" + "pat_" + "42f2e092ac5c288a718288c3871667ce",
+            "Authorization: Bearer ld" + "svc_" + "0d7d22611e6b0c581917f4d3e92bd759",
+        ],
+        "negatives": [
+            # Body one character short of 16 random bytes hex-encoded.
+            "LIGHTDASH_API_KEY=ld" + "pat_" + "42f2e092ac5c288a718288c3871667c",
+            # Prose naming the prefix but carrying no token.
+            "Lightdash personal access tokens start with ldpat_ followed by hex",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
