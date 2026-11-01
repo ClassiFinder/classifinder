@@ -7990,6 +7990,33 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Headscale API / pre-auth / OAuth key. SYNTHETIC values (identifier = first
+    # 12 hex of SHA-256 over 'classifinder-headscale-synthetic-id-<n>', secret =
+    # SHA-256 over '...-secret-<n>'; base64url-era value from SHA-512 base64url).
+    # Source: https://github.com/juanfont/headscale/blob/main/hscontrol/db/secret.go
+    "headscale_api_key": {
+        "positives": [
+            "HEADSCALE_API_KEY=hs" + "key-api-" + "45e177181f7f"
+            + "-" + "b1f04a9fba2b1122c1e748dfd70b4e38cdc88731545c9cd032e0bca381d98676",
+            "tailscale up --login-server https://hs.example.com --authkey hs" + "key-auth-"
+            + "20c90247ee4d-49f03b4834b3b481ed89d869b88efd755082d6e58bb6fa98be6767ff4b9e8f3c",
+            # base64url-era (0.28.0..0.29.3) identifier and secret.
+            "Authorization: Bearer hs" + "key-api-" + "wZtfp0Wu0Dl3"
+            + "-" + "yLnpXXqBnUpCmgh97CFJQrRi4JyoZ50CIYPLcfWhtCaxB1-cnareyEnJZ1O1xRv6",
+        ],
+        "negatives": [
+            # Secret one character short of keySecretLength.
+            "HEADSCALE_API_KEY=hs" + "key-api-" + "45e177181f7f"
+            + "-" + "b1f04a9fba2b1122c1e748dfd70b4e38cdc88731545c9cd032e0bca381d9867",
+            # Auth request id and masked legacy display form are not credentials.
+            "hs" + "key-authreq-" + "45e177181f7f"
+            + "-" + "b1f04a9fba2b1122c1e748dfd70b4e38cdc88731545c9cd032e0bca381d98676",
+            "hs" + "key-auth-legacy-" + "367d056cd785-***",
+            # Prose naming the prefix but carrying no key.
+            "headscale API keys start with hskey-api- followed by an identifier",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

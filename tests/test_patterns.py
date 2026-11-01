@@ -22204,3 +22204,136 @@ def test_lightdash_personal_access_token_does_not_collide():
     for text in ("LIGHTDASH_API_KEY=" + _LD_PAT, "LIGHTDASH_API_KEY=" + _LD_SVC):
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"lightdash_personal_access_token"}, text
+
+
+# --- Headscale API / pre-auth / OAuth key ------------------------------------------
+# 'hskey-api-' / 'hskey-auth-' / 'hskey-client-' / 'hskey-oauthtok-' + a 12-character
+# identifier + '-' + a 64-character secret (hscontrol/db/secret.go: keyIdentifierLength
+# = 12, keySecretLength = 64, generateSecret() = prefix + identifier + "-" + secret).
+# Lowercase hex since 0.29.4; base64url [A-Za-z0-9_-] at the same widths before.
+# SYNTHETIC values, split so no scannable key literal exists in source.
+# Source: https://github.com/juanfont/headscale/blob/main/hscontrol/db/secret.go
+_HS_PFX = "hs" + "key-"
+_HS_ID = "45e177181f7f"
+_HS_SEC = "b1f04a9fba2b1122c1e748dfd70b4e38cdc88731545c9cd032e0bca381d98676"
+_HS_ID2 = "20c90247ee4d"
+_HS_SEC2 = "49f03b4834b3b481ed89d869b88efd755082d6e58bb6fa98be6767ff4b9e8f3c"
+_HS_ID_B64 = "wZtfp0Wu0Dl3"
+_HS_SEC_B64 = "yLnpXXqBnUpCmgh97CFJQrRi4JyoZ50CIYPLcfWhtCaxB1-cnareyEnJZ1O1xRv6"
+_HS_ID_B64_2 = "7gdVWvGyxG6P"
+_HS_SEC_B64_2 = "gMHbHHD4sOJ6cf4p_IywW3tPujbejyNIoNZ0tQQQvNwd2Nfg99M7VcAyLMhmD-Q4"
+_HS_API = _HS_PFX + "api-" + _HS_ID + "-" + _HS_SEC
+_HS_AUTH = _HS_PFX + "auth-" + _HS_ID2 + "-" + _HS_SEC2
+_HS_CLIENT = _HS_PFX + "client-" + _HS_ID + "-" + _HS_SEC2
+_HS_OAUTHTOK = _HS_PFX + "oauthtok-" + _HS_ID2 + "-" + _HS_SEC
+_HS_API_B64 = _HS_PFX + "api-" + _HS_ID_B64 + "-" + _HS_SEC_B64
+_HS_AUTH_B64 = _HS_PFX + "auth-" + _HS_ID_B64_2 + "-" + _HS_SEC_B64_2
+
+
+def _hs(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "headscale_api_key"]
+
+
+def test_headscale_api_key_fixture_widths():
+    for ident in (_HS_ID, _HS_ID2, _HS_ID_B64, _HS_ID_B64_2):
+        assert len(ident) == 12
+    for sec in (_HS_SEC, _HS_SEC2, _HS_SEC_B64, _HS_SEC_B64_2):
+        assert len(sec) == 64
+    # rands.HexString(64) is 64 characters; the base64url-era values exercise
+    # the wider alphabet including '-' and '_' inside the secret.
+    assert "-" in _HS_SEC_B64 and "_" in _HS_SEC_B64_2
+    assert len(_HS_API) == 87 and len(_HS_AUTH) == 88
+    assert len(_HS_CLIENT) == 90 and len(_HS_OAUTHTOK) == 92
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("HEADSCALE_API_KEY=" + _HS_API, _HS_API),
+        ("export HEADSCALE_CLI_API_KEY='" + _HS_API + "'", _HS_API),
+        ("Authorization: Bearer " + _HS_API, _HS_API),
+        (
+            "tailscale up --login-server https://hs.example.com --authkey " + _HS_AUTH,
+            _HS_AUTH,
+        ),
+        ('{"client_secret": "' + _HS_CLIENT + '"}', _HS_CLIENT),
+        ("Authorization: Bearer " + _HS_OAUTHTOK, _HS_OAUTHTOK),
+        # base64url era (0.28.0..0.29.3): dashes inside the segments are consumed
+        # by fixed-width parsing, exactly as headscale's parsePrefixedKey() does.
+        ("HEADSCALE_API_KEY=" + _HS_API_B64, _HS_API_B64),
+        ("TS_AUTHKEY=" + _HS_AUTH_B64, _HS_AUTH_B64),
+        # Bare key with no context — the literal prefix + fixed widths are the anchor.
+        (_HS_AUTH, _HS_AUTH),
+    ],
+)
+def test_headscale_api_key_true_positives(text, tok):
+    matched = _hs(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Secret one short / one long (parsePrefixedKey rejects both).
+        "HEADSCALE_API_KEY=" + _HS_PFX + "api-" + _HS_ID + "-" + _HS_SEC[:-1],
+        "HEADSCALE_API_KEY=" + _HS_PFX + "api-" + _HS_ID + "-" + _HS_SEC + "a",
+        # Identifier one short / one long (separator not at position 12).
+        "HEADSCALE_API_KEY=" + _HS_PFX + "api-" + _HS_ID[:-1] + "-" + _HS_SEC,
+        "HEADSCALE_API_KEY=" + _HS_PFX + "api-" + _HS_ID + "a-" + _HS_SEC,
+        # Missing separator.
+        "HEADSCALE_API_KEY=" + _HS_PFX + "api-" + _HS_ID + _HS_SEC,
+        # Character outside the base64url alphabet in the secret.
+        "HEADSCALE_API_KEY=" + _HS_PFX + "api-" + _HS_ID + "-" + _HS_SEC[:-1] + "+",
+        # Unknown kind segment.
+        "HEADSCALE_API_KEY=" + _HS_PFX + "node-" + _HS_ID + "-" + _HS_SEC,
+        # Auth request id and registration id are identifiers, not credentials.
+        _HS_PFX + "authreq-" + _HS_ID + "-" + _HS_SEC,
+        _HS_PFX + "reg-" + _HS_ID + "-" + _HS_SEC,
+        # Masked pre-0.28 legacy display form (hskey-auth-legacy-<12 hex>-***).
+        _HS_PFX + "auth-legacy-" + "367d056cd785" + "-***",
+        # Embedded after a word character.
+        "my" + _HS_API,
+        # Prose naming the format.
+        "headscale pre-auth keys look like hskey-auth-<identifier>-<secret>",
+    ],
+)
+def test_headscale_api_key_true_negatives(text):
+    assert _hs(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _HS_PFX + "api-" + "0" * 12 + "-" + "0" * 64,
+        _HS_PFX + "auth-" + "a" * 12 + "-" + "a" * 64,
+        _HS_PFX + "client-" + "x" * 12 + "-" + "x" * 64,
+        _HS_PFX + "oauthtok-" + "0123456789ab" + "-" + "0123456789abcdef" * 4,
+    ],
+)
+def test_headscale_api_key_placeholders_are_test_values(tok):
+    matched = _hs("HEADSCALE_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_headscale_api_key_does_not_collide():
+    # Not shadowed by generic_api_key_env / generic_high_entropy or any other pattern.
+    for text in (
+        "HEADSCALE_API_KEY=" + _HS_API,
+        "HEADSCALE_API_KEY=" + _HS_API_B64,
+        "TS_AUTHKEY=" + _HS_AUTH,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"headscale_api_key"}, text
+
+
+def test_headscale_api_key_leaves_tailscale_alias_to_tailscale_pattern():
+    # headscale accepts 'tskey-client-' as an alias for its OAuth client prefix;
+    # that stays with tailscale_api_key and must not fire this pattern.
+    text = "TS_OAUTH_CLIENT_SECRET=ts" + "key-client-" + _HS_ID + "-" + _HS_SEC
+    findings = scan(text, min_confidence=0.01)
+    assert _hs(text) == []
+    assert "tailscale_api_key" in {f.type for f in findings}
