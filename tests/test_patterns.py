@@ -22917,3 +22917,104 @@ def test_chromatic_project_token_does_not_collide():
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"chromatic_project_token"}, text
         assert findings[0].confidence >= 0.90
+
+
+# --- Radar secret key -----------------------------------------------------------------
+# 'prj_live_sk_' / 'prj_test_sk_' + exactly 40 lowercase hex. Prefixes per Radar's
+# own API reference ('Authorization: prj_live_sk_...'); width measured on public
+# values. Publishable 'prj_*_pk_' keys are not matched. SYNTHETIC values (SHA-256
+# over 'classifinder-radar-synthetic-<n>' cut to 40), split so no scannable key
+# literal exists in source.
+# Source: https://radar.com/documentation/api
+_RADAR_1 = "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a"
+_RADAR_2 = "38ea30498aecc3cda30f418d3cd42335807e183e"
+_RADAR_3 = "889a6430a904a27b0d5cd0b942b3bb07899e81b0"
+_RADAR_LIVE = "prj_" + "live_sk_" + _RADAR_1
+_RADAR_LIVE2 = "prj_" + "live_sk_" + _RADAR_2
+_RADAR_TEST = "prj_" + "test_sk_" + _RADAR_3
+
+
+def _radar(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "radar_secret_key"]
+
+
+def test_radar_secret_key_fixture_widths():
+    for body in (_RADAR_1, _RADAR_2, _RADAR_3):
+        assert len(body) == 40 and all(c in "0123456789abcdef" for c in body)
+    assert len(_RADAR_LIVE) == 52 and len(_RADAR_TEST) == 52
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("RADAR_SECRET_KEY=" + _RADAR_LIVE, _RADAR_LIVE),
+        ("export RADAR_SECRET_KEY='" + _RADAR_LIVE2 + "'", _RADAR_LIVE2),
+        # Radar sends the key bare in the Authorization header — no scheme.
+        ("curl https://api.radar.io/v1/users -H 'Authorization: " + _RADAR_LIVE + "'", _RADAR_LIVE),
+        ('{"RADAR_TEST_SECRET_KEY": "' + _RADAR_TEST + '"}', _RADAR_TEST),
+        ("RADAR_SECRET_KEY=" + _RADAR_TEST, _RADAR_TEST),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_RADAR_LIVE2, _RADAR_LIVE2),
+    ],
+)
+def test_radar_secret_key_true_positives(text, tok):
+    matched = _radar(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+def test_radar_secret_key_test_environment_is_not_sunk_by_fp_wordlist():
+    # 'prj_test_sk_' contains the literal 'test'; confidence_base sits above the
+    # 0.85 FP-wordlist gate so the key is priced like the live one.
+    matched = _radar("RADAR_SECRET_KEY=" + _RADAR_TEST)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].is_likely_test_value is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 39 / 41 hex: the measured width is exactly 40.
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1[:-1],
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1 + "0",
+        # Uppercase / non-hex characters.
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1.upper(),
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1[:-1] + "g",
+        # Publishable keys are client-side by design and not matched.
+        "RADAR_PUBLISHABLE_KEY=prj_" + "live_pk_" + _RADAR_1,
+        "RADAR_PUBLISHABLE_KEY=prj_" + "test_pk_" + _RADAR_3,
+        # Unknown environment segment.
+        "RADAR_SECRET_KEY=prj_" + "prod_sk_" + _RADAR_1,
+        # Embedded after a word character.
+        "my" + _RADAR_LIVE,
+        # Prose naming the format.
+        "Radar secret keys start with prj_live_sk_ and must stay server-side",
+    ],
+)
+def test_radar_secret_key_true_negatives(text):
+    assert _radar(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        "prj_" + "live_sk_" + "0" * 40,
+        "prj_" + "test_sk_" + "a" * 40,
+        "prj_" + "test_sk_" + "f" * 40,
+    ],
+)
+def test_radar_secret_key_placeholders_are_test_values(tok):
+    matched = _radar("RADAR_SECRET_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_radar_secret_key_does_not_collide():
+    # 'prj_live_sk_' contains 'sk_' but not 'sk_live_': Stripe must stay silent,
+    # and the provider pattern must be the sole claimant over the generics.
+    for text in ("RADAR_SECRET_KEY=" + _RADAR_LIVE, "RADAR_SECRET_KEY=" + _RADAR_TEST, _RADAR_LIVE2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"radar_secret_key"}, text

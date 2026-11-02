@@ -8154,6 +8154,29 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Radar secret key. SYNTHETIC values (SHA-256 over
+    # 'classifinder-radar-synthetic-<n>' cut to 40 hex).
+    # Source: https://radar.com/documentation/api
+    "radar_secret_key": {
+        "positives": [
+            "RADAR_SECRET_KEY=prj_" + "live_sk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a",
+            "curl https://api.radar.io/v1/users -H 'Authorization: prj_" + "live_sk_"
+            + "38ea30498aecc3cda30f418d3cd42335807e183e'",
+            '{"RADAR_TEST_SECRET_KEY": "prj_' + "test_sk_"
+            + '889a6430a904a27b0d5cd0b942b3bb07899e81b0"}',
+        ],
+        "negatives": [
+            # 39 and 41 hex — the measured width is exactly 40.
+            "RADAR_SECRET_KEY=prj_" + "live_sk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3",
+            "RADAR_SECRET_KEY=prj_" + "live_sk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a0",
+            # Publishable keys are client-side by design, not secrets.
+            "RADAR_PUBLISHABLE_KEY=prj_" + "live_pk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a",
+            "RADAR_PUBLISHABLE_KEY=prj_" + "test_pk_" + "889a6430a904a27b0d5cd0b942b3bb07899e81b0",
+            # Prose naming the prefix but carrying no key.
+            "Radar secret keys start with prj_live_sk_ and must stay server-side",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
