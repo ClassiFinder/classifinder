@@ -23244,3 +23244,90 @@ def test_growthbook_secret_api_key_does_not_collide_with_notion():
     notion = "NOTION_API_KEY=" + _GB_PFX + _GB_43
     types = {f.type for f in scan(notion, min_confidence=0.01)}
     assert "notion_api_key" in types and "growthbook_secret_api_key" not in types
+
+
+# --- SettleMint service account token ----------------------------------------------
+# 'sm_sat_' + 16 or more alphanumerics — the third sibling of sm_pat_ / sm_aat_,
+# attested by the same vendor masking regex /sm_(pat|aat|sat)_[0-9a-zA-Z]+/g and
+# shipped on the same {16,} floor. SYNTHETIC values (base64 of SHA-512 over
+# 'classifinder-settlemint-sat-synthetic-<n>', + / = stripped, cut to 32), split
+# so no scannable token literal exists in source.
+# Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/logging/mask-tokens.ts
+_SM_SAT_PFX = "sm_" + "sat_"
+_SM_SAT_1 = "k4s9L6ENueEVEbFDVYGQ5Oouq5XnxkNU"
+_SM_SAT_2 = "SmL2woEX9purC1vI3Xi8nPRZ7M2dgxVZ"
+_SM_SAT_3 = "Jf3GlQKzJ2yTECm6xa2YY2CORz7GjEno"
+_SM_SAT = _SM_SAT_PFX + _SM_SAT_1
+_SM_SAT2 = _SM_SAT_PFX + _SM_SAT_2
+_SM_SAT3 = _SM_SAT_PFX + _SM_SAT_3
+
+
+def _sm_sat(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "settlemint_service_access_token"
+    ]
+
+
+def test_settlemint_service_access_token_fixture_widths():
+    for body in (_SM_SAT_1, _SM_SAT_2, _SM_SAT_3):
+        assert len(body) == 32 and body.isalnum()
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT, _SM_SAT),
+        ("export SETTLEMINT_ACCESS_TOKEN='" + _SM_SAT2 + "'", _SM_SAT2),
+        ("x-auth-token: " + _SM_SAT3, _SM_SAT3),
+        ('{"token": "' + _SM_SAT + '"}', _SM_SAT),
+        # Sixteen characters — the vendor's rendered floor — is matched in full.
+        ("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + _SM_SAT_1[:16], _SM_SAT_PFX + _SM_SAT_1[:16]),
+        # Bare token with no context.
+        (_SM_SAT2, _SM_SAT2),
+    ],
+)
+def test_settlemint_service_access_token_true_positives(text, tok):
+    matched = _sm_sat(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Fifteen characters — below the floor.
+        "SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + _SM_SAT_1[:15],
+        # Sibling families resolve to their own patterns, never to this one.
+        "SETTLEMINT_ACCESS_TOKEN=sm_" + "pat_" + _SM_SAT_1,
+        "SETTLEMINT_ACCESS_TOKEN=sm_" + "aat_" + _SM_SAT_1,
+        # Hyphen / underscore are outside the vendor's [0-9a-zA-Z] body.
+        "SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + _SM_SAT_1[:10] + "-" + _SM_SAT_1[10:],
+        # Embedded after a word character.
+        "my" + _SM_SAT,
+        # Prose naming the format.
+        "A SettleMint service account token is prefixed sm_sat_.",
+    ],
+)
+def test_settlemint_service_access_token_true_negatives(text):
+    assert _sm_sat(text) == []
+
+
+def test_settlemint_service_access_token_placeholder_is_test_value():
+    matched = _sm_sat("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + "x" * 16)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_settlemint_service_access_token_is_sole_claimant_and_siblings_stay_separate():
+    for text in ("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT, _SM_SAT2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"settlemint_service_access_token"}, text
+    # The three families are three finding types with three remediation paths.
+    assert {f.type for f in scan(_SETTLEMINT_PAT, min_confidence=0.01)} == {
+        "settlemint_personal_access_token"
+    }
+    assert {f.type for f in scan(_SETTLEMINT_AAT, min_confidence=0.01)} == {
+        "settlemint_application_access_token"
+    }

@@ -5200,8 +5200,8 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Fifteen characters — below the vendor's rendered floor.
             "sm_pat_" + "ecjgB6yqzvXbFSa",
             # The sibling families are separate credentials with different
-            # blast radii; sm_aat_ has its own pattern and sm_sat_ is not
-            # shipped, so neither may resolve to the personal-token type.
+            # blast radii; sm_aat_ and sm_sat_ each have their own pattern, so
+            # neither may resolve to the personal-token type.
             "sm_aat_" + "hvOh0ZvbkmhfCsI8",
             "sm_sat_" + "ecjgB6yqzvXbFSad",
             # Hyphen and underscore are outside the body charset.
@@ -8230,6 +8230,29 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "GrowthBook secret keys start with secret_user_ or secret_<role>_",
         ],
         "min_confidence": 0.90,
+    },
+    # SettleMint service account token — 'sm_sat_' + 16 or more alphanumerics,
+    # the third sibling of sm_pat_ / sm_aat_ on the same vendor masking regex.
+    # SYNTHETIC values (base64 of SHA-512 over
+    # 'classifinder-settlemint-sat-synthetic-<n>', + / = stripped, cut to 32).
+    # Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/logging/mask-tokens.ts
+    "settlemint_service_access_token": {
+        "positives": [
+            "sm_sat_" + "k4s9L6ENueEVEbFDVYGQ5Oouq5XnxkNU",
+            "SETTLEMINT_ACCESS_TOKEN=" + "sm_sat_" + "SmL2woEX9purC1vI3Xi8nPRZ7M2dgxVZ",
+            '{"token": "' + "sm_sat_" + 'Jf3GlQKzJ2yTECm6xa2YY2CORz7GjEno"}',
+        ],
+        "negatives": [
+            # Fifteen characters — below the vendor's rendered floor.
+            "sm_sat_" + "k4s9L6ENueEVEbF",
+            # The sibling families have their own patterns.
+            "sm_pat_" + "ecjgB6yqzvXbFSad",
+            "sm_aat_" + "hvOh0ZvbkmhfCsI8",
+            # Hyphen and underscore are outside the body charset.
+            "sm_sat_" + "k4s9L6EN-ueEVEbFDVYGQ",
+            "A SettleMint service account token is prefixed sm_sat_.",
+        ],
+        "min_confidence": 0.95,
     },
 }
 
