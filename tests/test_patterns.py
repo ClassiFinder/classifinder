@@ -22337,3 +22337,98 @@ def test_headscale_api_key_leaves_tailscale_alias_to_tailscale_pattern():
     findings = scan(text, min_confidence=0.01)
     assert _hs(text) == []
     assert "tailscale_api_key" in {f.type for f in findings}
+
+
+# --- Cerebras Inference API key ----------------------------------------------------
+# 'csk-' + exactly 48 mixed-case alphanumerics. Prefix per the vendor's own
+# integration guide ("starts with csk-"); width and charset measured on public
+# values. SYNTHETIC values (base64 of SHA-512 over 'classifinder-cerebras-
+# synthetic-<n>', + / = stripped, cut to 48), split so no scannable key literal
+# exists in source.
+# Source: https://inference-docs.cerebras.ai/integrations/dify
+_CSK_PFX = "cs" + "k-"
+_CSK_1 = "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgYo"
+_CSK_2 = "v8D8bSwfkfLCO1tmDA3eacIBUwspuo8zXHjtA0LLLvFDn3HP"
+_CSK_3 = "GL5c8uppj9pJd4xINIwL005ml2my6QCImDdxj0WH0qODSa62"
+_CSK_KEY = _CSK_PFX + _CSK_1
+_CSK_KEY2 = _CSK_PFX + _CSK_2
+_CSK_KEY3 = _CSK_PFX + _CSK_3
+
+
+def _csk(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "cerebras_api_key"]
+
+
+def test_cerebras_api_key_fixture_widths():
+    for body in (_CSK_1, _CSK_2, _CSK_3):
+        assert len(body) == 48 and body.isalnum()
+    assert len(_CSK_KEY) == 52
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("CEREBRAS_API_KEY=" + _CSK_KEY, _CSK_KEY),
+        ("export CEREBRAS_API_KEY='" + _CSK_KEY2 + "'", _CSK_KEY2),
+        ("Authorization: Bearer " + _CSK_KEY3, _CSK_KEY3),
+        ('{"api_key": "' + _CSK_KEY + '"}', _CSK_KEY),
+        ("client = Cerebras(api_key=\"" + _CSK_KEY2 + "\")", _CSK_KEY2),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_CSK_KEY3, _CSK_KEY3),
+    ],
+)
+def test_cerebras_api_key_true_positives(text, tok):
+    matched = _csk(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long of the measured 48.
+        "CEREBRAS_API_KEY=" + _CSK_PFX + _CSK_1[:-1],
+        "CEREBRAS_API_KEY=" + _CSK_PFX + _CSK_1 + "Z",
+        # Character outside the alphanumeric body.
+        "CEREBRAS_API_KEY=" + _CSK_PFX + _CSK_1[:-1] + "_",
+        # Embedded after a word character.
+        "my" + _CSK_KEY,
+        # Prose naming the format.
+        "Verify your API key is correct and starts with csk-",
+        # Anthropic / OpenAI shapes must not resolve to Cerebras.
+        "sk-ant-api03-" + _CSK_1,
+        "sk-" + _CSK_1,
+    ],
+)
+def test_cerebras_api_key_true_negatives(text):
+    assert _csk(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [_CSK_PFX + "x" * 48, _CSK_PFX + "X" * 48, _CSK_PFX + "0" * 48, _CSK_PFX + "a" * 48],
+)
+def test_cerebras_api_key_placeholders_are_test_values(tok):
+    matched = _csk("CEREBRAS_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_cerebras_api_key_does_not_collide_with_openai():
+    # Before the openai_api_key left guard, 'csk-<48>' was reported as the OpenAI
+    # key 'sk-<48>' (the legacy branch had no left boundary). Only Cerebras may fire.
+    for text in ("CEREBRAS_API_KEY=" + _CSK_KEY, _CSK_KEY2, "Bearer " + _CSK_KEY3):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"cerebras_api_key"}, text
+
+
+def test_openai_left_guard_keeps_bare_and_env_keys():
+    # The left guard must not cost any legitimate OpenAI carrier: '=' , quote,
+    # space and start-of-text all precede the key in real configs.
+    legacy = "sk-" + "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd"
+    for text in (legacy, "OPENAI_API_KEY=" + legacy, "'" + legacy + "'", "Bearer " + legacy):
+        assert "openai_api_key" in {f.type for f in scan(text, min_confidence=0.01)}, text
+    # A word character glued to the front is a longer identifier, not an OpenAI key.
+    assert [f for f in scan("x" + legacy, min_confidence=0.01) if f.type == "openai_api_key"] == []

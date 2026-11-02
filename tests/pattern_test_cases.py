@@ -8017,6 +8017,24 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Cerebras Inference API key. SYNTHETIC values (base64 of SHA-512 over
+    # 'classifinder-cerebras-synthetic-<n>' with + / = stripped, cut to 48).
+    # Source: https://inference-docs.cerebras.ai/integrations/dify
+    "cerebras_api_key": {
+        "positives": [
+            "CEREBRAS_API_KEY=cs" + "k-" + "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgYo",
+            "Authorization: Bearer cs" + "k-" + "v8D8bSwfkfLCO1tmDA3eacIBUwspuo8zXHjtA0LLLvFDn3HP",
+            '{"api_key": "cs' + "k-" + 'GL5c8uppj9pJd4xINIwL005ml2my6QCImDdxj0WH0qODSa62"}',
+        ],
+        "negatives": [
+            # One character short / one long of the measured 48.
+            "CEREBRAS_API_KEY=cs" + "k-" + "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgY",
+            "CEREBRAS_API_KEY=cs" + "k-" + "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgYoZ",
+            # Prose naming the prefix but carrying no key.
+            "Cerebras API keys start with csk- followed by the key body",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
