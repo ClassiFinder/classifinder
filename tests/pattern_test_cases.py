@@ -8035,6 +8035,29 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Dify app / dataset API key. Context-gated (base 0.48): every positive
+    # carries a Dify keyword or the Bearer carrier. SYNTHETIC values (base64
+    # of SHA-512 over 'classifinder-dify-synthetic-<n>', + / = stripped, 24).
+    # Source: https://github.com/langgenius/dify/blob/main/api/models/model.py
+    "dify_api_key": {
+        "positives": [
+            "DIFY_API_KEY=" + "app-" + "STkUQqV3clRPNdt2qgDDbnam",
+            "curl https://api.dify.ai/v1/chat-messages -H 'Authorization: Bearer "
+            + "app-" + "zYIBpPfTinkCvBpHZjP2A58L'",
+            "DIFY_DATASET_API_KEY=" + "dataset-" + "ipt3eGlWYnS5chh1eTvg6zjY",
+            '{"dify_api_key": "' + "ds-" + 'cEBE6n97bK2FwgXTbLRiGNKU"}',
+        ],
+        "negatives": [
+            # 23 and 25 characters — the generator always emits 24.
+            "DIFY_API_KEY=" + "app-" + "STkUQqV3clRPNdt2qgDDbna",
+            "DIFY_API_KEY=" + "app-" + "STkUQqV3clRPNdt2qgDDbnamQ",
+            # Slack app-level token: 'x' glued to 'app-' is a different prefix.
+            "SLACK_APP_TOKEN=x" + "app-" + "1-A0123456789-0123456789012-abc",
+            # Prose using 'app-' as an ordinary identifier, not a key.
+            "deploy the app-config-production-server image to the dify cluster",
+        ],
+        "min_confidence": 0.50,
+    },
 }
 
 # fmt: on

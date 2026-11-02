@@ -22432,3 +22432,107 @@ def test_openai_left_guard_keeps_bare_and_env_keys():
         assert "openai_api_key" in {f.type for f in scan(text, min_confidence=0.01)}, text
     # A word character glued to the front is a longer identifier, not an OpenAI key.
     assert [f for f in scan("x" + legacy, min_confidence=0.01) if f.type == "openai_api_key"] == []
+
+
+# --- Dify app / dataset API key ----------------------------------------------------
+# 'app-' / 'dataset-' / 'ds-' + exactly 24 alphanumerics (ApiToken.generate_api_key
+# (prefix, 24) over string.ascii_letters + string.digits). Context-gated at 0.48:
+# a bare key is below the default threshold, one Dify keyword or the Bearer
+# carrier lifts it over. SYNTHETIC values (base64 of SHA-512 over
+# 'classifinder-dify-synthetic-<n>', + / = stripped, cut to 24), split so no
+# scannable key literal exists in source.
+# Source: https://github.com/langgenius/dify/blob/main/api/models/model.py
+_DIFY_1 = "STkUQqV3clRPNdt2qgDDbnam"
+_DIFY_2 = "zYIBpPfTinkCvBpHZjP2A58L"
+_DIFY_3 = "ipt3eGlWYnS5chh1eTvg6zjY"
+_DIFY_4 = "cEBE6n97bK2FwgXTbLRiGNKU"
+_DIFY_APP = "app-" + _DIFY_1
+_DIFY_APP2 = "app-" + _DIFY_2
+_DIFY_DATASET = "dataset-" + _DIFY_3
+_DIFY_DS = "ds-" + _DIFY_4
+
+
+def _dify(text, min_confidence=0.01):
+    return [f for f in scan(text, min_confidence=min_confidence) if f.type == "dify_api_key"]
+
+
+def test_dify_api_key_fixture_widths():
+    for body in (_DIFY_1, _DIFY_2, _DIFY_3, _DIFY_4):
+        assert len(body) == 24 and body.isalnum()
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("DIFY_API_KEY=" + _DIFY_APP, _DIFY_APP),
+        ("export DIFY_API_KEY='" + _DIFY_APP2 + "'", _DIFY_APP2),
+        (
+            "curl -X POST 'https://api.dify.ai/v1/chat-messages' -H 'Authorization: Bearer "
+            + _DIFY_APP + "'",
+            _DIFY_APP,
+        ),
+        # Self-hosted: no vendor host, but the endpoint path and Bearer carrier are there.
+        (
+            "curl http://localhost/v1/completion-messages -H 'Authorization: Bearer "
+            + _DIFY_APP2 + "'",
+            _DIFY_APP2,
+        ),
+        ("DIFY_DATASET_API_KEY=" + _DIFY_DATASET, _DIFY_DATASET),
+        ('{"dify_api_key": "' + _DIFY_DS + '"}', _DIFY_DS),
+        ("Authorization: Bearer " + _DIFY_DATASET, _DIFY_DATASET),
+    ],
+)
+def test_dify_api_key_true_positives(text, tok):
+    # Default threshold (0.50): the context keyword lifts the 0.48 base over it.
+    matched = _dify(text, min_confidence=0.5)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.50
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize("tok", [_DIFY_APP, _DIFY_DATASET, _DIFY_DS])
+def test_dify_api_key_is_context_gated(tok):
+    # Bare key, no Dify keyword, no Bearer: registered at 0.48, below the default
+    # threshold — visible only to callers who opt down.
+    assert _dify(tok, min_confidence=0.5) == []
+    low = _dify(tok)
+    assert len(low) == 1 and low[0].confidence == 0.48
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 23 / 25 characters — the generator always emits 24.
+        "DIFY_API_KEY=app-" + _DIFY_1[:-1],
+        "DIFY_API_KEY=app-" + _DIFY_1 + "Q",
+        # Character outside the alphanumeric body.
+        "DIFY_API_KEY=app-" + _DIFY_1[:-1] + "-",
+        # Slack app-level token ('xapp-'): the left guard refuses the glued 'x'.
+        "SLACK_APP_TOKEN=x" + "app-" + "1-A0123456789-0123456789012-abc",
+        # Embedded after a word character / hyphen.
+        "my" + _DIFY_APP,
+        "web-" + _DIFY_APP,
+        # Prose using 'app-' / 'ds-' as ordinary identifiers.
+        "deploy the app-config-production-server image to the dify cluster",
+        "the ds-store cleanup job runs nightly against the dify datasets",
+    ],
+)
+def test_dify_api_key_true_negatives(text):
+    assert _dify(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    ["app-" + "x" * 24, "dataset-" + "X" * 24, "ds-" + "0" * 24],
+)
+def test_dify_api_key_placeholders_are_test_values(tok):
+    matched = _dify("DIFY_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_dify_api_key_does_not_collide():
+    for text in ("DIFY_API_KEY=" + _DIFY_APP, "DIFY_API_KEY=" + _DIFY_DATASET):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"dify_api_key"}, text
