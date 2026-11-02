@@ -158,6 +158,17 @@ _LLX_PREFIX_CASES = "ll" + "x-"
 _LLX_BODY_CASES = "Y9OJZm76EhjsuA9ycJQ0a6JDV19nSxLIJRG1yeHdxYvsfEKr"
 _LLX_CASES = _LLX_PREFIX_CASES + _LLX_BODY_CASES
 
+# ── 2026-11-02 ────────────────────────────────────────────────────────────
+# Fireworks AI API key: 'fw_' + 22 or 24 alphanumeric. The bodies are
+# SYNTHETIC (base62 of SHA-512 over 'classifinder-fireworks-synthetic-4' /
+# '-5', first 22 / 24 chars) and the prefix is split so no contiguous key
+# literal sits in source.
+_FW_PREFIX_CASES = "fw" + "_"
+_FW_BODY_22_CASES = "aaYFHzAV2zsfum5OUCuoQF"
+_FW_BODY_24_CASES = "GPiksjxQiisN3t7tNbwX431i"
+_FW_22_CASES = _FW_PREFIX_CASES + _FW_BODY_22_CASES
+_FW_24_CASES = _FW_PREFIX_CASES + _FW_BODY_24_CASES
+
 # ── 2026-10-19 ────────────────────────────────────────────────────────────
 # Browserbase API key: 'bb_live_' + 27 base64url. The body is SYNTHETIC
 # (base64url of SHA-512 over 'classifinder-browserbase-synthetic-6', first 27
@@ -8016,6 +8027,30 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "headscale API keys start with hskey-api- followed by an identifier",
         ],
         "min_confidence": 0.90,
+    },
+    # ── 2026-11-02 ───────────────────────────────────────────────────────
+    # Fireworks AI API key — 'fw_' + 22 or 24 alphanumeric (prefix per the
+    # vendor's own CLI validator; widths measured on public samples).
+    # Source: https://github.com/fw-ai/nexus-cli/blob/main/packages/setup-cli/lib/keys/key-type.mjs
+    "fireworks_api_key": {
+        "positives": [
+            "FIREWORKS_API_KEY=" + _FW_24_CASES,
+            "FIREWORKS_API_KEY=" + _FW_22_CASES,
+            "Authorization: Bearer " + _FW_24_CASES,
+            _FW_22_CASES,
+        ],
+        "negatives": [
+            # 21, 23 and 25 wide: never truncated to a shorter generation.
+            _FW_22_CASES[:-1],
+            _FW_22_CASES + "a",
+            _FW_24_CASES + "a",
+            # The vendor's validator rejects the older 'fpk_' spelling.
+            "fpk" + "_" + _FW_BODY_24_CASES,
+            # Carved out of a snake_case identifier / docs placeholder.
+            "fw" + "_" + "update_firmware_image_v2",
+            "fw" + "_" + "your_api_key_here",
+        ],
+        "min_confidence": 0.85,
     },
 }
 
