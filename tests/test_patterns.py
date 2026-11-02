@@ -22833,3 +22833,87 @@ def test_liveblocks_secret_key_does_not_collide_with_stripe_or_cartesia():
     stripe_live = "sk_" + "live_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz01"
     assert _lb("STRIPE_SECRET_KEY=" + stripe_live) == []
     assert "stripe_live_secret_key" in {f.type for f in scan("STRIPE_SECRET_KEY=" + stripe_live)}
+
+
+# --- Chromatic project token --------------------------------------------------------
+# 'chpt_' + exactly 15 lowercase hex. Prefix per the vendor's own CLI repository
+# (AGENTS.md "project tokens (`chpt_…`)", diagnostics guard test("^chpt_|^Bearer "));
+# width measured on public values. SYNTHETIC values (SHA-256 over
+# 'classifinder-chromatic-synthetic-<n>' cut to 15), split so no scannable token
+# literal exists in source.
+# Source: https://github.com/chromaui/chromatic-cli/blob/main/AGENTS.md
+_CHPT_PFX = "ch" + "pt_"
+_CHPT_1 = "d6a5f4218c1361a"
+_CHPT_2 = "22215b5ef118826"
+_CHPT_3 = "3fc663ed5ef46d0"
+_CHPT = _CHPT_PFX + _CHPT_1
+_CHPT2 = _CHPT_PFX + _CHPT_2
+_CHPT3 = _CHPT_PFX + _CHPT_3
+
+
+def _chpt(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "chromatic_project_token"]
+
+
+def test_chromatic_project_token_fixture_widths():
+    for body in (_CHPT_1, _CHPT_2, _CHPT_3):
+        assert len(body) == 15 and all(c in "0123456789abcdef" for c in body)
+    assert len(_CHPT) == 20
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("CHROMATIC_PROJECT_TOKEN=" + _CHPT, _CHPT),
+        ("npx chromatic --project-token=" + _CHPT2, _CHPT2),
+        ("npx chromatic --project-token " + _CHPT3 + " --exit-zero-on-changes", _CHPT3),
+        ('{"projectToken": "' + _CHPT + '"}', _CHPT),
+        ("Authorization: Bearer " + _CHPT2, _CHPT2),
+        # Bare token with no context — the literal prefix + exact width is the anchor.
+        (_CHPT3, _CHPT3),
+    ],
+)
+def test_chromatic_project_token_true_positives(text, tok):
+    matched = _chpt(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "medium"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 14 / 16 hex: the measured width is exactly 15.
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1[:-1],
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1 + "0",
+        # Uppercase / non-hex characters.
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1.upper(),
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1[:-1] + "g",
+        # Embedded after a word character.
+        "my" + _CHPT,
+        # Prose naming the format.
+        "Chromatic project tokens start with chpt_ and are set in CI secrets",
+    ],
+)
+def test_chromatic_project_token_true_negatives(text):
+    assert _chpt(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [_CHPT_PFX + "0" * 15, _CHPT_PFX + "a" * 15, _CHPT_PFX + "f" * 15, _CHPT_PFX + "0123456789abcde"],
+)
+def test_chromatic_project_token_placeholders_are_test_values(tok):
+    matched = _chpt("CHROMATIC_PROJECT_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_chromatic_project_token_does_not_collide():
+    # Previously only generic_api_key_env fired here, entropy-penalised to 0.19;
+    # the provider pattern must now be the sole claimant at full confidence.
+    for text in ("CHROMATIC_PROJECT_TOKEN=" + _CHPT, _CHPT2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"chromatic_project_token"}, text
+        assert findings[0].confidence >= 0.90

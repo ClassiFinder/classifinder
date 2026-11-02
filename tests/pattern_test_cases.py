@@ -8134,6 +8134,26 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Chromatic project token. SYNTHETIC values (SHA-256 over
+    # 'classifinder-chromatic-synthetic-<n>' cut to 15 hex).
+    # Source: https://github.com/chromaui/chromatic-cli/blob/main/AGENTS.md
+    "chromatic_project_token": {
+        "positives": [
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "d6a5f4218c1361a",
+            "npx chromatic --project-token=ch" + "pt_" + "22215b5ef118826",
+            '{"projectToken": "ch' + "pt_" + '3fc663ed5ef46d0"}',
+        ],
+        "negatives": [
+            # 14 and 16 hex — the measured width is exactly 15.
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "d6a5f4218c1361",
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "d6a5f4218c1361a0",
+            # Uppercase hex is outside the measured alphabet.
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "D6A5F4218C1361A",
+            # Prose naming the prefix but carrying no token.
+            "Chromatic project tokens start with chpt_ and are set in CI secrets",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
