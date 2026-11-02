@@ -23018,3 +23018,117 @@ def test_radar_secret_key_does_not_collide():
     for text in ("RADAR_SECRET_KEY=" + _RADAR_LIVE, "RADAR_SECRET_KEY=" + _RADAR_TEST, _RADAR_LIVE2):
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"radar_secret_key"}, text
+
+
+# --- Keygen API token (v3) -------------------------------------------------------------
+# '<kind>-' + 64 lowercase hex + 'v3' (SecureRandom.hex(32) + ALGO_VERSION), or
+# 'activ-' + 32 hex + 'v3' (SecureRandom.hex(16)), per the vendor's own token.rb
+# generate!() / tokenable.rb. Kinds: env, prod, admin, user, activ, dev, sales,
+# spprt, read, token. SYNTHETIC values (SHA-256 over 'classifinder-keygen-
+# synthetic-<n>'; the activation token cut to 32), split so no scannable token
+# literal exists in source.
+# Source: https://github.com/keygen-sh/keygen-api/blob/master/app/models/token.rb
+_KG_V3 = "v" + "3"
+_KG_1 = "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734"
+_KG_2 = "3b787eb62f19460f7b5004228698fa1622b19f760d0d4f73b120fbf191c8bee0"
+_KG_3 = "cb70c07d662d50397f6d7ed1c0115791800b75f6a30710dea6448166e08b42a3"
+_KG_4 = "a4eda1d8246dc59616411606cc61e02b235c1c57cca731342fd6314ad840d944"
+_KG_ACTIV = "771f12e17821615b26c124b406fda081"
+_KG_PROD = "prod-" + _KG_1 + _KG_V3
+_KG_ADMIN = "admin-" + _KG_2 + _KG_V3
+_KG_ENV = "env-" + _KG_3 + _KG_V3
+_KG_USER = "user-" + _KG_4 + _KG_V3
+_KG_ACTIVATION = "activ-" + _KG_ACTIV + _KG_V3
+
+
+def _kg(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "keygen_api_token"]
+
+
+def test_keygen_api_token_fixture_widths():
+    for body in (_KG_1, _KG_2, _KG_3, _KG_4):
+        assert len(body) == 64 and all(c in "0123456789abcdef" for c in body)
+    assert len(_KG_ACTIV) == 32
+    # SecureRandom.hex(32) + "v3" and SecureRandom.hex(16) + "v3".
+    assert len(_KG_PROD) == 5 + 66 and len(_KG_ACTIVATION) == 6 + 34
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("KEYGEN_PRODUCT_TOKEN=" + _KG_PROD, _KG_PROD),
+        ("export KEYGEN_TOKEN='" + _KG_ADMIN + "'", _KG_ADMIN),
+        ("Authorization: Bearer " + _KG_ENV, _KG_ENV),
+        ("Authorization: Token token=" + _KG_USER, _KG_USER),
+        ('{"keygen_token": "' + _KG_PROD + '"}', _KG_PROD),
+        ("KEYGEN_ACTIVATION_TOKEN=" + _KG_ACTIVATION, _KG_ACTIVATION),
+        # Every other documented kind at the 64-hex width.
+        ("KEYGEN_TOKEN=dev-" + _KG_1 + _KG_V3, "dev-" + _KG_1 + _KG_V3),
+        ("KEYGEN_TOKEN=sales-" + _KG_2 + _KG_V3, "sales-" + _KG_2 + _KG_V3),
+        ("KEYGEN_TOKEN=spprt-" + _KG_3 + _KG_V3, "spprt-" + _KG_3 + _KG_V3),
+        ("KEYGEN_TOKEN=read-" + _KG_4 + _KG_V3, "read-" + _KG_4 + _KG_V3),
+        ("KEYGEN_TOKEN=token-" + _KG_1 + _KG_V3, "token-" + _KG_1 + _KG_V3),
+        # Bare token with no context — the exact width plus the 'v3' suffix is the anchor.
+        (_KG_ADMIN, _KG_ADMIN),
+    ],
+)
+def test_keygen_api_token_true_positives(text, tok):
+    matched = _kg(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Same hex without the 'v3' suffix: not a v3 token (v1/v2 have other shapes).
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1,
+        # 63 / 65 hex before the suffix.
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1[:-1] + _KG_V3,
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1 + "0" + _KG_V3,
+        # Activation tokens are 32 hex; 64-hex 'activ-' and 32-hex 'prod-' are not vendor shapes.
+        "KEYGEN_ACTIVATION_TOKEN=activ-" + _KG_1 + _KG_V3,
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_ACTIV + _KG_V3,
+        # Suffix glued to more alphanumerics / wrong version.
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1 + _KG_V3 + "0",
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1 + "v" + "2",
+        # Uppercase hex is outside SecureRandom.hex's alphabet.
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1.upper() + _KG_V3,
+        # Unknown kind word.
+        "KEYGEN_TOKEN=staging-" + _KG_1 + _KG_V3,
+        # Embedded after a word character / hyphen / underscore.
+        "my" + _KG_PROD,
+        "pre-" + _KG_PROD,
+        "x_" + _KG_PROD,
+        # Prose naming the format.
+        "Keygen product tokens use the prod- prefix and end in v3",
+    ],
+)
+def test_keygen_api_token_true_negatives(text):
+    assert _kg(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        "prod-" + "0" * 64 + _KG_V3,
+        "admin-" + "f" * 64 + _KG_V3,
+        "env-" + "a" * 64 + _KG_V3,
+        "activ-" + "f" * 32 + _KG_V3,
+    ],
+)
+def test_keygen_api_token_placeholders_are_test_values(tok):
+    matched = _kg("KEYGEN_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_keygen_api_token_does_not_collide():
+    # Previously generic_api_key_env carved the hex out of these; the provider
+    # pattern must now be the sole claimant at full confidence.
+    for text in ("KEYGEN_PRODUCT_TOKEN=" + _KG_PROD, "KEYGEN_TOKEN=" + _KG_ACTIVATION, _KG_ADMIN):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"keygen_api_token"}, text
+        assert findings[0].confidence >= 0.95

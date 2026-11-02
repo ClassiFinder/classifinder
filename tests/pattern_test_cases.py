@@ -8177,6 +8177,34 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Keygen v3 API token. SYNTHETIC values (SHA-256 over
+    # 'classifinder-keygen-synthetic-<n>'; the activation token cut to 32 hex).
+    # Source: https://github.com/keygen-sh/keygen-api/blob/master/app/models/token.rb
+    "keygen_api_token": {
+        "positives": [
+            "KEYGEN_PRODUCT_TOKEN=prod-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734" + "v" + "3",
+            "Authorization: Bearer admin-"
+            + "3b787eb62f19460f7b5004228698fa1622b19f760d0d4f73b120fbf191c8bee0" + "v" + "3",
+            '{"keygen_token": "env-'
+            + "cb70c07d662d50397f6d7ed1c0115791800b75f6a30710dea6448166e08b42a3" + "v" + '3"}',
+            "KEYGEN_ACTIVATION_TOKEN=activ-" + "771f12e17821615b26c124b406fda081" + "v" + "3",
+        ],
+        "negatives": [
+            # The same 64 hex without the v3 suffix is not a v3 token.
+            "KEYGEN_PRODUCT_TOKEN=prod-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734",
+            # 63 hex + v3 — one short of SecureRandom.hex(32).
+            "KEYGEN_PRODUCT_TOKEN=prod-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c73" + "v" + "3",
+            # Activation tokens are 32 hex; a 64-hex 'activ-' body is not vendor shape.
+            "KEYGEN_ACTIVATION_TOKEN=activ-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734" + "v" + "3",
+            # Prose naming the kinds but carrying no token.
+            "Keygen product tokens use the prod- prefix and end in v3",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
