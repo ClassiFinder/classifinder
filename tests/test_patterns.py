@@ -22634,3 +22634,109 @@ def test_e2b_api_key_does_not_collide():
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"e2b_api_key"}, text
         assert findings[0].confidence >= 0.95
+
+
+# --- Vercel Blob read-write token ------------------------------------------------
+# 'vercel_blob_rw_' + 16-char store id + '_' + 30-char secret, all alphanumeric.
+# Structure per the vendor SDK (parseStoreIdFromReadWriteToken splits on '_' and
+# takes index 3) and its own 16/30 test fixture; widths measured on public values.
+# SYNTHETIC values (base64 of SHA-512 over 'classifinder-vercel-blob-synthetic-
+# store-<n>' / '...-secret-<n>', + / = stripped, cut to width), split so no
+# scannable token literal exists in source.
+# Source: https://github.com/vercel/storage/blob/main/packages/blob/src/helpers.ts
+_VBLOB_PFX = "vercel_blob_" + "rw_"
+_VBLOB_STORE = "Qkordfo55qdnXUiy"
+_VBLOB_SECRET = "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3n"
+_VBLOB_STORE2 = "M4OaVTHJmIxFbU63"
+_VBLOB_SECRET2 = "yD0vHbNLWI6t3HeZgcnCGaeCfYc5uu"
+_VBLOB_STORE3 = "Q09GTLb4MwiQPRzo"
+_VBLOB_SECRET3 = "eLjmL1FjH8AgWDNuW5oFymQ6u3MPpa"
+_VBLOB = _VBLOB_PFX + _VBLOB_STORE + "_" + _VBLOB_SECRET
+_VBLOB2 = _VBLOB_PFX + _VBLOB_STORE2 + "_" + _VBLOB_SECRET2
+_VBLOB3 = _VBLOB_PFX + _VBLOB_STORE3 + "_" + _VBLOB_SECRET3
+_VBLOB_SDK_FIXTURE = _VBLOB_PFX + "12345fakeStoreId" + "_" + "30FakeRandomCharacters12345678"
+
+
+def _vblob(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "vercel_blob_read_write_token"
+    ]
+
+
+def test_vercel_blob_read_write_token_fixture_widths():
+    for store in (_VBLOB_STORE, _VBLOB_STORE2, _VBLOB_STORE3, "12345fakeStoreId"):
+        assert len(store) == 16 and store.isalnum()
+    for secret in (_VBLOB_SECRET, _VBLOB_SECRET2, _VBLOB_SECRET3, "30FakeRandomCharacters12345678"):
+        assert len(secret) == 30 and secret.isalnum()
+    assert len(_VBLOB) == 62
+    # The SDK's own parser: split on '_', store id at index 3.
+    assert _VBLOB.split("_")[3] == _VBLOB_STORE
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("BLOB_READ_WRITE_TOKEN=" + _VBLOB, _VBLOB),
+        ("export BLOB_READ_WRITE_TOKEN='" + _VBLOB2 + "'", _VBLOB2),
+        ("await put('avatar.jpg', file, { access: 'public', token: '" + _VBLOB3 + "' })", _VBLOB3),
+        ('{"BLOB_READ_WRITE_TOKEN": "' + _VBLOB + '"}', _VBLOB),
+        ("Authorization: Bearer " + _VBLOB2, _VBLOB2),
+        # Bare token with no context — the literal prefix + fixed widths are the anchor.
+        (_VBLOB3, _VBLOB3),
+    ],
+)
+def test_vercel_blob_read_write_token_true_positives(text, tok):
+    matched = _vblob(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Secret one short / one long.
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + "_" + _VBLOB_SECRET[:-1],
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + "_" + _VBLOB_SECRET + "a",
+        # Store id one short / one long.
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE[:-1] + "_" + _VBLOB_SECRET,
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + "Z_" + _VBLOB_SECRET,
+        # Missing separator / extra trailing segment.
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + _VBLOB_SECRET,
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB + "_extra",
+        # Other kinds are not attested and not matched.
+        "vercel_blob_" + "ro_" + _VBLOB_STORE + "_" + _VBLOB_SECRET,
+        # The store id and the OIDC token are not this credential.
+        "BLOB_STORE_ID=store_" + _VBLOB_STORE,
+        # Embedded after a word character.
+        "my" + _VBLOB,
+        # Prose naming the format.
+        "Blob read-write tokens start with vercel_blob_rw_ followed by the store id",
+    ],
+)
+def test_vercel_blob_read_write_token_true_negatives(text):
+    assert _vblob(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _VBLOB_SDK_FIXTURE,
+        _VBLOB_PFX + "x" * 16 + "_" + "x" * 30,
+        _VBLOB_PFX + "X" * 16 + "_" + "X" * 30,
+        _VBLOB_PFX + "0" * 16 + "_" + "0" * 30,
+    ],
+)
+def test_vercel_blob_read_write_token_placeholders_are_test_values(tok):
+    matched = _vblob("BLOB_READ_WRITE_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_vercel_blob_read_write_token_does_not_collide():
+    # Not shadowed by generic_api_key_env or any of the vca_/vcr_/vcp_/vci_/vck_
+    # Vercel patterns, which are anchored on their own prefixes.
+    for text in ("BLOB_READ_WRITE_TOKEN=" + _VBLOB, _VBLOB2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"vercel_blob_read_write_token"}, text

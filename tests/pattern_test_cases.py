@@ -8080,6 +8080,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Vercel Blob read-write token. SYNTHETIC values (base64 of SHA-512 over
+    # 'classifinder-vercel-blob-synthetic-store-<n>' / '...-secret-<n>', + / =
+    # stripped, cut to 16 and 30).
+    # Source: https://github.com/vercel/storage/blob/main/packages/blob/src/helpers.ts
+    "vercel_blob_read_write_token": {
+        "positives": [
+            "BLOB_READ_WRITE_TOKEN=vercel_blob_" + "rw_" + "Qkordfo55qdnXUiy"
+            + "_" + "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3n",
+            "await put('avatar.jpg', file, { token: 'vercel_blob_" + "rw_" + "M4OaVTHJmIxFbU63"
+            + "_" + "yD0vHbNLWI6t3HeZgcnCGaeCfYc5uu' })",
+            '{"BLOB_READ_WRITE_TOKEN": "vercel_blob_' + "rw_" + "Q09GTLb4MwiQPRzo"
+            + "_" + 'eLjmL1FjH8AgWDNuW5oFymQ6u3MPpa"}',
+        ],
+        "negatives": [
+            # Secret one character short / store id one character long.
+            "BLOB_READ_WRITE_TOKEN=vercel_blob_" + "rw_" + "Qkordfo55qdnXUiy"
+            + "_" + "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3",
+            "BLOB_READ_WRITE_TOKEN=vercel_blob_" + "rw_" + "Qkordfo55qdnXUiyZ"
+            + "_" + "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3n",
+            # Store id alone is an identifier, not a secret.
+            "BLOB_STORE_ID=store_Qkordfo55qdnXUiy",
+            # Prose naming the prefix but carrying no token.
+            "Blob read-write tokens start with vercel_blob_rw_ followed by the store id",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
