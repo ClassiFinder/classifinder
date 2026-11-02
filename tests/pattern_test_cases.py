@@ -8106,6 +8106,34 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # Liveblocks secret key. SYNTHETIC values (base64url of SHA-512 over
+    # 'classifinder-liveblocks-synthetic-<n>', cut to 64).
+    # Source: https://liveblocks.io/docs/api-reference/authentication
+    "liveblocks_secret_key": {
+        "positives": [
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa",
+            "const liveblocks = new Liveblocks({ secret: \"sk_" + "prod_"
+            + "pU2DXufx_t6ZfKRyV3leaUACsqwfsOBFq0VlwOFiReOXg_UzR7lB3IBUXGBTIY1k\" });",
+            "Authorization: Bearer sk_" + "prod_"
+            + "_4PIgsXS6kY8FTy6xdYsFXrHIlKuaHpyaFppjbMAgDyQ2J3t6Ty93qmjtKoRQ3At",
+        ],
+        "negatives": [
+            # One character short / one long of the measured 64.
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTK",
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKaQ",
+            # The public key is not a secret; sk_dev_ is unmeasured and not matched.
+            "LIVEBLOCKS_PUBLIC_KEY=pk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa",
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "dev_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa",
+            # Prose naming the prefix but carrying no key.
+            "Liveblocks secret keys start with sk_prod_ and live on the server only",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

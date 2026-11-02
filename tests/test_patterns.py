@@ -22740,3 +22740,96 @@ def test_vercel_blob_read_write_token_does_not_collide():
     for text in ("BLOB_READ_WRITE_TOKEN=" + _VBLOB, _VBLOB2):
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"vercel_blob_read_write_token"}, text
+
+
+# --- Liveblocks secret key -----------------------------------------------------------
+# 'sk_prod_' + exactly 64 base64url characters. Prefix per the vendor's own auth
+# docs (`secret: "sk_prod_..."`); width and charset measured on public values.
+# 'sk_dev_' is unmeasured and deliberately not matched. SYNTHETIC values (base64url
+# of SHA-512 over 'classifinder-liveblocks-synthetic-<n>', cut to 64), split so no
+# scannable key literal exists in source.
+# Source: https://liveblocks.io/docs/api-reference/authentication
+_LB_PFX = "sk_" + "prod_"
+_LB_1 = "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa"
+_LB_2 = "pU2DXufx_t6ZfKRyV3leaUACsqwfsOBFq0VlwOFiReOXg_UzR7lB3IBUXGBTIY1k"
+_LB_3 = "_4PIgsXS6kY8FTy6xdYsFXrHIlKuaHpyaFppjbMAgDyQ2J3t6Ty93qmjtKoRQ3At"
+_LB_KEY = _LB_PFX + _LB_1
+_LB_KEY2 = _LB_PFX + _LB_2
+_LB_KEY3 = _LB_PFX + _LB_3
+
+
+def _lb(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "liveblocks_secret_key"]
+
+
+def test_liveblocks_secret_key_fixture_widths():
+    for body in (_LB_1, _LB_2, _LB_3):
+        assert len(body) == 64
+        assert all(c.isalnum() or c in "_-" for c in body)
+    # The measured bodies carry '_' and '-'; the fixtures exercise both.
+    assert "_" in _LB_1 and "-" in _LB_1
+    assert len(_LB_KEY) == 72
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("LIVEBLOCKS_SECRET_KEY=" + _LB_KEY, _LB_KEY),
+        ("export LIVEBLOCKS_SECRET_KEY='" + _LB_KEY2 + "'", _LB_KEY2),
+        ('const liveblocks = new Liveblocks({ secret: "' + _LB_KEY3 + '" });', _LB_KEY3),
+        ("Authorization: Bearer " + _LB_KEY, _LB_KEY),
+        ('{"LIVEBLOCKS_SECRET_KEY": "' + _LB_KEY2 + '"}', _LB_KEY2),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_LB_KEY3, _LB_KEY3),
+    ],
+)
+def test_liveblocks_secret_key_true_positives(text, tok):
+    matched = _lb(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long of the measured 64.
+        "LIVEBLOCKS_SECRET_KEY=" + _LB_PFX + _LB_1[:-1],
+        "LIVEBLOCKS_SECRET_KEY=" + _LB_PFX + _LB_1 + "Q",
+        # Character outside the base64url alphabet.
+        "LIVEBLOCKS_SECRET_KEY=" + _LB_PFX + _LB_1[:-1] + "+",
+        # The development sibling is unmeasured and not matched; public keys are not secrets.
+        "LIVEBLOCKS_SECRET_KEY=sk_" + "dev_" + _LB_1,
+        "LIVEBLOCKS_PUBLIC_KEY=pk_" + "prod_" + _LB_1,
+        # The docs' own 24-wide placeholder is not a key shape.
+        'secret: "sk_' + 'prod_xxxxxxxxxxxxxxxxxxxxxxxx"',
+        # Embedded after a word character.
+        "my" + _LB_KEY,
+        # Prose naming the format.
+        "Liveblocks secret keys start with sk_prod_ and live on the server only",
+    ],
+)
+def test_liveblocks_secret_key_true_negatives(text):
+    assert _lb(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok", [_LB_PFX + "x" * 64, _LB_PFX + "X" * 64, _LB_PFX + "0" * 64]
+)
+def test_liveblocks_secret_key_placeholders_are_test_values(tok):
+    matched = _lb("LIVEBLOCKS_SECRET_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_liveblocks_secret_key_does_not_collide_with_stripe_or_cartesia():
+    # 'sk_prod_' shares the sk_ family with Stripe (sk_live_ / sk_test_) and
+    # Cartesia (sk_car_); none may fire on a Liveblocks key, and a Liveblocks
+    # key may not shadow a Stripe key of the same width.
+    for text in ("LIVEBLOCKS_SECRET_KEY=" + _LB_KEY, _LB_KEY2, "Bearer " + _LB_KEY3):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"liveblocks_secret_key"}, text
+    stripe_live = "sk_" + "live_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz01"
+    assert _lb("STRIPE_SECRET_KEY=" + stripe_live) == []
+    assert "stripe_live_secret_key" in {f.type for f in scan("STRIPE_SECRET_KEY=" + stripe_live)}
