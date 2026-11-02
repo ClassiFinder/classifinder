@@ -8205,6 +8205,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.90,
     },
+    # GrowthBook secret API key. SYNTHETIC values built exactly like the vendor
+    # generator: base64 of a 32-byte SHA-256 digest over
+    # 'classifinder-growthbook-synthetic-<n>' with '=', '/' and '+' stripped.
+    # Source: https://github.com/growthbook/growthbook/blob/main/packages/back-end/src/util/api-key.util.ts
+    "growthbook_secret_api_key": {
+        "positives": [
+            "GROWTHBOOK_API_KEY=sec" + "ret_user_" + "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0lD3NojiI",
+            "Authorization: Bearer sec" + "ret_admin_" + "rx0Hl0kOa5woZ8B5OLB11oppQKt9vGnBPYI8mc",
+            '{"growthbook_api_key": "sec' + "ret_readonly_" + 'v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzk"}',
+            # Default project-admin role is sliced to 20 characters and keeps its underscore.
+            "GROWTHBOOK_API_KEY=sec" + "ret_gbDefault_projectAdm_" + "e6WFJk3VDiVcWlUhRb1ofhRE1XDyJY4K8jy93a2IQk",
+        ],
+        "negatives": [
+            # Body of 35 — below what stripping '+' / '/' from 43 can plausibly leave.
+            "GROWTHBOOK_API_KEY=sec" + "ret_user_" + "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0l",
+            # Body of 44 — longer than base64 of 32 bytes can be.
+            "GROWTHBOOK_API_KEY=sec" + "ret_user_" + "v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzkQ",
+            # No role segment: that is Notion's secret_<43> shape, not GrowthBook's.
+            "NOTION_API_KEY=sec" + "ret_" + "v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzk",
+            # SDK (client) keys are publishable and not matched.
+            "GROWTHBOOK_CLIENT_KEY=sdk-" + "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0lD3NojiI",
+            # Prose naming the prefix but carrying no key.
+            "GrowthBook secret keys start with secret_user_ or secret_<role>_",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

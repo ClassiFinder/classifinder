@@ -23132,3 +23132,115 @@ def test_keygen_api_token_does_not_collide():
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"keygen_api_token"}, text
         assert findings[0].confidence >= 0.95
+
+
+# --- GrowthBook secret API key --------------------------------------------------------
+# 'secret_' + role ('user' or role id sliced to 20, [A-Za-z0-9_]) + '_' + 36-43
+# alphanumerics: generateSigningKey() = prefix + base64(32 random bytes) with
+# '=', '/' and '+' stripped, so the body is 43 minus the stripped characters.
+# SYNTHETIC values built exactly like the generator from a SHA-256 digest over
+# 'classifinder-growthbook-synthetic-<n>', split so no scannable key literal
+# exists in source.
+# Source: https://github.com/growthbook/growthbook/blob/main/packages/back-end/src/util/api-key.util.ts
+_GB_PFX = "sec" + "ret_"
+_GB_42 = "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0lD3NojiI"
+_GB_38 = "rx0Hl0kOa5woZ8B5OLB11oppQKt9vGnBPYI8mc"
+_GB_42B = "e6WFJk3VDiVcWlUhRb1ofhRE1XDyJY4K8jy93a2IQk"
+_GB_43 = "v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzk"
+_GB_43B = "tTraH5a8ES9SHHayjkZIGPGuIjISVDqaLgyNU6g0hN4"
+_GB_USER = _GB_PFX + "user_" + _GB_42
+_GB_ADMIN = _GB_PFX + "admin_" + _GB_38
+_GB_READONLY = _GB_PFX + "readonly_" + _GB_43
+_GB_PROJECT_ADMIN = _GB_PFX + "gbDefault_projectAdm_" + _GB_42B
+_GB_CUSTOM = _GB_PFX + "release_managers_2_" + _GB_43B
+
+
+def _gb(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "growthbook_secret_api_key"]
+
+
+def test_growthbook_secret_api_key_fixture_widths():
+    # base64 of 32 bytes is 44 chars with one '=': stripping '=' leaves 43, and
+    # every '+' / '/' stripped takes one more — the fixtures span 38..43.
+    assert len(_GB_43) == 43 and len(_GB_43B) == 43
+    assert len(_GB_42) == 42 and len(_GB_42B) == 42
+    assert len(_GB_38) == 38
+    for body in (_GB_42, _GB_38, _GB_42B, _GB_43, _GB_43B):
+        assert body.isalnum()
+    assert len("gbDefault_projectAdm") == 20 and len("release_managers_2") <= 20
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("GROWTHBOOK_API_KEY=" + _GB_USER, _GB_USER),
+        ("export GROWTHBOOK_SECRET_KEY='" + _GB_ADMIN + "'", _GB_ADMIN),
+        ("Authorization: Bearer " + _GB_READONLY, _GB_READONLY),
+        ('{"growthbook_api_key": "' + _GB_USER + '"}', _GB_USER),
+        # Default project-admin role sliced to 20 keeps its underscore.
+        ("GROWTHBOOK_API_KEY=" + _GB_PROJECT_ADMIN, _GB_PROJECT_ADMIN),
+        # Enterprise custom role id (validated /^[a-zA-Z0-9_]+$/ by the vendor).
+        ("GROWTHBOOK_API_KEY=" + _GB_CUSTOM, _GB_CUSTOM),
+        # Bare key with no context — the literal prefix + role + width band is the anchor.
+        (_GB_ADMIN, _GB_ADMIN),
+    ],
+)
+def test_growthbook_secret_api_key_true_positives(text, tok):
+    matched = _gb(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body of 35 / 44: outside what the generator can produce.
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43[:35],
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43 + "Q",
+        # Character the vendor strips ('+', '/') or never emits ('-') inside the
+        # body: the alphanumeric run on either side is too short to be a key.
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43[:20] + "+" + _GB_43[21:],
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43[:20] + "-" + _GB_43[21:],
+        # Role segment longer than role.slice(0, 20) can produce.
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "a_role_name_that_is_far_too_long_" + _GB_43,
+        # No role segment: Notion's secret_<43> shape, left to notion_api_key.
+        "NOTION_API_KEY=" + _GB_PFX + _GB_43,
+        # SDK (client) keys are publishable.
+        "GROWTHBOOK_CLIENT_KEY=sdk-" + _GB_42,
+        # Embedded after a word character / underscore (aws_secret_... style names).
+        "my" + _GB_USER,
+        "aws_" + _GB_USER,
+        # Prose naming the format.
+        "GrowthBook secret keys start with secret_user_ or secret_<role>_",
+    ],
+)
+def test_growthbook_secret_api_key_true_negatives(text):
+    assert _gb(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _GB_PFX + "user_" + "x" * 43,
+        _GB_PFX + "admin_" + "X" * 43,
+        _GB_PFX + "readonly_" + "0" * 43,
+    ],
+)
+def test_growthbook_secret_api_key_placeholders_are_test_values(tok):
+    matched = _gb("GROWTHBOOK_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_growthbook_secret_api_key_does_not_collide_with_notion():
+    # Both directions: a GrowthBook key never resolves to notion_api_key (the
+    # role segment's '_' breaks Notion's 43-alphanumeric run) and a Notion token
+    # never resolves to GrowthBook (no second '_').
+    for text in ("GROWTHBOOK_API_KEY=" + _GB_USER, _GB_READONLY, "Bearer " + _GB_PROJECT_ADMIN):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"growthbook_secret_api_key"}, text
+    notion = "NOTION_API_KEY=" + _GB_PFX + _GB_43
+    types = {f.type for f in scan(notion, min_confidence=0.01)}
+    assert "notion_api_key" in types and "growthbook_secret_api_key" not in types
