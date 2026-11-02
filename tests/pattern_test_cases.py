@@ -8058,6 +8058,28 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.50,
     },
+    # E2B sandbox API key. SYNTHETIC values (SHA-256 over
+    # 'classifinder-e2b-synthetic-<n>' cut to 40 hex; the legacy shape to 32).
+    # Source: https://github.com/e2b-dev/runtime/blob/main/packages/shared/pkg/keys/key.go
+    "e2b_api_key": {
+        "positives": [
+            "E2B_API_KEY=e2" + "b_" + "a37d262adb9d5482158bbf0ec111815305e5be8c",
+            "X-API-Key: e2" + "b_" + "3dab6a81d9c9ff191e752b833675893186d1e935",
+            '{"e2b_api_key": "e2' + "b_" + 'f5a561b7f2fe71ef90742f3a7bf5791f8135c399"}',
+            # 32-hex team-key shape from the vendor's own seed fixtures.
+            "TEAM_API_KEY=e2" + "b_" + "7805d0fc48872930b1363dfd6e832a34",
+        ],
+        "negatives": [
+            # 39 and 41 hex — between or beyond the two vendor widths.
+            "E2B_API_KEY=e2" + "b_" + "a37d262adb9d5482158bbf0ec111815305e5be8",
+            "E2B_API_KEY=e2" + "b_" + "a37d262adb9d5482158bbf0ec111815305e5be8c0",
+            # Uppercase hex is outside hex.EncodeToString's alphabet.
+            "E2B_API_KEY=e2" + "b_" + "A37D262ADB9D5482158BBF0EC111815305E5BE8C",
+            # Prose naming the prefix but carrying no key.
+            "E2B API keys start with e2b_ and are read from E2B_API_KEY",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on

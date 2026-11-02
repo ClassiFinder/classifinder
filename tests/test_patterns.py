@@ -22536,3 +22536,101 @@ def test_dify_api_key_does_not_collide():
     for text in ("DIFY_API_KEY=" + _DIFY_APP, "DIFY_API_KEY=" + _DIFY_DATASET):
         findings = scan(text, min_confidence=0.01)
         assert {f.type for f in findings} == {"dify_api_key"}, text
+
+
+# --- E2B sandbox API key -----------------------------------------------------------
+# 'e2b_' + exactly 40 lowercase hex (keys/constants.go ApiKeyPrefix; keys/key.go
+# keyLength = 20, GenerateKey() = prefix + hex of 20 random bytes) or the 32-hex
+# team-key shape the vendor's own seed fixtures and install tests pin. SYNTHETIC
+# values (SHA-256 over 'classifinder-e2b-synthetic-<n>' cut to width), split so
+# no scannable key literal exists in source.
+# Source: https://github.com/e2b-dev/runtime/blob/main/packages/shared/pkg/keys/key.go
+_E2B_PFX = "e2" + "b_"
+_E2B_40 = "a37d262adb9d5482158bbf0ec111815305e5be8c"
+_E2B_40B = "3dab6a81d9c9ff191e752b833675893186d1e935"
+_E2B_40C = "f5a561b7f2fe71ef90742f3a7bf5791f8135c399"
+_E2B_32 = "7805d0fc48872930b1363dfd6e832a34"
+_E2B_KEY = _E2B_PFX + _E2B_40
+_E2B_KEY2 = _E2B_PFX + _E2B_40B
+_E2B_KEY3 = _E2B_PFX + _E2B_40C
+_E2B_LEGACY = _E2B_PFX + _E2B_32
+
+
+def _e2b(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "e2b_api_key"]
+
+
+def test_e2b_api_key_fixture_widths():
+    for body in (_E2B_40, _E2B_40B, _E2B_40C):
+        assert len(body) == 40 and all(c in "0123456789abcdef" for c in body)
+    assert len(_E2B_32) == 32
+    assert len(_E2B_KEY) == 44 and len(_E2B_LEGACY) == 36
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("E2B_API_KEY=" + _E2B_KEY, _E2B_KEY),
+        ("export E2B_API_KEY='" + _E2B_KEY2 + "'", _E2B_KEY2),
+        ("X-API-Key: " + _E2B_KEY3, _E2B_KEY3),
+        ('{"e2b_api_key": "' + _E2B_KEY + '"}', _E2B_KEY),
+        ("sandbox = Sandbox.create(api_key=\"" + _E2B_KEY2 + "\")", _E2B_KEY2),
+        # 32-hex team-key shape (vendor seed fixtures).
+        ("TEAM_API_KEY=" + _E2B_LEGACY, _E2B_LEGACY),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_E2B_KEY3, _E2B_KEY3),
+    ],
+)
+def test_e2b_api_key_true_positives(text, tok):
+    matched = _e2b(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 31 / 33 / 39 / 41 hex: only 32 and 40 are vendor-attested.
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_32[:-1],
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_32 + "0",
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40[:-1],
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40 + "0",
+        # Uppercase / non-hex characters.
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40.upper(),
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40[:-1] + "g",
+        # Embedded after a word character.
+        "my" + _E2B_KEY,
+        # Prose naming the format.
+        "E2B API keys start with e2b_ and are read from E2B_API_KEY",
+    ],
+)
+def test_e2b_api_key_true_negatives(text):
+    assert _e2b(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _E2B_PFX + "ffeeddccbbaa99887766554433221100",
+        _E2B_PFX + "0f0e0d0c0b0a09080706050403020100",
+        _E2B_PFX + "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+        _E2B_PFX + "0" * 40,
+        _E2B_PFX + "a" * 32,
+        _E2B_PFX + "f" * 40,
+    ],
+)
+def test_e2b_api_key_placeholders_are_test_values(tok):
+    matched = _e2b("E2B_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_e2b_api_key_does_not_collide():
+    # Previously only generic_api_key_env fired here, entropy-penalised to 0.19;
+    # the provider pattern must now be the sole claimant at full confidence.
+    for text in ("E2B_API_KEY=" + _E2B_KEY, "E2B_API_KEY=" + _E2B_LEGACY):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"e2b_api_key"}, text
+        assert findings[0].confidence >= 0.95
