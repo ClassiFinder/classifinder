@@ -22337,3 +22337,113 @@ def test_headscale_api_key_leaves_tailscale_alias_to_tailscale_pattern():
     findings = scan(text, min_confidence=0.01)
     assert _hs(text) == []
     assert "tailscale_api_key" in {f.type for f in findings}
+
+
+# ---------------------------------------------------------------------------
+# Apify Proxy password: the literal 'apify_proxy_' prefix + exactly 36 [A-Za-z0-9]
+# (48 characters total), per the full-width "External connection" example in the
+# vendor's own proxy usage guide. _AP_VENDOR is that published doc example; the
+# other bodies are SYNTHETIC (base62 of SHA-512 over
+# 'classifinder-apify-proxy-synthetic-<n>'). All values are concatenated so no
+# scannable literal exists in source.
+# Source: https://docs.apify.com/platform/proxy/usage
+_AP_PFX = "apify_" + "proxy_"
+_AP_VENDOR = "EaAFg6CFhc4eKk54Q1HbGDEiUTrk480uZv03"
+_AP_SYN1 = "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc"
+_AP_SYN2 = "dxmaz82CJyakTPBfiB9jCn6Sv9bIvhz8EAZ3"
+_AP_PW_VENDOR = _AP_PFX + _AP_VENDOR
+_AP_PW1 = _AP_PFX + _AP_SYN1
+_AP_PW2 = _AP_PFX + _AP_SYN2
+_AP_PROXY_URL = "http://auto:" + _AP_PW_VENDOR + "@proxy.apify.com:8000"
+
+
+def _ap(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "apify_proxy_password"]
+
+
+def test_apify_proxy_password_fixture_widths():
+    for body in (_AP_VENDOR, _AP_SYN1, _AP_SYN2):
+        assert len(body) == 36 and body.isalnum() and body.isascii()
+    assert len(_AP_PW_VENDOR) == 48
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        # The vendor's own "External connection" form: the span is the password
+        # alone, not the surrounding URL.
+        (_AP_PROXY_URL, _AP_PW_VENDOR),
+        ("APIFY_PROXY_PASSWORD=" + _AP_PW1, _AP_PW1),
+        ("export APIFY_PROXY_PASSWORD='" + _AP_PW2 + "'", _AP_PW2),
+        # Username selects groups / country; the password is unchanged.
+        (
+            'curl --proxy "http://groups-RESIDENTIAL,country-US:' + _AP_PW1
+            + '@proxy.apify.com:8000" https://example.com',
+            _AP_PW1,
+        ),
+        ('proxies = {"http": "http://auto:' + _AP_PW2 + '@proxy.apify.com:8000"}', _AP_PW2),
+        # Bare value with no context — the literal prefix + fixed width is the anchor.
+        (_AP_PW1, _AP_PW1),
+    ],
+)
+def test_apify_proxy_password_true_positives(text, tok):
+    matched = _ap(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long of the vendor's 36.
+        "APIFY_PROXY_PASSWORD=" + _AP_PFX + _AP_SYN1[:-1],
+        "APIFY_PROXY_PASSWORD=" + _AP_PFX + _AP_SYN1 + "a",
+        # Character outside [A-Za-z0-9] inside the body.
+        "APIFY_PROXY_PASSWORD=" + _AP_PFX + _AP_SYN1[:-1] + "-",
+        # Sibling API token prefix belongs to apify_api_token, not this pattern.
+        "APIFY_TOKEN=apify_api_" + _AP_SYN1,
+        # Embedded after a word character.
+        "my" + _AP_PW1,
+        # Prose naming the format.
+        "Apify proxy passwords look like apify_proxy_<password> in the proxy URL",
+        # Template placeholder from the vendor docs, not a credential.
+        "http://auto:apify_proxy_<password>@proxy.apify.com:8000",
+    ],
+)
+def test_apify_proxy_password_true_negatives(text):
+    assert _ap(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _AP_PFX + "A" * 36,
+        _AP_PFX + "0" * 36,
+        _AP_PFX + "x" * 36,
+    ],
+)
+def test_apify_proxy_password_placeholders_are_test_values(tok):
+    matched = _ap("APIFY_PROXY_PASSWORD=" + tok)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence <= 0.20
+
+
+def test_apify_proxy_password_does_not_collide():
+    # Not shadowed by generic_api_key_env / generic_high_entropy, and in the
+    # vendor's proxy-URL form it wins span dedup over the generic password_in_url.
+    for text in ("APIFY_PROXY_PASSWORD=" + _AP_PW1, _AP_PROXY_URL):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"apify_proxy_password"}, text
+
+
+def test_apify_proxy_password_and_apify_api_token_are_mutually_exclusive():
+    # Different literal prefixes, same 36-char body: neither pattern fires on
+    # the other's value.
+    proxy = scan("APIFY_PROXY_PASSWORD=" + _AP_PW1, min_confidence=0.01)
+    assert "apify_api_token" not in {f.type for f in proxy}
+    api = scan("APIFY_TOKEN=apify_api_" + _AP_SYN1, min_confidence=0.01)
+    assert "apify_api_token" in {f.type for f in api}
+    assert "apify_proxy_password" not in {f.type for f in api}

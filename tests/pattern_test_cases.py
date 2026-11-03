@@ -3548,6 +3548,26 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    # Apify Proxy password: apify_proxy_ + 36 alphanumeric chars. Bodies are
+    # SYNTHETIC (base62 of SHA-512 over 'classifinder-apify-proxy-synthetic-<n>'),
+    # concatenated so no scannable literal exists in source.
+    # Source: https://docs.apify.com/platform/proxy/usage
+    "apify_proxy_password": {
+        "positives": [
+            "APIFY_PROXY_PASSWORD=apify_" + "proxy_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc",
+            "http://auto:apify_" + "proxy_" + "dxmaz82CJyakTPBfiB9jCn6Sv9bIvhz8EAZ3"
+            + "@proxy.apify.com:8000",
+        ],
+        "negatives": [
+            # Body one char short of the vendor's 36.
+            "APIFY_PROXY_PASSWORD=apify_" + "proxy_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAy",
+            # Sibling credential with its own prefix belongs to apify_api_token.
+            "APIFY_TOKEN=apify_api_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc",
+            # Prose naming the prefix but carrying no password.
+            "Apify proxy passwords start with apify_proxy_ and are 48 characters long",
+        ],
+        "min_confidence": 0.90,
+    },
     "salesforce_access_token": {
         # Structural: 00 + 13 alnum + '!' at index 15 + 96+ char signed tail.
         "positives": [
