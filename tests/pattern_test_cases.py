@@ -3548,6 +3548,51 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    # Apify Proxy password: apify_proxy_ + 36 alphanumeric chars. Bodies are
+    # SYNTHETIC (base62 of SHA-512 over 'classifinder-apify-proxy-synthetic-<n>'),
+    # concatenated so no scannable literal exists in source.
+    # Source: https://docs.apify.com/platform/proxy/usage
+    "apify_proxy_password": {
+        "positives": [
+            "APIFY_PROXY_PASSWORD=apify_" + "proxy_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc",
+            "http://auto:apify_" + "proxy_" + "dxmaz82CJyakTPBfiB9jCn6Sv9bIvhz8EAZ3"
+            + "@proxy.apify.com:8000",
+        ],
+        "negatives": [
+            # Body one char short of the vendor's 36.
+            "APIFY_PROXY_PASSWORD=apify_" + "proxy_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAy",
+            # Sibling credential with its own prefix belongs to apify_api_token.
+            "APIFY_TOKEN=apify_api_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc",
+            # Prose naming the prefix but carrying no password.
+            "Apify proxy passwords start with apify_proxy_ and are 48 characters long",
+        ],
+        "min_confidence": 0.90,
+    },
+    # HashiCorp Boundary auth token: at_ + 10 base62 public id + _s1 + 60-160
+    # base58 (the vendor's published example carries 112). Bodies are SYNTHETIC
+    # (base62 / base58 of SHA-512 over 'classifinder-boundary-synthetic-<kind>-<n>'),
+    # concatenated so no scannable literal exists in source.
+    # Source: https://developer.hashicorp.com/boundary/docs/commands/config/get-token
+    "hashicorp_boundary_auth_token": {
+        "positives": [
+            "BOUNDARY_TOKEN=at_" + "GhvSqsLR4f" + "_s1"
+            + "DGvmbQr6xdseQv9i76pcTPSNDHwj1T27w3ttGGHHf731UMJNYBVCpMixQ7w13jhLKU5tsnH4rDW1PMfocbX"
+            + "4k8q5r3hZTJboqije84HbWq2eexcw",
+            "Authorization: Bearer at_" + "1wpPZQYjaD" + "_s1"
+            + "5zSvanyDgn7xGpV6NMiY4CW1HNwXsfnQYTGCqZH5qEG6EPaKtLFSFVYyknSqBfy9P8rxJAFcKqth7GwL3t"
+            + "oKC3XdYQ",
+        ],
+        "negatives": [
+            # Bare auth-token public id: an identifier, not a secret.
+            "boundary auth-tokens read -id at_" + "GhvSqsLR4f",
+            # Tail below the 60-char floor of the envelope.
+            "BOUNDARY_TOKEN=at_" + "GhvSqsLR4f" + "_s1"
+            + "DGvmbQr6xdseQv9i76pcTPSNDHwj1T27w3ttGGHHf731UMJNYB",
+            # Prose naming the layout but carrying no token.
+            "Boundary auth tokens look like at_<id>_s1<base58> and are about 128 characters long",
+        ],
+        "min_confidence": 0.90,
+    },
     "salesforce_access_token": {
         # Structural: 00 + 13 alnum + '!' at index 15 + 96+ char signed tail.
         "positives": [

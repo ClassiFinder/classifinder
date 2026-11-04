@@ -23331,3 +23331,257 @@ def test_settlemint_service_access_token_is_sole_claimant_and_siblings_stay_sepa
     assert {f.type for f in scan(_SETTLEMINT_AAT, min_confidence=0.01)} == {
         "settlemint_application_access_token"
     }
+
+
+# ---------------------------------------------------------------------------
+# Apify Proxy password: the literal 'apify_proxy_' prefix + exactly 36 [A-Za-z0-9]
+# (48 characters total), per the full-width "External connection" example in the
+# vendor's own proxy usage guide. _AP_VENDOR is that published doc example; the
+# other bodies are SYNTHETIC (base62 of SHA-512 over
+# 'classifinder-apify-proxy-synthetic-<n>'). All values are concatenated so no
+# scannable literal exists in source.
+# Source: https://docs.apify.com/platform/proxy/usage
+_AP_PFX = "apify_" + "proxy_"
+_AP_VENDOR = "EaAFg6CFhc4eKk54Q1HbGDEiUTrk480uZv03"
+_AP_SYN1 = "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc"
+_AP_SYN2 = "dxmaz82CJyakTPBfiB9jCn6Sv9bIvhz8EAZ3"
+_AP_PW_VENDOR = _AP_PFX + _AP_VENDOR
+_AP_PW1 = _AP_PFX + _AP_SYN1
+_AP_PW2 = _AP_PFX + _AP_SYN2
+_AP_PROXY_URL = "http://auto:" + _AP_PW_VENDOR + "@proxy.apify.com:8000"
+
+
+def _ap(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "apify_proxy_password"]
+
+
+def test_apify_proxy_password_fixture_widths():
+    for body in (_AP_VENDOR, _AP_SYN1, _AP_SYN2):
+        assert len(body) == 36 and body.isalnum() and body.isascii()
+    assert len(_AP_PW_VENDOR) == 48
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        # The vendor's own "External connection" form: the span is the password
+        # alone, not the surrounding URL.
+        (_AP_PROXY_URL, _AP_PW_VENDOR),
+        ("APIFY_PROXY_PASSWORD=" + _AP_PW1, _AP_PW1),
+        ("export APIFY_PROXY_PASSWORD='" + _AP_PW2 + "'", _AP_PW2),
+        # Username selects groups / country; the password is unchanged.
+        (
+            'curl --proxy "http://groups-RESIDENTIAL,country-US:' + _AP_PW1
+            + '@proxy.apify.com:8000" https://example.com',
+            _AP_PW1,
+        ),
+        ('proxies = {"http": "http://auto:' + _AP_PW2 + '@proxy.apify.com:8000"}', _AP_PW2),
+        # Bare value with no context — the literal prefix + fixed width is the anchor.
+        (_AP_PW1, _AP_PW1),
+    ],
+)
+def test_apify_proxy_password_true_positives(text, tok):
+    matched = _ap(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long of the vendor's 36.
+        "APIFY_PROXY_PASSWORD=" + _AP_PFX + _AP_SYN1[:-1],
+        "APIFY_PROXY_PASSWORD=" + _AP_PFX + _AP_SYN1 + "a",
+        # Character outside [A-Za-z0-9] inside the body.
+        "APIFY_PROXY_PASSWORD=" + _AP_PFX + _AP_SYN1[:-1] + "-",
+        # Sibling API token prefix belongs to apify_api_token, not this pattern.
+        "APIFY_TOKEN=apify_api_" + _AP_SYN1,
+        # Embedded after a word character.
+        "my" + _AP_PW1,
+        # Prose naming the format.
+        "Apify proxy passwords look like apify_proxy_<password> in the proxy URL",
+        # Template placeholder from the vendor docs, not a credential.
+        "http://auto:apify_proxy_<password>@proxy.apify.com:8000",
+    ],
+)
+def test_apify_proxy_password_true_negatives(text):
+    assert _ap(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _AP_PFX + "A" * 36,
+        _AP_PFX + "0" * 36,
+        _AP_PFX + "x" * 36,
+    ],
+)
+def test_apify_proxy_password_placeholders_are_test_values(tok):
+    matched = _ap("APIFY_PROXY_PASSWORD=" + tok)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence <= 0.20
+
+
+def test_apify_proxy_password_does_not_collide():
+    # Not shadowed by generic_api_key_env / generic_high_entropy, and in the
+    # vendor's proxy-URL form it wins span dedup over the generic password_in_url.
+    for text in ("APIFY_PROXY_PASSWORD=" + _AP_PW1, _AP_PROXY_URL):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"apify_proxy_password"}, text
+
+
+def test_apify_proxy_password_and_apify_api_token_are_mutually_exclusive():
+    # Different literal prefixes, same 36-char body: neither pattern fires on
+    # the other's value.
+    proxy = scan("APIFY_PROXY_PASSWORD=" + _AP_PW1, min_confidence=0.01)
+    assert "apify_api_token" not in {f.type for f in proxy}
+    api = scan("APIFY_TOKEN=apify_api_" + _AP_SYN1, min_confidence=0.01)
+    assert "apify_api_token" in {f.type for f in api}
+    assert "apify_proxy_password" not in {f.type for f in api}
+
+
+# ---------------------------------------------------------------------------
+# HashiCorp Boundary auth token: the token's public id ('at_' + 10 base62, from
+# globals.AuthTokenPrefix and internal/db/id.go base62.Random(10)) joined by '_'
+# to the encrypted secret segment: globals.ServiceTokenV1 ('s1') + base58 of the
+# protobuf blob built by internal/authtoken/authtoken.go EncryptToken. The blob
+# wraps the 25-char raw token plus a random 0-29 byte confounder, so the base58
+# tail is VARIABLE width by design; {60,160} is a conservative envelope around
+# the 112-char tail of the vendor's own published example. _BD_VENDOR_* is that
+# example (boundary config get-token docs); the other bodies are SYNTHETIC
+# (base62 / base58 of SHA-512 over 'classifinder-boundary-synthetic-<kind>-<n>').
+# All values are concatenated so no scannable literal exists in source.
+# Source: https://developer.hashicorp.com/boundary/docs/commands/config/get-token
+_BD_PFX = "at" + "_"
+_BD_SEP = "_" + "s1"
+_BD_VENDOR_ID = "yczA5UPS7Y"
+_BD_VENDOR_TAIL = (
+    "3B5PWh7KENvtKQKgDxaEvP682FMfq5eXrpzKNTpmaHgLS2ucRexrTQ7ueMhDFY5MdFvNuzuTWzUzYgacitn"
+    "SBaPo75b3XZU4Zp6wmdsXqmkPNY3U"
+)
+_BD_SYN1_ID = "GhvSqsLR4f"
+_BD_SYN1_TAIL = (
+    "DGvmbQr6xdseQv9i76pcTPSNDHwj1T27w3ttGGHHf731UMJNYBVCpMixQ7w13jhLKU5tsnH4rDW1PMfocbX"
+    "4k8q5r3hZTJboqije84HbWq2eexcw"
+)
+# Shortest tail the envelope admits (60 base58).
+_BD_SYN2_ID = "D31EPop723"
+_BD_SYN2_TAIL = "bM5KuWtz5ftBTcZANdRxSUFmCNiPyFckidp1y9x7pHS1ThBtRsTiqagjC4gf"
+# Longest tail the envelope admits (160 base58).
+_BD_SYN3_ID = "zgAHv3VmNV"
+_BD_SYN3_TAIL = (
+    "Ypc93ASdhy3TUz1YvygjPKGzPuthyjjnGjYHGf7gEU7Ldjac1qJ4vBSW6cipwFsY7R9UZBqQZFZkgvfH1nv"
+    "mfqd2qxSfCWQAMb6sY3wQKBwaVhRkcMU3DJb7G9e8UfEP3NcDEw7PXubeWAuxrHDPTMskvPHyvs9t"
+)
+_BD_VENDOR = _BD_PFX + _BD_VENDOR_ID + _BD_SEP + _BD_VENDOR_TAIL
+_BD_SYN1 = _BD_PFX + _BD_SYN1_ID + _BD_SEP + _BD_SYN1_TAIL
+_BD_SYN2 = _BD_PFX + _BD_SYN2_ID + _BD_SEP + _BD_SYN2_TAIL
+_BD_SYN3 = _BD_PFX + _BD_SYN3_ID + _BD_SEP + _BD_SYN3_TAIL
+_BD_BASE58 = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+
+
+def _bd(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "hashicorp_boundary_auth_token"
+    ]
+
+
+def test_hashicorp_boundary_auth_token_fixture_shapes():
+    for pid in (_BD_VENDOR_ID, _BD_SYN1_ID, _BD_SYN2_ID, _BD_SYN3_ID):
+        assert len(pid) == 10 and pid.isalnum() and pid.isascii()
+    for tail in (_BD_VENDOR_TAIL, _BD_SYN1_TAIL, _BD_SYN2_TAIL, _BD_SYN3_TAIL):
+        assert set(tail) <= _BD_BASE58, "tail must be strictly base58 (no 0/O/I/l)"
+    assert len(_BD_VENDOR_TAIL) == 112 and len(_BD_VENDOR) == 128
+    assert len(_BD_SYN2_TAIL) == 60 and len(_BD_SYN3_TAIL) == 160
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        # The vendor's own 'boundary config get-token' output: bare, no context.
+        (_BD_VENDOR, _BD_VENDOR),
+        # The Bearer carrier the same docs page shows.
+        ("Authorization: Bearer " + _BD_VENDOR, _BD_VENDOR),
+        # The CLI's documented override variable.
+        ("BOUNDARY_TOKEN=" + _BD_SYN1, _BD_SYN1),
+        ("export BOUNDARY_TOKEN='" + _BD_SYN1 + "'", _BD_SYN1),
+        # JSON body as returned by the authenticate API / -format=json.
+        ('{"attributes": {"token": "' + _BD_SYN1 + '"}}', _BD_SYN1),
+        # Narrowest and widest tails the envelope admits.
+        ("BOUNDARY_TOKEN=" + _BD_SYN2, _BD_SYN2),
+        ("BOUNDARY_TOKEN=" + _BD_SYN3, _BD_SYN3),
+    ],
+)
+def test_hashicorp_boundary_auth_token_true_positives(text, tok):
+    matched = _bd(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The bare auth-token PUBLIC ID is an identifier, not a secret.
+        "auth_token_id: " + _BD_PFX + "Gvd3jsqSO2",
+        "boundary auth-tokens read -id " + _BD_PFX + _BD_VENDOR_ID,
+        # Public id one char short / one char long of the vendor's 10.
+        _BD_PFX + _BD_VENDOR_ID[:-1] + _BD_SEP + _BD_VENDOR_TAIL,
+        _BD_PFX + _BD_VENDOR_ID + "Q" + _BD_SEP + _BD_VENDOR_TAIL,
+        # Tail outside the {60,160} envelope.
+        _BD_PFX + _BD_SYN2_ID + _BD_SEP + _BD_SYN2_TAIL[:-1],
+        _BD_PFX + _BD_SYN3_ID + _BD_SEP + _BD_SYN3_TAIL + "z",
+        # A non-base58 character ('0', 'O', 'I', 'l') inside the tail.
+        _BD_PFX + _BD_VENDOR_ID + _BD_SEP + _BD_VENDOR_TAIL[:50] + "0" + _BD_VENDOR_TAIL[51:],
+        _BD_PFX + _BD_VENDOR_ID + _BD_SEP + _BD_VENDOR_TAIL[:50] + "l" + _BD_VENDOR_TAIL[51:],
+        # Wrong service-token version marker.
+        _BD_PFX + _BD_VENDOR_ID + "_s2" + _BD_VENDOR_TAIL,
+        # Embedded after a word character: other vendors' '…at_' prefixes
+        # (Cloudflare cfat_, Upstash ucat_) never reach this pattern.
+        "cf" + _BD_VENDOR,
+        "uc" + _BD_VENDOR,
+        "my" + _BD_VENDOR,
+        # Prose naming the format without a token.
+        "Boundary auth tokens look like at_<public id>_s1<base58> and are ~128 chars",
+    ],
+)
+def test_hashicorp_boundary_auth_token_true_negatives(text):
+    assert _bd(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _BD_PFX + "A" * 10 + _BD_SEP + "A" * 112,
+        _BD_PFX + "1" * 10 + _BD_SEP + "1" * 112,
+        _BD_PFX + "x" * 10 + _BD_SEP + "x" * 112,
+    ],
+)
+def test_hashicorp_boundary_auth_token_placeholders_are_test_values(tok):
+    matched = _bd("BOUNDARY_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].is_likely_test_value is True
+    assert matched[0].confidence <= 0.20
+
+
+def test_hashicorp_boundary_auth_token_does_not_collide():
+    # Before this pattern the env carrier fell through to generic_high_entropy
+    # (~0.47) and the bare token produced nothing; now the vendor pattern wins
+    # span dedup and is the only finding in every carrier.
+    for text in (_BD_VENDOR, "BOUNDARY_TOKEN=" + _BD_SYN1, "Authorization: Bearer " + _BD_VENDOR):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"hashicorp_boundary_auth_token"}, text
+
+
+def test_hashicorp_boundary_auth_token_leaves_other_at_prefixes_alone():
+    # Cloudflare 'cfat_' and Upstash 'ucat_' carry a word character before
+    # 'at_', so the left guard keeps this pattern off them even when the rest
+    # of the value happens to fit the Boundary layout.
+    for other in ("cf" + _BD_SYN1, "uc" + _BD_SYN1):
+        assert "hashicorp_boundary_auth_token" not in {
+            f.type for f in scan("TOKEN=" + other, min_confidence=0.01)
+        }
