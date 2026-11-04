@@ -3559,6 +3559,51 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.80,
     },
+    # Apify Proxy password: apify_proxy_ + 36 alphanumeric chars. Bodies are
+    # SYNTHETIC (base62 of SHA-512 over 'classifinder-apify-proxy-synthetic-<n>'),
+    # concatenated so no scannable literal exists in source.
+    # Source: https://docs.apify.com/platform/proxy/usage
+    "apify_proxy_password": {
+        "positives": [
+            "APIFY_PROXY_PASSWORD=apify_" + "proxy_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc",
+            "http://auto:apify_" + "proxy_" + "dxmaz82CJyakTPBfiB9jCn6Sv9bIvhz8EAZ3"
+            + "@proxy.apify.com:8000",
+        ],
+        "negatives": [
+            # Body one char short of the vendor's 36.
+            "APIFY_PROXY_PASSWORD=apify_" + "proxy_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAy",
+            # Sibling credential with its own prefix belongs to apify_api_token.
+            "APIFY_TOKEN=apify_api_" + "7hqc7Gjw73mJHbafoNnGOnCS61ZYO1z0oAyc",
+            # Prose naming the prefix but carrying no password.
+            "Apify proxy passwords start with apify_proxy_ and are 48 characters long",
+        ],
+        "min_confidence": 0.90,
+    },
+    # HashiCorp Boundary auth token: at_ + 10 base62 public id + _s1 + 60-160
+    # base58 (the vendor's published example carries 112). Bodies are SYNTHETIC
+    # (base62 / base58 of SHA-512 over 'classifinder-boundary-synthetic-<kind>-<n>'),
+    # concatenated so no scannable literal exists in source.
+    # Source: https://developer.hashicorp.com/boundary/docs/commands/config/get-token
+    "hashicorp_boundary_auth_token": {
+        "positives": [
+            "BOUNDARY_TOKEN=at_" + "GhvSqsLR4f" + "_s1"
+            + "DGvmbQr6xdseQv9i76pcTPSNDHwj1T27w3ttGGHHf731UMJNYBVCpMixQ7w13jhLKU5tsnH4rDW1PMfocbX"
+            + "4k8q5r3hZTJboqije84HbWq2eexcw",
+            "Authorization: Bearer at_" + "1wpPZQYjaD" + "_s1"
+            + "5zSvanyDgn7xGpV6NMiY4CW1HNwXsfnQYTGCqZH5qEG6EPaKtLFSFVYyknSqBfy9P8rxJAFcKqth7GwL3t"
+            + "oKC3XdYQ",
+        ],
+        "negatives": [
+            # Bare auth-token public id: an identifier, not a secret.
+            "boundary auth-tokens read -id at_" + "GhvSqsLR4f",
+            # Tail below the 60-char floor of the envelope.
+            "BOUNDARY_TOKEN=at_" + "GhvSqsLR4f" + "_s1"
+            + "DGvmbQr6xdseQv9i76pcTPSNDHwj1T27w3ttGGHHf731UMJNYB",
+            # Prose naming the layout but carrying no token.
+            "Boundary auth tokens look like at_<id>_s1<base58> and are about 128 characters long",
+        ],
+        "min_confidence": 0.90,
+    },
     "salesforce_access_token": {
         # Structural: 00 + 13 alnum + '!' at index 15 + 96+ char signed tail.
         "positives": [
@@ -5211,8 +5256,8 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Fifteen characters — below the vendor's rendered floor.
             "sm_pat_" + "ecjgB6yqzvXbFSa",
             # The sibling families are separate credentials with different
-            # blast radii; sm_aat_ has its own pattern and sm_sat_ is not
-            # shipped, so neither may resolve to the personal-token type.
+            # blast radii; sm_aat_ and sm_sat_ each have their own pattern, so
+            # neither may resolve to the personal-token type.
             "sm_aat_" + "hvOh0ZvbkmhfCsI8",
             "sm_sat_" + "ecjgB6yqzvXbFSad",
             # Hyphen and underscore are outside the body charset.
@@ -8027,6 +8072,243 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "headscale API keys start with hskey-api- followed by an identifier",
         ],
         "min_confidence": 0.90,
+    },
+    # Cerebras Inference API key. SYNTHETIC values (base64 of SHA-512 over
+    # 'classifinder-cerebras-synthetic-<n>' with + / = stripped, cut to 48).
+    # Source: https://inference-docs.cerebras.ai/integrations/dify
+    "cerebras_api_key": {
+        "positives": [
+            "CEREBRAS_API_KEY=cs" + "k-" + "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgYo",
+            "Authorization: Bearer cs" + "k-" + "v8D8bSwfkfLCO1tmDA3eacIBUwspuo8zXHjtA0LLLvFDn3HP",
+            '{"api_key": "cs' + "k-" + 'GL5c8uppj9pJd4xINIwL005ml2my6QCImDdxj0WH0qODSa62"}',
+        ],
+        "negatives": [
+            # One character short / one long of the measured 48.
+            "CEREBRAS_API_KEY=cs" + "k-" + "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgY",
+            "CEREBRAS_API_KEY=cs" + "k-" + "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgYoZ",
+            # Prose naming the prefix but carrying no key.
+            "Cerebras API keys start with csk- followed by the key body",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Dify app / dataset API key. Context-gated (base 0.48): every positive
+    # carries a Dify keyword or the Bearer carrier. SYNTHETIC values (base64
+    # of SHA-512 over 'classifinder-dify-synthetic-<n>', + / = stripped, 24).
+    # Source: https://github.com/langgenius/dify/blob/main/api/models/model.py
+    "dify_api_key": {
+        "positives": [
+            "DIFY_API_KEY=" + "app-" + "STkUQqV3clRPNdt2qgDDbnam",
+            "curl https://api.dify.ai/v1/chat-messages -H 'Authorization: Bearer "
+            + "app-" + "zYIBpPfTinkCvBpHZjP2A58L'",
+            "DIFY_DATASET_API_KEY=" + "dataset-" + "ipt3eGlWYnS5chh1eTvg6zjY",
+            '{"dify_api_key": "' + "ds-" + 'cEBE6n97bK2FwgXTbLRiGNKU"}',
+        ],
+        "negatives": [
+            # 23 and 25 characters — the generator always emits 24.
+            "DIFY_API_KEY=" + "app-" + "STkUQqV3clRPNdt2qgDDbna",
+            "DIFY_API_KEY=" + "app-" + "STkUQqV3clRPNdt2qgDDbnamQ",
+            # Slack app-level token: 'x' glued to 'app-' is a different prefix.
+            "SLACK_APP_TOKEN=x" + "app-" + "1-A0123456789-0123456789012-abc",
+            # Prose using 'app-' as an ordinary identifier, not a key.
+            "deploy the app-config-production-server image to the dify cluster",
+        ],
+        "min_confidence": 0.50,
+    },
+    # E2B sandbox API key. SYNTHETIC values (SHA-256 over
+    # 'classifinder-e2b-synthetic-<n>' cut to 40 hex; the legacy shape to 32).
+    # Source: https://github.com/e2b-dev/runtime/blob/main/packages/shared/pkg/keys/key.go
+    "e2b_api_key": {
+        "positives": [
+            "E2B_API_KEY=e2" + "b_" + "a37d262adb9d5482158bbf0ec111815305e5be8c",
+            "X-API-Key: e2" + "b_" + "3dab6a81d9c9ff191e752b833675893186d1e935",
+            '{"e2b_api_key": "e2' + "b_" + 'f5a561b7f2fe71ef90742f3a7bf5791f8135c399"}',
+            # 32-hex team-key shape from the vendor's own seed fixtures.
+            "TEAM_API_KEY=e2" + "b_" + "7805d0fc48872930b1363dfd6e832a34",
+        ],
+        "negatives": [
+            # 39 and 41 hex — between or beyond the two vendor widths.
+            "E2B_API_KEY=e2" + "b_" + "a37d262adb9d5482158bbf0ec111815305e5be8",
+            "E2B_API_KEY=e2" + "b_" + "a37d262adb9d5482158bbf0ec111815305e5be8c0",
+            # Uppercase hex is outside hex.EncodeToString's alphabet.
+            "E2B_API_KEY=e2" + "b_" + "A37D262ADB9D5482158BBF0EC111815305E5BE8C",
+            # Prose naming the prefix but carrying no key.
+            "E2B API keys start with e2b_ and are read from E2B_API_KEY",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Vercel Blob read-write token. SYNTHETIC values (base64 of SHA-512 over
+    # 'classifinder-vercel-blob-synthetic-store-<n>' / '...-secret-<n>', + / =
+    # stripped, cut to 16 and 30).
+    # Source: https://github.com/vercel/storage/blob/main/packages/blob/src/helpers.ts
+    "vercel_blob_read_write_token": {
+        "positives": [
+            "BLOB_READ_WRITE_TOKEN=vercel_blob_" + "rw_" + "Qkordfo55qdnXUiy"
+            + "_" + "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3n",
+            "await put('avatar.jpg', file, { token: 'vercel_blob_" + "rw_" + "M4OaVTHJmIxFbU63"
+            + "_" + "yD0vHbNLWI6t3HeZgcnCGaeCfYc5uu' })",
+            '{"BLOB_READ_WRITE_TOKEN": "vercel_blob_' + "rw_" + "Q09GTLb4MwiQPRzo"
+            + "_" + 'eLjmL1FjH8AgWDNuW5oFymQ6u3MPpa"}',
+        ],
+        "negatives": [
+            # Secret one character short / store id one character long.
+            "BLOB_READ_WRITE_TOKEN=vercel_blob_" + "rw_" + "Qkordfo55qdnXUiy"
+            + "_" + "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3",
+            "BLOB_READ_WRITE_TOKEN=vercel_blob_" + "rw_" + "Qkordfo55qdnXUiyZ"
+            + "_" + "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3n",
+            # Store id alone is an identifier, not a secret.
+            "BLOB_STORE_ID=store_Qkordfo55qdnXUiy",
+            # Prose naming the prefix but carrying no token.
+            "Blob read-write tokens start with vercel_blob_rw_ followed by the store id",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Liveblocks secret key. SYNTHETIC values (base64url of SHA-512 over
+    # 'classifinder-liveblocks-synthetic-<n>', cut to 64).
+    # Source: https://liveblocks.io/docs/api-reference/authentication
+    "liveblocks_secret_key": {
+        "positives": [
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa",
+            "const liveblocks = new Liveblocks({ secret: \"sk_" + "prod_"
+            + "pU2DXufx_t6ZfKRyV3leaUACsqwfsOBFq0VlwOFiReOXg_UzR7lB3IBUXGBTIY1k\" });",
+            "Authorization: Bearer sk_" + "prod_"
+            + "_4PIgsXS6kY8FTy6xdYsFXrHIlKuaHpyaFppjbMAgDyQ2J3t6Ty93qmjtKoRQ3At",
+        ],
+        "negatives": [
+            # One character short / one long of the measured 64.
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTK",
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKaQ",
+            # The public key is not a secret; sk_dev_ is unmeasured and not matched.
+            "LIVEBLOCKS_PUBLIC_KEY=pk_" + "prod_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa",
+            "LIVEBLOCKS_SECRET_KEY=sk_" + "dev_"
+            + "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa",
+            # Prose naming the prefix but carrying no key.
+            "Liveblocks secret keys start with sk_prod_ and live on the server only",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Chromatic project token. SYNTHETIC values (SHA-256 over
+    # 'classifinder-chromatic-synthetic-<n>' cut to 15 hex).
+    # Source: https://github.com/chromaui/chromatic-cli/blob/main/AGENTS.md
+    "chromatic_project_token": {
+        "positives": [
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "d6a5f4218c1361a",
+            "npx chromatic --project-token=ch" + "pt_" + "22215b5ef118826",
+            '{"projectToken": "ch' + "pt_" + '3fc663ed5ef46d0"}',
+        ],
+        "negatives": [
+            # 14 and 16 hex — the measured width is exactly 15.
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "d6a5f4218c1361",
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "d6a5f4218c1361a0",
+            # Uppercase hex is outside the measured alphabet.
+            "CHROMATIC_PROJECT_TOKEN=ch" + "pt_" + "D6A5F4218C1361A",
+            # Prose naming the prefix but carrying no token.
+            "Chromatic project tokens start with chpt_ and are set in CI secrets",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Radar secret key. SYNTHETIC values (SHA-256 over
+    # 'classifinder-radar-synthetic-<n>' cut to 40 hex).
+    # Source: https://radar.com/documentation/api
+    "radar_secret_key": {
+        "positives": [
+            "RADAR_SECRET_KEY=prj_" + "live_sk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a",
+            "curl https://api.radar.io/v1/users -H 'Authorization: prj_" + "live_sk_"
+            + "38ea30498aecc3cda30f418d3cd42335807e183e'",
+            '{"RADAR_TEST_SECRET_KEY": "prj_' + "test_sk_"
+            + '889a6430a904a27b0d5cd0b942b3bb07899e81b0"}',
+        ],
+        "negatives": [
+            # 39 and 41 hex — the measured width is exactly 40.
+            "RADAR_SECRET_KEY=prj_" + "live_sk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3",
+            "RADAR_SECRET_KEY=prj_" + "live_sk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a0",
+            # Publishable keys are client-side by design, not secrets.
+            "RADAR_PUBLISHABLE_KEY=prj_" + "live_pk_" + "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a",
+            "RADAR_PUBLISHABLE_KEY=prj_" + "test_pk_" + "889a6430a904a27b0d5cd0b942b3bb07899e81b0",
+            # Prose naming the prefix but carrying no key.
+            "Radar secret keys start with prj_live_sk_ and must stay server-side",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Keygen v3 API token. SYNTHETIC values (SHA-256 over
+    # 'classifinder-keygen-synthetic-<n>'; the activation token cut to 32 hex).
+    # Source: https://github.com/keygen-sh/keygen-api/blob/master/app/models/token.rb
+    "keygen_api_token": {
+        "positives": [
+            "KEYGEN_PRODUCT_TOKEN=prod-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734" + "v" + "3",
+            "Authorization: Bearer admin-"
+            + "3b787eb62f19460f7b5004228698fa1622b19f760d0d4f73b120fbf191c8bee0" + "v" + "3",
+            '{"keygen_token": "env-'
+            + "cb70c07d662d50397f6d7ed1c0115791800b75f6a30710dea6448166e08b42a3" + "v" + '3"}',
+            "KEYGEN_ACTIVATION_TOKEN=activ-" + "771f12e17821615b26c124b406fda081" + "v" + "3",
+        ],
+        "negatives": [
+            # The same 64 hex without the v3 suffix is not a v3 token.
+            "KEYGEN_PRODUCT_TOKEN=prod-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734",
+            # 63 hex + v3 — one short of SecureRandom.hex(32).
+            "KEYGEN_PRODUCT_TOKEN=prod-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c73" + "v" + "3",
+            # Activation tokens are 32 hex; a 64-hex 'activ-' body is not vendor shape.
+            "KEYGEN_ACTIVATION_TOKEN=activ-"
+            + "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734" + "v" + "3",
+            # Prose naming the kinds but carrying no token.
+            "Keygen product tokens use the prod- prefix and end in v3",
+        ],
+        "min_confidence": 0.90,
+    },
+    # GrowthBook secret API key. SYNTHETIC values built exactly like the vendor
+    # generator: base64 of a 32-byte SHA-256 digest over
+    # 'classifinder-growthbook-synthetic-<n>' with '=', '/' and '+' stripped.
+    # Source: https://github.com/growthbook/growthbook/blob/main/packages/back-end/src/util/api-key.util.ts
+    "growthbook_secret_api_key": {
+        "positives": [
+            "GROWTHBOOK_API_KEY=sec" + "ret_user_" + "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0lD3NojiI",
+            "Authorization: Bearer sec" + "ret_admin_" + "rx0Hl0kOa5woZ8B5OLB11oppQKt9vGnBPYI8mc",
+            '{"growthbook_api_key": "sec' + "ret_readonly_" + 'v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzk"}',
+            # Default project-admin role is sliced to 20 characters and keeps its underscore.
+            "GROWTHBOOK_API_KEY=sec" + "ret_gbDefault_projectAdm_" + "e6WFJk3VDiVcWlUhRb1ofhRE1XDyJY4K8jy93a2IQk",
+        ],
+        "negatives": [
+            # Body of 35 — below what stripping '+' / '/' from 43 can plausibly leave.
+            "GROWTHBOOK_API_KEY=sec" + "ret_user_" + "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0l",
+            # Body of 44 — longer than base64 of 32 bytes can be.
+            "GROWTHBOOK_API_KEY=sec" + "ret_user_" + "v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzkQ",
+            # No role segment: that is Notion's secret_<43> shape, not GrowthBook's.
+            "NOTION_API_KEY=sec" + "ret_" + "v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzk",
+            # SDK (client) keys are publishable and not matched.
+            "GROWTHBOOK_CLIENT_KEY=sdk-" + "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0lD3NojiI",
+            # Prose naming the prefix but carrying no key.
+            "GrowthBook secret keys start with secret_user_ or secret_<role>_",
+        ],
+        "min_confidence": 0.90,
+    },
+    # SettleMint service account token — 'sm_sat_' + 16 or more alphanumerics,
+    # the third sibling of sm_pat_ / sm_aat_ on the same vendor masking regex.
+    # SYNTHETIC values (base64 of SHA-512 over
+    # 'classifinder-settlemint-sat-synthetic-<n>', + / = stripped, cut to 32).
+    # Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/logging/mask-tokens.ts
+    "settlemint_service_access_token": {
+        "positives": [
+            "sm_sat_" + "k4s9L6ENueEVEbFDVYGQ5Oouq5XnxkNU",
+            "SETTLEMINT_ACCESS_TOKEN=" + "sm_sat_" + "SmL2woEX9purC1vI3Xi8nPRZ7M2dgxVZ",
+            '{"token": "' + "sm_sat_" + 'Jf3GlQKzJ2yTECm6xa2YY2CORz7GjEno"}',
+        ],
+        "negatives": [
+            # Fifteen characters — below the vendor's rendered floor.
+            "sm_sat_" + "k4s9L6ENueEVEbF",
+            # The sibling families have their own patterns.
+            "sm_pat_" + "ecjgB6yqzvXbFSad",
+            "sm_aat_" + "hvOh0ZvbkmhfCsI8",
+            # Hyphen and underscore are outside the body charset.
+            "sm_sat_" + "k4s9L6EN-ueEVEbFDVYGQ",
+            "A SettleMint service account token is prefixed sm_sat_.",
+        ],
+        "min_confidence": 0.95,
     },
     # ── 2026-11-02 ───────────────────────────────────────────────────────
     # Fireworks AI API key — 'fw_' + 22 or 24 alphanumeric (prefix per the
