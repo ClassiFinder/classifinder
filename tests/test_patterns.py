@@ -22339,6 +22339,1000 @@ def test_headscale_api_key_leaves_tailscale_alias_to_tailscale_pattern():
     assert "tailscale_api_key" in {f.type for f in findings}
 
 
+# --- Cerebras Inference API key ----------------------------------------------------
+# 'csk-' + exactly 48 mixed-case alphanumerics. Prefix per the vendor's own
+# integration guide ("starts with csk-"); width and charset measured on public
+# values. SYNTHETIC values (base64 of SHA-512 over 'classifinder-cerebras-
+# synthetic-<n>', + / = stripped, cut to 48), split so no scannable key literal
+# exists in source.
+# Source: https://inference-docs.cerebras.ai/integrations/dify
+_CSK_PFX = "cs" + "k-"
+_CSK_1 = "RsBCJEnRGLWvqs5XhpiDRUASZf0gWhBrlXiPZAvYpEEBWgYo"
+_CSK_2 = "v8D8bSwfkfLCO1tmDA3eacIBUwspuo8zXHjtA0LLLvFDn3HP"
+_CSK_3 = "GL5c8uppj9pJd4xINIwL005ml2my6QCImDdxj0WH0qODSa62"
+_CSK_KEY = _CSK_PFX + _CSK_1
+_CSK_KEY2 = _CSK_PFX + _CSK_2
+_CSK_KEY3 = _CSK_PFX + _CSK_3
+
+
+def _csk(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "cerebras_api_key"]
+
+
+def test_cerebras_api_key_fixture_widths():
+    for body in (_CSK_1, _CSK_2, _CSK_3):
+        assert len(body) == 48 and body.isalnum()
+    assert len(_CSK_KEY) == 52
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("CEREBRAS_API_KEY=" + _CSK_KEY, _CSK_KEY),
+        ("export CEREBRAS_API_KEY='" + _CSK_KEY2 + "'", _CSK_KEY2),
+        ("Authorization: Bearer " + _CSK_KEY3, _CSK_KEY3),
+        ('{"api_key": "' + _CSK_KEY + '"}', _CSK_KEY),
+        ("client = Cerebras(api_key=\"" + _CSK_KEY2 + "\")", _CSK_KEY2),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_CSK_KEY3, _CSK_KEY3),
+    ],
+)
+def test_cerebras_api_key_true_positives(text, tok):
+    matched = _csk(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long of the measured 48.
+        "CEREBRAS_API_KEY=" + _CSK_PFX + _CSK_1[:-1],
+        "CEREBRAS_API_KEY=" + _CSK_PFX + _CSK_1 + "Z",
+        # Character outside the alphanumeric body.
+        "CEREBRAS_API_KEY=" + _CSK_PFX + _CSK_1[:-1] + "_",
+        # Embedded after a word character.
+        "my" + _CSK_KEY,
+        # Prose naming the format.
+        "Verify your API key is correct and starts with csk-",
+        # Anthropic / OpenAI shapes must not resolve to Cerebras.
+        "sk-ant-api03-" + _CSK_1,
+        "sk-" + _CSK_1,
+    ],
+)
+def test_cerebras_api_key_true_negatives(text):
+    assert _csk(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [_CSK_PFX + "x" * 48, _CSK_PFX + "X" * 48, _CSK_PFX + "0" * 48, _CSK_PFX + "a" * 48],
+)
+def test_cerebras_api_key_placeholders_are_test_values(tok):
+    matched = _csk("CEREBRAS_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_cerebras_api_key_does_not_collide_with_openai():
+    # Before the openai_api_key left guard, 'csk-<48>' was reported as the OpenAI
+    # key 'sk-<48>' (the legacy branch had no left boundary). Only Cerebras may fire.
+    for text in ("CEREBRAS_API_KEY=" + _CSK_KEY, _CSK_KEY2, "Bearer " + _CSK_KEY3):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"cerebras_api_key"}, text
+
+
+def test_openai_left_guard_keeps_bare_and_env_keys():
+    # The left guard must not cost any legitimate OpenAI carrier: '=' , quote,
+    # space and start-of-text all precede the key in real configs.
+    legacy = "sk-" + "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890AbCd"
+    for text in (legacy, "OPENAI_API_KEY=" + legacy, "'" + legacy + "'", "Bearer " + legacy):
+        assert "openai_api_key" in {f.type for f in scan(text, min_confidence=0.01)}, text
+    # A word character glued to the front is a longer identifier, not an OpenAI key.
+    assert [f for f in scan("x" + legacy, min_confidence=0.01) if f.type == "openai_api_key"] == []
+
+
+# --- Dify app / dataset API key ----------------------------------------------------
+# 'app-' / 'dataset-' / 'ds-' + exactly 24 alphanumerics (ApiToken.generate_api_key
+# (prefix, 24) over string.ascii_letters + string.digits). Context-gated at 0.48:
+# a bare key is below the default threshold, one Dify keyword or the Bearer
+# carrier lifts it over. SYNTHETIC values (base64 of SHA-512 over
+# 'classifinder-dify-synthetic-<n>', + / = stripped, cut to 24), split so no
+# scannable key literal exists in source.
+# Source: https://github.com/langgenius/dify/blob/main/api/models/model.py
+_DIFY_1 = "STkUQqV3clRPNdt2qgDDbnam"
+_DIFY_2 = "zYIBpPfTinkCvBpHZjP2A58L"
+_DIFY_3 = "ipt3eGlWYnS5chh1eTvg6zjY"
+_DIFY_4 = "cEBE6n97bK2FwgXTbLRiGNKU"
+_DIFY_APP = "app-" + _DIFY_1
+_DIFY_APP2 = "app-" + _DIFY_2
+_DIFY_DATASET = "dataset-" + _DIFY_3
+_DIFY_DS = "ds-" + _DIFY_4
+
+
+def _dify(text, min_confidence=0.01):
+    return [f for f in scan(text, min_confidence=min_confidence) if f.type == "dify_api_key"]
+
+
+def test_dify_api_key_fixture_widths():
+    for body in (_DIFY_1, _DIFY_2, _DIFY_3, _DIFY_4):
+        assert len(body) == 24 and body.isalnum()
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("DIFY_API_KEY=" + _DIFY_APP, _DIFY_APP),
+        ("export DIFY_API_KEY='" + _DIFY_APP2 + "'", _DIFY_APP2),
+        (
+            "curl -X POST 'https://api.dify.ai/v1/chat-messages' -H 'Authorization: Bearer "
+            + _DIFY_APP + "'",
+            _DIFY_APP,
+        ),
+        # Self-hosted: no vendor host, but the endpoint path and Bearer carrier are there.
+        (
+            "curl http://localhost/v1/completion-messages -H 'Authorization: Bearer "
+            + _DIFY_APP2 + "'",
+            _DIFY_APP2,
+        ),
+        ("DIFY_DATASET_API_KEY=" + _DIFY_DATASET, _DIFY_DATASET),
+        ('{"dify_api_key": "' + _DIFY_DS + '"}', _DIFY_DS),
+        ("Authorization: Bearer " + _DIFY_DATASET, _DIFY_DATASET),
+    ],
+)
+def test_dify_api_key_true_positives(text, tok):
+    # Default threshold (0.50): the context keyword lifts the 0.48 base over it.
+    matched = _dify(text, min_confidence=0.5)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.50
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize("tok", [_DIFY_APP, _DIFY_DATASET, _DIFY_DS])
+def test_dify_api_key_is_context_gated(tok):
+    # Bare key, no Dify keyword, no Bearer: registered at 0.48, below the default
+    # threshold — visible only to callers who opt down.
+    assert _dify(tok, min_confidence=0.5) == []
+    low = _dify(tok)
+    assert len(low) == 1 and low[0].confidence == 0.48
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 23 / 25 characters — the generator always emits 24.
+        "DIFY_API_KEY=app-" + _DIFY_1[:-1],
+        "DIFY_API_KEY=app-" + _DIFY_1 + "Q",
+        # Character outside the alphanumeric body.
+        "DIFY_API_KEY=app-" + _DIFY_1[:-1] + "-",
+        # Slack app-level token ('xapp-'): the left guard refuses the glued 'x'.
+        "SLACK_APP_TOKEN=x" + "app-" + "1-A0123456789-0123456789012-abc",
+        # Embedded after a word character / hyphen.
+        "my" + _DIFY_APP,
+        "web-" + _DIFY_APP,
+        # Prose using 'app-' / 'ds-' as ordinary identifiers.
+        "deploy the app-config-production-server image to the dify cluster",
+        "the ds-store cleanup job runs nightly against the dify datasets",
+    ],
+)
+def test_dify_api_key_true_negatives(text):
+    assert _dify(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    ["app-" + "x" * 24, "dataset-" + "X" * 24, "ds-" + "0" * 24],
+)
+def test_dify_api_key_placeholders_are_test_values(tok):
+    matched = _dify("DIFY_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_dify_api_key_does_not_collide():
+    for text in ("DIFY_API_KEY=" + _DIFY_APP, "DIFY_API_KEY=" + _DIFY_DATASET):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"dify_api_key"}, text
+
+
+# --- E2B sandbox API key -----------------------------------------------------------
+# 'e2b_' + exactly 40 lowercase hex (keys/constants.go ApiKeyPrefix; keys/key.go
+# keyLength = 20, GenerateKey() = prefix + hex of 20 random bytes) or the 32-hex
+# team-key shape the vendor's own seed fixtures and install tests pin. SYNTHETIC
+# values (SHA-256 over 'classifinder-e2b-synthetic-<n>' cut to width), split so
+# no scannable key literal exists in source.
+# Source: https://github.com/e2b-dev/runtime/blob/main/packages/shared/pkg/keys/key.go
+_E2B_PFX = "e2" + "b_"
+_E2B_40 = "a37d262adb9d5482158bbf0ec111815305e5be8c"
+_E2B_40B = "3dab6a81d9c9ff191e752b833675893186d1e935"
+_E2B_40C = "f5a561b7f2fe71ef90742f3a7bf5791f8135c399"
+_E2B_32 = "7805d0fc48872930b1363dfd6e832a34"
+_E2B_KEY = _E2B_PFX + _E2B_40
+_E2B_KEY2 = _E2B_PFX + _E2B_40B
+_E2B_KEY3 = _E2B_PFX + _E2B_40C
+_E2B_LEGACY = _E2B_PFX + _E2B_32
+
+
+def _e2b(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "e2b_api_key"]
+
+
+def test_e2b_api_key_fixture_widths():
+    for body in (_E2B_40, _E2B_40B, _E2B_40C):
+        assert len(body) == 40 and all(c in "0123456789abcdef" for c in body)
+    assert len(_E2B_32) == 32
+    assert len(_E2B_KEY) == 44 and len(_E2B_LEGACY) == 36
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("E2B_API_KEY=" + _E2B_KEY, _E2B_KEY),
+        ("export E2B_API_KEY='" + _E2B_KEY2 + "'", _E2B_KEY2),
+        ("X-API-Key: " + _E2B_KEY3, _E2B_KEY3),
+        ('{"e2b_api_key": "' + _E2B_KEY + '"}', _E2B_KEY),
+        ("sandbox = Sandbox.create(api_key=\"" + _E2B_KEY2 + "\")", _E2B_KEY2),
+        # 32-hex team-key shape (vendor seed fixtures).
+        ("TEAM_API_KEY=" + _E2B_LEGACY, _E2B_LEGACY),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_E2B_KEY3, _E2B_KEY3),
+    ],
+)
+def test_e2b_api_key_true_positives(text, tok):
+    matched = _e2b(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 31 / 33 / 39 / 41 hex: only 32 and 40 are vendor-attested.
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_32[:-1],
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_32 + "0",
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40[:-1],
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40 + "0",
+        # Uppercase / non-hex characters.
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40.upper(),
+        "E2B_API_KEY=" + _E2B_PFX + _E2B_40[:-1] + "g",
+        # Embedded after a word character.
+        "my" + _E2B_KEY,
+        # Prose naming the format.
+        "E2B API keys start with e2b_ and are read from E2B_API_KEY",
+    ],
+)
+def test_e2b_api_key_true_negatives(text):
+    assert _e2b(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _E2B_PFX + "ffeeddccbbaa99887766554433221100",
+        _E2B_PFX + "0f0e0d0c0b0a09080706050403020100",
+        _E2B_PFX + "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+        _E2B_PFX + "0" * 40,
+        _E2B_PFX + "a" * 32,
+        _E2B_PFX + "f" * 40,
+    ],
+)
+def test_e2b_api_key_placeholders_are_test_values(tok):
+    matched = _e2b("E2B_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_e2b_api_key_does_not_collide():
+    # Previously only generic_api_key_env fired here, entropy-penalised to 0.19;
+    # the provider pattern must now be the sole claimant at full confidence.
+    for text in ("E2B_API_KEY=" + _E2B_KEY, "E2B_API_KEY=" + _E2B_LEGACY):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"e2b_api_key"}, text
+        assert findings[0].confidence >= 0.95
+
+
+# --- Vercel Blob read-write token ------------------------------------------------
+# 'vercel_blob_rw_' + 16-char store id + '_' + 30-char secret, all alphanumeric.
+# Structure per the vendor SDK (parseStoreIdFromReadWriteToken splits on '_' and
+# takes index 3) and its own 16/30 test fixture; widths measured on public values.
+# SYNTHETIC values (base64 of SHA-512 over 'classifinder-vercel-blob-synthetic-
+# store-<n>' / '...-secret-<n>', + / = stripped, cut to width), split so no
+# scannable token literal exists in source.
+# Source: https://github.com/vercel/storage/blob/main/packages/blob/src/helpers.ts
+_VBLOB_PFX = "vercel_blob_" + "rw_"
+_VBLOB_STORE = "Qkordfo55qdnXUiy"
+_VBLOB_SECRET = "1w1A1tCh5K7QDkaKtTTbeJSiVSCd3n"
+_VBLOB_STORE2 = "M4OaVTHJmIxFbU63"
+_VBLOB_SECRET2 = "yD0vHbNLWI6t3HeZgcnCGaeCfYc5uu"
+_VBLOB_STORE3 = "Q09GTLb4MwiQPRzo"
+_VBLOB_SECRET3 = "eLjmL1FjH8AgWDNuW5oFymQ6u3MPpa"
+_VBLOB = _VBLOB_PFX + _VBLOB_STORE + "_" + _VBLOB_SECRET
+_VBLOB2 = _VBLOB_PFX + _VBLOB_STORE2 + "_" + _VBLOB_SECRET2
+_VBLOB3 = _VBLOB_PFX + _VBLOB_STORE3 + "_" + _VBLOB_SECRET3
+_VBLOB_SDK_FIXTURE = _VBLOB_PFX + "12345fakeStoreId" + "_" + "30FakeRandomCharacters12345678"
+
+
+def _vblob(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "vercel_blob_read_write_token"
+    ]
+
+
+def test_vercel_blob_read_write_token_fixture_widths():
+    for store in (_VBLOB_STORE, _VBLOB_STORE2, _VBLOB_STORE3, "12345fakeStoreId"):
+        assert len(store) == 16 and store.isalnum()
+    for secret in (_VBLOB_SECRET, _VBLOB_SECRET2, _VBLOB_SECRET3, "30FakeRandomCharacters12345678"):
+        assert len(secret) == 30 and secret.isalnum()
+    assert len(_VBLOB) == 62
+    # The SDK's own parser: split on '_', store id at index 3.
+    assert _VBLOB.split("_")[3] == _VBLOB_STORE
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("BLOB_READ_WRITE_TOKEN=" + _VBLOB, _VBLOB),
+        ("export BLOB_READ_WRITE_TOKEN='" + _VBLOB2 + "'", _VBLOB2),
+        ("await put('avatar.jpg', file, { access: 'public', token: '" + _VBLOB3 + "' })", _VBLOB3),
+        ('{"BLOB_READ_WRITE_TOKEN": "' + _VBLOB + '"}', _VBLOB),
+        ("Authorization: Bearer " + _VBLOB2, _VBLOB2),
+        # Bare token with no context — the literal prefix + fixed widths are the anchor.
+        (_VBLOB3, _VBLOB3),
+    ],
+)
+def test_vercel_blob_read_write_token_true_positives(text, tok):
+    matched = _vblob(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Secret one short / one long.
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + "_" + _VBLOB_SECRET[:-1],
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + "_" + _VBLOB_SECRET + "a",
+        # Store id one short / one long.
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE[:-1] + "_" + _VBLOB_SECRET,
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + "Z_" + _VBLOB_SECRET,
+        # Missing separator / extra trailing segment.
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB_PFX + _VBLOB_STORE + _VBLOB_SECRET,
+        "BLOB_READ_WRITE_TOKEN=" + _VBLOB + "_extra",
+        # Other kinds are not attested and not matched.
+        "vercel_blob_" + "ro_" + _VBLOB_STORE + "_" + _VBLOB_SECRET,
+        # The store id and the OIDC token are not this credential.
+        "BLOB_STORE_ID=store_" + _VBLOB_STORE,
+        # Embedded after a word character.
+        "my" + _VBLOB,
+        # Prose naming the format.
+        "Blob read-write tokens start with vercel_blob_rw_ followed by the store id",
+    ],
+)
+def test_vercel_blob_read_write_token_true_negatives(text):
+    assert _vblob(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _VBLOB_SDK_FIXTURE,
+        _VBLOB_PFX + "x" * 16 + "_" + "x" * 30,
+        _VBLOB_PFX + "X" * 16 + "_" + "X" * 30,
+        _VBLOB_PFX + "0" * 16 + "_" + "0" * 30,
+    ],
+)
+def test_vercel_blob_read_write_token_placeholders_are_test_values(tok):
+    matched = _vblob("BLOB_READ_WRITE_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_vercel_blob_read_write_token_does_not_collide():
+    # Not shadowed by generic_api_key_env or any of the vca_/vcr_/vcp_/vci_/vck_
+    # Vercel patterns, which are anchored on their own prefixes.
+    for text in ("BLOB_READ_WRITE_TOKEN=" + _VBLOB, _VBLOB2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"vercel_blob_read_write_token"}, text
+
+
+# --- Liveblocks secret key -----------------------------------------------------------
+# 'sk_prod_' + exactly 64 base64url characters. Prefix per the vendor's own auth
+# docs (`secret: "sk_prod_..."`); width and charset measured on public values.
+# 'sk_dev_' is unmeasured and deliberately not matched. SYNTHETIC values (base64url
+# of SHA-512 over 'classifinder-liveblocks-synthetic-<n>', cut to 64), split so no
+# scannable key literal exists in source.
+# Source: https://liveblocks.io/docs/api-reference/authentication
+_LB_PFX = "sk_" + "prod_"
+_LB_1 = "7Pj_OF4z_7cWwidVa65pS4Y7DWTMrgU3xFRY1Ao-r8QN8RyypUDuEEGkgwWmKTKa"
+_LB_2 = "pU2DXufx_t6ZfKRyV3leaUACsqwfsOBFq0VlwOFiReOXg_UzR7lB3IBUXGBTIY1k"
+_LB_3 = "_4PIgsXS6kY8FTy6xdYsFXrHIlKuaHpyaFppjbMAgDyQ2J3t6Ty93qmjtKoRQ3At"
+_LB_KEY = _LB_PFX + _LB_1
+_LB_KEY2 = _LB_PFX + _LB_2
+_LB_KEY3 = _LB_PFX + _LB_3
+
+
+def _lb(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "liveblocks_secret_key"]
+
+
+def test_liveblocks_secret_key_fixture_widths():
+    for body in (_LB_1, _LB_2, _LB_3):
+        assert len(body) == 64
+        assert all(c.isalnum() or c in "_-" for c in body)
+    # The measured bodies carry '_' and '-'; the fixtures exercise both.
+    assert "_" in _LB_1 and "-" in _LB_1
+    assert len(_LB_KEY) == 72
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("LIVEBLOCKS_SECRET_KEY=" + _LB_KEY, _LB_KEY),
+        ("export LIVEBLOCKS_SECRET_KEY='" + _LB_KEY2 + "'", _LB_KEY2),
+        ('const liveblocks = new Liveblocks({ secret: "' + _LB_KEY3 + '" });', _LB_KEY3),
+        ("Authorization: Bearer " + _LB_KEY, _LB_KEY),
+        ('{"LIVEBLOCKS_SECRET_KEY": "' + _LB_KEY2 + '"}', _LB_KEY2),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_LB_KEY3, _LB_KEY3),
+    ],
+)
+def test_liveblocks_secret_key_true_positives(text, tok):
+    matched = _lb(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long of the measured 64.
+        "LIVEBLOCKS_SECRET_KEY=" + _LB_PFX + _LB_1[:-1],
+        "LIVEBLOCKS_SECRET_KEY=" + _LB_PFX + _LB_1 + "Q",
+        # Character outside the base64url alphabet.
+        "LIVEBLOCKS_SECRET_KEY=" + _LB_PFX + _LB_1[:-1] + "+",
+        # The development sibling is unmeasured and not matched; public keys are not secrets.
+        "LIVEBLOCKS_SECRET_KEY=sk_" + "dev_" + _LB_1,
+        "LIVEBLOCKS_PUBLIC_KEY=pk_" + "prod_" + _LB_1,
+        # The docs' own 24-wide placeholder is not a key shape.
+        'secret: "sk_' + 'prod_xxxxxxxxxxxxxxxxxxxxxxxx"',
+        # Embedded after a word character.
+        "my" + _LB_KEY,
+        # Prose naming the format.
+        "Liveblocks secret keys start with sk_prod_ and live on the server only",
+    ],
+)
+def test_liveblocks_secret_key_true_negatives(text):
+    assert _lb(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok", [_LB_PFX + "x" * 64, _LB_PFX + "X" * 64, _LB_PFX + "0" * 64]
+)
+def test_liveblocks_secret_key_placeholders_are_test_values(tok):
+    matched = _lb("LIVEBLOCKS_SECRET_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_liveblocks_secret_key_does_not_collide_with_stripe_or_cartesia():
+    # 'sk_prod_' shares the sk_ family with Stripe (sk_live_ / sk_test_) and
+    # Cartesia (sk_car_); none may fire on a Liveblocks key, and a Liveblocks
+    # key may not shadow a Stripe key of the same width.
+    for text in ("LIVEBLOCKS_SECRET_KEY=" + _LB_KEY, _LB_KEY2, "Bearer " + _LB_KEY3):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"liveblocks_secret_key"}, text
+    stripe_live = "sk_" + "live_" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz01"
+    assert _lb("STRIPE_SECRET_KEY=" + stripe_live) == []
+    assert "stripe_live_secret_key" in {f.type for f in scan("STRIPE_SECRET_KEY=" + stripe_live)}
+
+
+# --- Chromatic project token --------------------------------------------------------
+# 'chpt_' + exactly 15 lowercase hex. Prefix per the vendor's own CLI repository
+# (AGENTS.md "project tokens (`chpt_…`)", diagnostics guard test("^chpt_|^Bearer "));
+# width measured on public values. SYNTHETIC values (SHA-256 over
+# 'classifinder-chromatic-synthetic-<n>' cut to 15), split so no scannable token
+# literal exists in source.
+# Source: https://github.com/chromaui/chromatic-cli/blob/main/AGENTS.md
+_CHPT_PFX = "ch" + "pt_"
+_CHPT_1 = "d6a5f4218c1361a"
+_CHPT_2 = "22215b5ef118826"
+_CHPT_3 = "3fc663ed5ef46d0"
+_CHPT = _CHPT_PFX + _CHPT_1
+_CHPT2 = _CHPT_PFX + _CHPT_2
+_CHPT3 = _CHPT_PFX + _CHPT_3
+
+
+def _chpt(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "chromatic_project_token"]
+
+
+def test_chromatic_project_token_fixture_widths():
+    for body in (_CHPT_1, _CHPT_2, _CHPT_3):
+        assert len(body) == 15 and all(c in "0123456789abcdef" for c in body)
+    assert len(_CHPT) == 20
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("CHROMATIC_PROJECT_TOKEN=" + _CHPT, _CHPT),
+        ("npx chromatic --project-token=" + _CHPT2, _CHPT2),
+        ("npx chromatic --project-token " + _CHPT3 + " --exit-zero-on-changes", _CHPT3),
+        ('{"projectToken": "' + _CHPT + '"}', _CHPT),
+        ("Authorization: Bearer " + _CHPT2, _CHPT2),
+        # Bare token with no context — the literal prefix + exact width is the anchor.
+        (_CHPT3, _CHPT3),
+    ],
+)
+def test_chromatic_project_token_true_positives(text, tok):
+    matched = _chpt(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "medium"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 14 / 16 hex: the measured width is exactly 15.
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1[:-1],
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1 + "0",
+        # Uppercase / non-hex characters.
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1.upper(),
+        "CHROMATIC_PROJECT_TOKEN=" + _CHPT_PFX + _CHPT_1[:-1] + "g",
+        # Embedded after a word character.
+        "my" + _CHPT,
+        # Prose naming the format.
+        "Chromatic project tokens start with chpt_ and are set in CI secrets",
+    ],
+)
+def test_chromatic_project_token_true_negatives(text):
+    assert _chpt(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [_CHPT_PFX + "0" * 15, _CHPT_PFX + "a" * 15, _CHPT_PFX + "f" * 15, _CHPT_PFX + "0123456789abcde"],
+)
+def test_chromatic_project_token_placeholders_are_test_values(tok):
+    matched = _chpt("CHROMATIC_PROJECT_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_chromatic_project_token_does_not_collide():
+    # Previously only generic_api_key_env fired here, entropy-penalised to 0.19;
+    # the provider pattern must now be the sole claimant at full confidence.
+    for text in ("CHROMATIC_PROJECT_TOKEN=" + _CHPT, _CHPT2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"chromatic_project_token"}, text
+        assert findings[0].confidence >= 0.90
+
+
+# --- Radar secret key -----------------------------------------------------------------
+# 'prj_live_sk_' / 'prj_test_sk_' + exactly 40 lowercase hex. Prefixes per Radar's
+# own API reference ('Authorization: prj_live_sk_...'); width measured on public
+# values. Publishable 'prj_*_pk_' keys are not matched. SYNTHETIC values (SHA-256
+# over 'classifinder-radar-synthetic-<n>' cut to 40), split so no scannable key
+# literal exists in source.
+# Source: https://radar.com/documentation/api
+_RADAR_1 = "5f193052aed90fd40eb354e79f9f31c9cdbd8f3a"
+_RADAR_2 = "38ea30498aecc3cda30f418d3cd42335807e183e"
+_RADAR_3 = "889a6430a904a27b0d5cd0b942b3bb07899e81b0"
+_RADAR_LIVE = "prj_" + "live_sk_" + _RADAR_1
+_RADAR_LIVE2 = "prj_" + "live_sk_" + _RADAR_2
+_RADAR_TEST = "prj_" + "test_sk_" + _RADAR_3
+
+
+def _radar(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "radar_secret_key"]
+
+
+def test_radar_secret_key_fixture_widths():
+    for body in (_RADAR_1, _RADAR_2, _RADAR_3):
+        assert len(body) == 40 and all(c in "0123456789abcdef" for c in body)
+    assert len(_RADAR_LIVE) == 52 and len(_RADAR_TEST) == 52
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("RADAR_SECRET_KEY=" + _RADAR_LIVE, _RADAR_LIVE),
+        ("export RADAR_SECRET_KEY='" + _RADAR_LIVE2 + "'", _RADAR_LIVE2),
+        # Radar sends the key bare in the Authorization header — no scheme.
+        ("curl https://api.radar.io/v1/users -H 'Authorization: " + _RADAR_LIVE + "'", _RADAR_LIVE),
+        ('{"RADAR_TEST_SECRET_KEY": "' + _RADAR_TEST + '"}', _RADAR_TEST),
+        ("RADAR_SECRET_KEY=" + _RADAR_TEST, _RADAR_TEST),
+        # Bare key with no context — the literal prefix + exact width is the anchor.
+        (_RADAR_LIVE2, _RADAR_LIVE2),
+    ],
+)
+def test_radar_secret_key_true_positives(text, tok):
+    matched = _radar(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+def test_radar_secret_key_test_environment_is_not_sunk_by_fp_wordlist():
+    # 'prj_test_sk_' contains the literal 'test'; confidence_base sits above the
+    # 0.85 FP-wordlist gate so the key is priced like the live one.
+    matched = _radar("RADAR_SECRET_KEY=" + _RADAR_TEST)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].is_likely_test_value is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 39 / 41 hex: the measured width is exactly 40.
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1[:-1],
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1 + "0",
+        # Uppercase / non-hex characters.
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1.upper(),
+        "RADAR_SECRET_KEY=prj_" + "live_sk_" + _RADAR_1[:-1] + "g",
+        # Publishable keys are client-side by design and not matched.
+        "RADAR_PUBLISHABLE_KEY=prj_" + "live_pk_" + _RADAR_1,
+        "RADAR_PUBLISHABLE_KEY=prj_" + "test_pk_" + _RADAR_3,
+        # Unknown environment segment.
+        "RADAR_SECRET_KEY=prj_" + "prod_sk_" + _RADAR_1,
+        # Embedded after a word character.
+        "my" + _RADAR_LIVE,
+        # Prose naming the format.
+        "Radar secret keys start with prj_live_sk_ and must stay server-side",
+    ],
+)
+def test_radar_secret_key_true_negatives(text):
+    assert _radar(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        "prj_" + "live_sk_" + "0" * 40,
+        "prj_" + "test_sk_" + "a" * 40,
+        "prj_" + "test_sk_" + "f" * 40,
+    ],
+)
+def test_radar_secret_key_placeholders_are_test_values(tok):
+    matched = _radar("RADAR_SECRET_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_radar_secret_key_does_not_collide():
+    # 'prj_live_sk_' contains 'sk_' but not 'sk_live_': Stripe must stay silent,
+    # and the provider pattern must be the sole claimant over the generics.
+    for text in ("RADAR_SECRET_KEY=" + _RADAR_LIVE, "RADAR_SECRET_KEY=" + _RADAR_TEST, _RADAR_LIVE2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"radar_secret_key"}, text
+
+
+# --- Keygen API token (v3) -------------------------------------------------------------
+# '<kind>-' + 64 lowercase hex + 'v3' (SecureRandom.hex(32) + ALGO_VERSION), or
+# 'activ-' + 32 hex + 'v3' (SecureRandom.hex(16)), per the vendor's own token.rb
+# generate!() / tokenable.rb. Kinds: env, prod, admin, user, activ, dev, sales,
+# spprt, read, token. SYNTHETIC values (SHA-256 over 'classifinder-keygen-
+# synthetic-<n>'; the activation token cut to 32), split so no scannable token
+# literal exists in source.
+# Source: https://github.com/keygen-sh/keygen-api/blob/master/app/models/token.rb
+_KG_V3 = "v" + "3"
+_KG_1 = "34157282d5943ba8e55c767b17582cbc382a11b9b53ec82da93292431959c734"
+_KG_2 = "3b787eb62f19460f7b5004228698fa1622b19f760d0d4f73b120fbf191c8bee0"
+_KG_3 = "cb70c07d662d50397f6d7ed1c0115791800b75f6a30710dea6448166e08b42a3"
+_KG_4 = "a4eda1d8246dc59616411606cc61e02b235c1c57cca731342fd6314ad840d944"
+_KG_ACTIV = "771f12e17821615b26c124b406fda081"
+_KG_PROD = "prod-" + _KG_1 + _KG_V3
+_KG_ADMIN = "admin-" + _KG_2 + _KG_V3
+_KG_ENV = "env-" + _KG_3 + _KG_V3
+_KG_USER = "user-" + _KG_4 + _KG_V3
+_KG_ACTIVATION = "activ-" + _KG_ACTIV + _KG_V3
+
+
+def _kg(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "keygen_api_token"]
+
+
+def test_keygen_api_token_fixture_widths():
+    for body in (_KG_1, _KG_2, _KG_3, _KG_4):
+        assert len(body) == 64 and all(c in "0123456789abcdef" for c in body)
+    assert len(_KG_ACTIV) == 32
+    # SecureRandom.hex(32) + "v3" and SecureRandom.hex(16) + "v3".
+    assert len(_KG_PROD) == 5 + 66 and len(_KG_ACTIVATION) == 6 + 34
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("KEYGEN_PRODUCT_TOKEN=" + _KG_PROD, _KG_PROD),
+        ("export KEYGEN_TOKEN='" + _KG_ADMIN + "'", _KG_ADMIN),
+        ("Authorization: Bearer " + _KG_ENV, _KG_ENV),
+        ("Authorization: Token token=" + _KG_USER, _KG_USER),
+        ('{"keygen_token": "' + _KG_PROD + '"}', _KG_PROD),
+        ("KEYGEN_ACTIVATION_TOKEN=" + _KG_ACTIVATION, _KG_ACTIVATION),
+        # Every other documented kind at the 64-hex width.
+        ("KEYGEN_TOKEN=dev-" + _KG_1 + _KG_V3, "dev-" + _KG_1 + _KG_V3),
+        ("KEYGEN_TOKEN=sales-" + _KG_2 + _KG_V3, "sales-" + _KG_2 + _KG_V3),
+        ("KEYGEN_TOKEN=spprt-" + _KG_3 + _KG_V3, "spprt-" + _KG_3 + _KG_V3),
+        ("KEYGEN_TOKEN=read-" + _KG_4 + _KG_V3, "read-" + _KG_4 + _KG_V3),
+        ("KEYGEN_TOKEN=token-" + _KG_1 + _KG_V3, "token-" + _KG_1 + _KG_V3),
+        # Bare token with no context — the exact width plus the 'v3' suffix is the anchor.
+        (_KG_ADMIN, _KG_ADMIN),
+    ],
+)
+def test_keygen_api_token_true_positives(text, tok):
+    matched = _kg(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Same hex without the 'v3' suffix: not a v3 token (v1/v2 have other shapes).
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1,
+        # 63 / 65 hex before the suffix.
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1[:-1] + _KG_V3,
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1 + "0" + _KG_V3,
+        # Activation tokens are 32 hex; 64-hex 'activ-' and 32-hex 'prod-' are not vendor shapes.
+        "KEYGEN_ACTIVATION_TOKEN=activ-" + _KG_1 + _KG_V3,
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_ACTIV + _KG_V3,
+        # Suffix glued to more alphanumerics / wrong version.
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1 + _KG_V3 + "0",
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1 + "v" + "2",
+        # Uppercase hex is outside SecureRandom.hex's alphabet.
+        "KEYGEN_PRODUCT_TOKEN=prod-" + _KG_1.upper() + _KG_V3,
+        # Unknown kind word.
+        "KEYGEN_TOKEN=staging-" + _KG_1 + _KG_V3,
+        # Embedded after a word character / hyphen / underscore.
+        "my" + _KG_PROD,
+        "pre-" + _KG_PROD,
+        "x_" + _KG_PROD,
+        # Prose naming the format.
+        "Keygen product tokens use the prod- prefix and end in v3",
+    ],
+)
+def test_keygen_api_token_true_negatives(text):
+    assert _kg(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        "prod-" + "0" * 64 + _KG_V3,
+        "admin-" + "f" * 64 + _KG_V3,
+        "env-" + "a" * 64 + _KG_V3,
+        "activ-" + "f" * 32 + _KG_V3,
+    ],
+)
+def test_keygen_api_token_placeholders_are_test_values(tok):
+    matched = _kg("KEYGEN_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_keygen_api_token_does_not_collide():
+    # Previously generic_api_key_env carved the hex out of these; the provider
+    # pattern must now be the sole claimant at full confidence.
+    for text in ("KEYGEN_PRODUCT_TOKEN=" + _KG_PROD, "KEYGEN_TOKEN=" + _KG_ACTIVATION, _KG_ADMIN):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"keygen_api_token"}, text
+        assert findings[0].confidence >= 0.95
+
+
+# --- GrowthBook secret API key --------------------------------------------------------
+# 'secret_' + role ('user' or role id sliced to 20, [A-Za-z0-9_]) + '_' + 36-43
+# alphanumerics: generateSigningKey() = prefix + base64(32 random bytes) with
+# '=', '/' and '+' stripped, so the body is 43 minus the stripped characters.
+# SYNTHETIC values built exactly like the generator from a SHA-256 digest over
+# 'classifinder-growthbook-synthetic-<n>', split so no scannable key literal
+# exists in source.
+# Source: https://github.com/growthbook/growthbook/blob/main/packages/back-end/src/util/api-key.util.ts
+_GB_PFX = "sec" + "ret_"
+_GB_42 = "343JcX20R0xjYnKkArw2pZlRSaqohG0kM0lD3NojiI"
+_GB_38 = "rx0Hl0kOa5woZ8B5OLB11oppQKt9vGnBPYI8mc"
+_GB_42B = "e6WFJk3VDiVcWlUhRb1ofhRE1XDyJY4K8jy93a2IQk"
+_GB_43 = "v87ZAHtAPpFNWYS5pJYgF2icI74XVtDDEng1V02YKzk"
+_GB_43B = "tTraH5a8ES9SHHayjkZIGPGuIjISVDqaLgyNU6g0hN4"
+_GB_USER = _GB_PFX + "user_" + _GB_42
+_GB_ADMIN = _GB_PFX + "admin_" + _GB_38
+_GB_READONLY = _GB_PFX + "readonly_" + _GB_43
+_GB_PROJECT_ADMIN = _GB_PFX + "gbDefault_projectAdm_" + _GB_42B
+_GB_CUSTOM = _GB_PFX + "release_managers_2_" + _GB_43B
+
+
+def _gb(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "growthbook_secret_api_key"]
+
+
+def test_growthbook_secret_api_key_fixture_widths():
+    # base64 of 32 bytes is 44 chars with one '=': stripping '=' leaves 43, and
+    # every '+' / '/' stripped takes one more — the fixtures span 38..43.
+    assert len(_GB_43) == 43 and len(_GB_43B) == 43
+    assert len(_GB_42) == 42 and len(_GB_42B) == 42
+    assert len(_GB_38) == 38
+    for body in (_GB_42, _GB_38, _GB_42B, _GB_43, _GB_43B):
+        assert body.isalnum()
+    assert len("gbDefault_projectAdm") == 20 and len("release_managers_2") <= 20
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("GROWTHBOOK_API_KEY=" + _GB_USER, _GB_USER),
+        ("export GROWTHBOOK_SECRET_KEY='" + _GB_ADMIN + "'", _GB_ADMIN),
+        ("Authorization: Bearer " + _GB_READONLY, _GB_READONLY),
+        ('{"growthbook_api_key": "' + _GB_USER + '"}', _GB_USER),
+        # Default project-admin role sliced to 20 keeps its underscore.
+        ("GROWTHBOOK_API_KEY=" + _GB_PROJECT_ADMIN, _GB_PROJECT_ADMIN),
+        # Enterprise custom role id (validated /^[a-zA-Z0-9_]+$/ by the vendor).
+        ("GROWTHBOOK_API_KEY=" + _GB_CUSTOM, _GB_CUSTOM),
+        # Bare key with no context — the literal prefix + role + width band is the anchor.
+        (_GB_ADMIN, _GB_ADMIN),
+    ],
+)
+def test_growthbook_secret_api_key_true_positives(text, tok):
+    matched = _gb(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body of 35 / 44: outside what the generator can produce.
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43[:35],
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43 + "Q",
+        # Character the vendor strips ('+', '/') or never emits ('-') inside the
+        # body: the alphanumeric run on either side is too short to be a key.
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43[:20] + "+" + _GB_43[21:],
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "user_" + _GB_43[:20] + "-" + _GB_43[21:],
+        # Role segment longer than role.slice(0, 20) can produce.
+        "GROWTHBOOK_API_KEY=" + _GB_PFX + "a_role_name_that_is_far_too_long_" + _GB_43,
+        # No role segment: Notion's secret_<43> shape, left to notion_api_key.
+        "NOTION_API_KEY=" + _GB_PFX + _GB_43,
+        # SDK (client) keys are publishable.
+        "GROWTHBOOK_CLIENT_KEY=sdk-" + _GB_42,
+        # Embedded after a word character / underscore (aws_secret_... style names).
+        "my" + _GB_USER,
+        "aws_" + _GB_USER,
+        # Prose naming the format.
+        "GrowthBook secret keys start with secret_user_ or secret_<role>_",
+    ],
+)
+def test_growthbook_secret_api_key_true_negatives(text):
+    assert _gb(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _GB_PFX + "user_" + "x" * 43,
+        _GB_PFX + "admin_" + "X" * 43,
+        _GB_PFX + "readonly_" + "0" * 43,
+    ],
+)
+def test_growthbook_secret_api_key_placeholders_are_test_values(tok):
+    matched = _gb("GROWTHBOOK_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_growthbook_secret_api_key_does_not_collide_with_notion():
+    # Both directions: a GrowthBook key never resolves to notion_api_key (the
+    # role segment's '_' breaks Notion's 43-alphanumeric run) and a Notion token
+    # never resolves to GrowthBook (no second '_').
+    for text in ("GROWTHBOOK_API_KEY=" + _GB_USER, _GB_READONLY, "Bearer " + _GB_PROJECT_ADMIN):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"growthbook_secret_api_key"}, text
+    notion = "NOTION_API_KEY=" + _GB_PFX + _GB_43
+    types = {f.type for f in scan(notion, min_confidence=0.01)}
+    assert "notion_api_key" in types and "growthbook_secret_api_key" not in types
+
+
+# --- SettleMint service account token ----------------------------------------------
+# 'sm_sat_' + 16 or more alphanumerics — the third sibling of sm_pat_ / sm_aat_,
+# attested by the same vendor masking regex /sm_(pat|aat|sat)_[0-9a-zA-Z]+/g and
+# shipped on the same {16,} floor. SYNTHETIC values (base64 of SHA-512 over
+# 'classifinder-settlemint-sat-synthetic-<n>', + / = stripped, cut to 32), split
+# so no scannable token literal exists in source.
+# Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/logging/mask-tokens.ts
+_SM_SAT_PFX = "sm_" + "sat_"
+_SM_SAT_1 = "k4s9L6ENueEVEbFDVYGQ5Oouq5XnxkNU"
+_SM_SAT_2 = "SmL2woEX9purC1vI3Xi8nPRZ7M2dgxVZ"
+_SM_SAT_3 = "Jf3GlQKzJ2yTECm6xa2YY2CORz7GjEno"
+_SM_SAT = _SM_SAT_PFX + _SM_SAT_1
+_SM_SAT2 = _SM_SAT_PFX + _SM_SAT_2
+_SM_SAT3 = _SM_SAT_PFX + _SM_SAT_3
+
+
+def _sm_sat(text):
+    return [
+        f for f in scan(text, min_confidence=0.01) if f.type == "settlemint_service_access_token"
+    ]
+
+
+def test_settlemint_service_access_token_fixture_widths():
+    for body in (_SM_SAT_1, _SM_SAT_2, _SM_SAT_3):
+        assert len(body) == 32 and body.isalnum()
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT, _SM_SAT),
+        ("export SETTLEMINT_ACCESS_TOKEN='" + _SM_SAT2 + "'", _SM_SAT2),
+        ("x-auth-token: " + _SM_SAT3, _SM_SAT3),
+        ('{"token": "' + _SM_SAT + '"}', _SM_SAT),
+        # Sixteen characters — the vendor's rendered floor — is matched in full.
+        ("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + _SM_SAT_1[:16], _SM_SAT_PFX + _SM_SAT_1[:16]),
+        # Bare token with no context.
+        (_SM_SAT2, _SM_SAT2),
+    ],
+)
+def test_settlemint_service_access_token_true_positives(text, tok):
+    matched = _sm_sat(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Fifteen characters — below the floor.
+        "SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + _SM_SAT_1[:15],
+        # Sibling families resolve to their own patterns, never to this one.
+        "SETTLEMINT_ACCESS_TOKEN=sm_" + "pat_" + _SM_SAT_1,
+        "SETTLEMINT_ACCESS_TOKEN=sm_" + "aat_" + _SM_SAT_1,
+        # Hyphen / underscore are outside the vendor's [0-9a-zA-Z] body.
+        "SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + _SM_SAT_1[:10] + "-" + _SM_SAT_1[10:],
+        # Embedded after a word character.
+        "my" + _SM_SAT,
+        # Prose naming the format.
+        "A SettleMint service account token is prefixed sm_sat_.",
+    ],
+)
+def test_settlemint_service_access_token_true_negatives(text):
+    assert _sm_sat(text) == []
+
+
+def test_settlemint_service_access_token_placeholder_is_test_value():
+    matched = _sm_sat("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT_PFX + "x" * 16)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_settlemint_service_access_token_is_sole_claimant_and_siblings_stay_separate():
+    for text in ("SETTLEMINT_ACCESS_TOKEN=" + _SM_SAT, _SM_SAT2):
+        findings = scan(text, min_confidence=0.01)
+        assert {f.type for f in findings} == {"settlemint_service_access_token"}, text
+    # The three families are three finding types with three remediation paths.
+    assert {f.type for f in scan(_SETTLEMINT_PAT, min_confidence=0.01)} == {
+        "settlemint_personal_access_token"
+    }
+    assert {f.type for f in scan(_SETTLEMINT_AAT, min_confidence=0.01)} == {
+        "settlemint_application_access_token"
+    }
+
+
 # ---------------------------------------------------------------------------
 # Apify Proxy password: the literal 'apify_proxy_' prefix + exactly 36 [A-Za-z0-9]
 # (48 characters total), per the full-width "External connection" example in the
