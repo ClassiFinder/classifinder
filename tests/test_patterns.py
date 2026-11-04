@@ -23585,3 +23585,165 @@ def test_hashicorp_boundary_auth_token_leaves_other_at_prefixes_alone():
         assert "hashicorp_boundary_auth_token" not in {
             f.type for f in scan("TOKEN=" + other, min_confidence=0.01)
         }
+
+
+# ═══════════════════════════════════════════════
+# 2026-11-02 — Fireworks AI API key (fw_)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base62 of SHA-512 over
+# 'classifinder-fireworks-synthetic-<n>' (n = 1..3), first 24 / 22 / 24
+# characters. The prefix is split so no contiguous key literal sits in source.
+# Source: https://github.com/fw-ai/nexus-cli/blob/main/packages/setup-cli/lib/keys/key-type.mjs
+_FW_PREFIX = "fw" + "_"
+_FW_BODY = "YeeazJmbGkakSQfLIM8uBtuv"  # 24 (newer generation)
+_FW_BODY_2 = "j8H46zm0Rg0oN1Jz4J4IbP"  # 22 (older generation)
+_FW_BODY_3 = "8ccqc8mWYTHhYwNZZnNOQUqA"  # 24
+_FW = _FW_PREFIX + _FW_BODY
+_FW_2 = _FW_PREFIX + _FW_BODY_2
+_FW_3 = _FW_PREFIX + _FW_BODY_3
+
+
+def _fw(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "fireworks_api_key"]
+
+
+def test_fireworks_api_key_fixture_sanity():
+    """Guard the fixtures themselves: 24 / 22 / 24 alphanumeric characters after the prefix."""
+    import re as _re
+
+    assert _re.fullmatch(r"[A-Za-z0-9]{24}", _FW_BODY)
+    assert _re.fullmatch(r"[A-Za-z0-9]{22}", _FW_BODY_2)
+    assert _re.fullmatch(r"[A-Za-z0-9]{24}", _FW_BODY_3)
+
+
+def test_fireworks_api_key_true_positives():
+    """Both key generations are detected in env, header, JSON, YAML and SDK carriers."""
+    for text in (
+        _FW,
+        _FW_2,
+        'export FIREWORKS_API_KEY="' + _FW + '"',
+        "FIREWORKS_API_KEY=" + _FW_2,
+        "Authorization: Bearer " + _FW_3,
+        '{"api_key": "' + _FW_2 + '"}',
+        "fireworks:\n  api_key: " + _FW,
+        "client = Fireworks(api_key='" + _FW_3 + "')",
+        'const client = new OpenAI({ baseURL: "https://api.fireworks.ai/inference/v1", apiKey: "'
+        + _FW_2
+        + '" });',
+        "firectl signin --api-key " + _FW,
+    ):
+        matched = _fw(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "fireworks"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.85
+        assert text[m.span_start:m.span_end] in (_FW, _FW_2, _FW_3)
+
+
+def test_fireworks_api_key_context_boost():
+    """fireworks keywords lift the score above the 0.85 base."""
+    bare = _fw(_FW)[0].confidence
+    boosted = _fw("FIREWORKS_API_KEY=" + _FW + "  # fireworks api.fireworks.ai")[0].confidence
+    assert bare == pytest.approx(0.85, abs=0.001)
+    assert boosted > bare
+
+
+def test_fireworks_api_key_known_test_values():
+    """Single-character and sequential-digit masks at both widths are pinned to ~0.15."""
+    for width in (22, 24):
+        for body in (
+            "x" * width,
+            "X" * width,
+            "0" * width,
+            "a" * width,
+            ("0123456789" * 3)[:width],
+            ("1234567890" * 3)[:width],
+        ):
+            matched = _fw(_FW_PREFIX + body)
+            assert len(matched) == 1, body
+            assert matched[0].is_likely_test_value is True
+            assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_fireworks_api_key_true_negatives():
+    """Only a free-standing fw_ + exactly 22 or 24 alphanumeric characters."""
+    for neg in (
+        # Width off: 21, 23 and 25 all match nothing (never truncated to 22/24).
+        _FW_2[:-1],
+        _FW[:-1],
+        _FW + "a",
+        _FW_2 + "a" * 3,
+        _FW + "-",
+        _FW + "_old",
+        # Characters outside the alphabet inside the body.
+        _FW_PREFIX + "!" + _FW_BODY[1:],
+        _FW_PREFIX + "-" + _FW_BODY[1:],
+        _FW_PREFIX + "_" + _FW_BODY[1:],
+        _FW_PREFIX + "." + _FW_BODY[1:],
+        # The older 'fpk_' spelling is rejected by the vendor's own validator.
+        "fpk" + "_" + _FW_BODY,
+        "fpk" + "_" + _FW_BODY_2,
+        # Mangled prefix.
+        "fw-" + _FW_BODY,
+        "FW" + "_" + _FW_BODY,
+        "fws" + "_" + _FW_BODY,
+        # Carved out of a longer identifier.
+        "x" + _FW,
+        "_" + _FW,
+        "-" + _FW,
+        "fw" + "_" + "update_firmware_image_v2",
+        "fw" + "_" + "firmware_version_string_2",
+        # Docs placeholders.
+        'export FIREWORKS_API_KEY="' + _FW_PREFIX + '..."',
+        'export FIREWORKS_API_KEY="' + _FW_PREFIX + 'your_api_key_here"',
+        "FIREWORKS_API_KEY=your_api_key_here",
+        "Authorization: Bearer <FIREWORKS_API_KEY>",
+    ):
+        assert _fw(neg) == [], "wrongly matched: " + neg[:70]
+
+
+def test_fireworks_api_key_low_entropy_bodies_sink():
+    """A body of exactly the right width and alphabet but with mask-like
+    entropy (repeated pairs, few distinct characters) fits the shape but the
+    3.5-bit entropy gate keeps it below the default 0.5 threshold."""
+    for body in (
+        "ab" * 11,
+        "ab" * 12,
+        "aaaabbbbccccddddeeeeff",
+        "aaaabbbbccccddddeeeeffff",
+        "00001111222233334444555566"[:24],
+    ):
+        text = _FW_PREFIX + body
+        assert len(body) in (22, 24), body
+        assert [f for f in scan(text) if f.type == "fireworks_api_key"] == [], body
+        low = _fw(text)
+        assert len(low) == 1 and low[0].confidence < 0.5, body
+
+
+def test_fireworks_api_key_does_not_collide():
+    """Reported once, as this pattern only (wins dedup over generic_api_key_env)."""
+    for text in (
+        _FW,
+        _FW_2,
+        "FIREWORKS_API_KEY=" + _FW,
+        "FIREWORKS_API_KEY=" + _FW_2,
+        "api_key=" + _FW_3,
+        "SECRET_KEY=" + _FW_2,
+        "Authorization: Bearer " + _FW,
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["fireworks_api_key"], text[:40]
+
+
+def test_fireworks_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    for key, body in ((_FW, _FW_BODY), (_FW_2, _FW_BODY_2)):
+        text = "FIREWORKS_API_KEY=" + key
+        findings = scan(text, min_confidence=0.01)
+        redacted_text, _ = redact(text, findings, style="label")
+        assert body not in redacted_text
+        assert "FIREWORKS_API_KEY=" in redacted_text
