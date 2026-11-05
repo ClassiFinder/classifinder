@@ -23747,3 +23747,159 @@ def test_fireworks_api_key_redaction():
         redacted_text, _ = redact(text, findings, style="label")
         assert body not in redacted_text
         assert "FIREWORKS_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-11-05 — ntfy access token (tk_)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base36 of SHA-512 over
+# 'classifinder-ntfy-synthetic-<n>' (n = 3..5), first 29 characters. The
+# prefix is split so no contiguous token literal sits in source.
+# Source: https://github.com/binwiederhier/ntfy/blob/main/user/util.go
+_NTFY_PREFIX = "tk" + "_"
+_NTFY_BODY = "34lthcfiifk1d8lhy6eam40fcdwnk"
+_NTFY_BODY_2 = "12xgoobfskc9b9qfhymfmgjka7pj2"
+_NTFY_BODY_3 = "rdmic4uhb8v0kxv6te7mly25nktcz"
+_NTFY = _NTFY_PREFIX + _NTFY_BODY
+_NTFY_2 = _NTFY_PREFIX + _NTFY_BODY_2
+_NTFY_3 = _NTFY_PREFIX + _NTFY_BODY_3
+
+
+def _ntfy(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "ntfy_access_token"]
+
+
+def test_ntfy_access_token_fixture_sanity():
+    """Guard the fixtures themselves: exactly 29 lowercase alphanumerics after the prefix."""
+    import re as _re
+
+    for body in (_NTFY_BODY, _NTFY_BODY_2, _NTFY_BODY_3):
+        assert _re.fullmatch(r"[a-z0-9]{29}", body)
+        assert len(_NTFY_PREFIX + body) == 32  # the vendor's documented total width
+
+
+def test_ntfy_access_token_true_positives():
+    """Detected in every documented carrier: header, basic-auth, CLI, env, client/server config."""
+    for text in (
+        _NTFY,
+        "Authorization: Bearer " + _NTFY_2,
+        "curl -u :" + _NTFY_3 + " -d 'backup done' https://ntfy.sh/mytopic",
+        "ntfy publish --token " + _NTFY + " mytopic 'backup done'",
+        "export NTFY_TOKEN=" + _NTFY_2,
+        "default-token: " + _NTFY_3,
+        'auth-tokens:\n  - "phil:' + _NTFY + ':Backup script"',
+        "NTFY_AUTH_TOKENS='phil:" + _NTFY_2 + "'",
+        "NTFY_UPSTREAM_ACCESS_TOKEN=" + _NTFY_3,
+        "https://:" + _NTFY + "@ntfy.sh/mytopic",
+        '{"token": "' + _NTFY_2 + '"}',
+    ):
+        matched = _ntfy(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "medium"
+        assert m.provider == "ntfy"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.85
+        assert text[m.span_start:m.span_end] in (_NTFY, _NTFY_2, _NTFY_3)
+
+
+def test_ntfy_access_token_multiple_tokens_in_one_provisioning_line():
+    """NTFY_AUTH_TOKENS lists several user:token[:label] entries — one finding per token."""
+    text = "NTFY_AUTH_TOKENS='phil:" + _NTFY + ",backup-service:" + _NTFY_2 + ":Backup script'"
+    matched = _ntfy(text)
+    assert sorted(text[m.span_start:m.span_end] for m in matched) == sorted([_NTFY, _NTFY_2])
+
+
+def test_ntfy_access_token_context_boost():
+    """ntfy keywords lift the score above the 0.85 base."""
+    bare = _ntfy(_NTFY)[0].confidence
+    boosted = _ntfy("NTFY_TOKEN=" + _NTFY + "  # ntfy.sh")[0].confidence
+    assert bare == pytest.approx(0.85, abs=0.001)
+    assert boosted > bare
+
+
+def test_ntfy_access_token_known_test_values():
+    """Masks, sequential-digit fillers and the vendor's three doc examples are pinned to ~0.15."""
+    for body in (
+        "x" * 29,
+        "0" * 29,
+        "a" * 29,
+        ("0123456789" * 3)[:29],
+        ("1234567890" * 3)[:29],
+        # docs/config.md: 'ntfy token list' output + auth-tokens examples.
+        "7eevizlsiwf9yi4uxsrs83r4352o0",
+        "3gd7d2yftt4b8ixyfe9mnmro88o76",
+        "f099we8uzj7xi5qshzajwp6jffvkz",
+    ):
+        matched = _ntfy(_NTFY_PREFIX + body)
+        assert len(matched) == 1, body
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_ntfy_access_token_entropy_gate_sinks_repeated_fillers():
+    """A repeated-pair filler that is not an exact known mask still falls below the 0.5 default."""
+    for body in (("ab" * 15)[:29], ("z9" * 15)[:29]):
+        matched = _ntfy(_NTFY_PREFIX + body)
+        assert len(matched) == 1, body
+        assert matched[0].confidence < 0.5
+
+
+def test_ntfy_access_token_true_negatives():
+    """Wrong width, wrong alphabet, or carved out of a longer identifier: no finding at all."""
+    for text in (
+        # 28 and 30 wide: never truncated to the documented width.
+        _NTFY[:-1],
+        _NTFY + "a",
+        # Upper-case / '-' / '_' bodies: the server validator accepts them for
+        # admin-provisioned tokens, but the generator never emits them.
+        _NTFY_PREFIX + _NTFY_BODY.upper(),
+        _NTFY_PREFIX + _NTFY_BODY[:14] + "-" + _NTFY_BODY[15:],
+        _NTFY_PREFIX + _NTFY_BODY[:14] + "_" + _NTFY_BODY[15:],
+        # A word character before 'tk_' (other vendors' longer prefixes).
+        "ptk" + "_" + _NTFY_BODY,
+        "stk" + "_" + _NTFY_BODY,
+        "a" + _NTFY,
+        # Tk / Tkinter command names and snake_case identifiers.
+        "tk" + "_" + "focusFollowsMouse",
+        "tk" + "_" + "update_handler_for_the_topic_x",
+        "tk" + "_" + "your_access_token_goes_here00",
+    ):
+        assert _ntfy(text) == [], text[:50]
+
+
+def test_ntfy_access_token_does_not_collide():
+    """Reported once, as this pattern only (wins dedup over generic env / URL patterns)."""
+    for text in (
+        _NTFY,
+        "NTFY_TOKEN=" + _NTFY,
+        "api_key=" + _NTFY_2,
+        "SECRET_KEY=" + _NTFY_3,
+        "token=" + _NTFY,
+        "Authorization: Bearer " + _NTFY_2,
+        "https://:" + _NTFY_3 + "@ntfy.sh/mytopic",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["ntfy_access_token"], text[:40]
+
+
+def test_ntfy_access_token_leaves_gc_notify_alone():
+    """The registry's other 'ntfy' pattern (GC Notify, 'gcntfy-') does not cross-fire."""
+    gc = (
+        "gcntfy-" "my_test_key" "-26785a09-ab16-4eb0-8407-a37497a57506"
+        "-3d844edf-8d35-48ac-975b-e847b4f122b0"
+    )
+    assert _ntfy(gc) == []
+    assert "ntfy_access_token" not in {f.type for f in scan(gc, min_confidence=0.01)}
+
+
+def test_ntfy_access_token_redaction():
+    """Redaction removes the token body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    for token, body in ((_NTFY, _NTFY_BODY), (_NTFY_2, _NTFY_BODY_2)):
+        text = "NTFY_TOKEN=" + token
+        findings = scan(text, min_confidence=0.01)
+        redacted_text, _ = redact(text, findings, style="label")
+        assert body not in redacted_text
+        assert "NTFY_TOKEN=" in redacted_text

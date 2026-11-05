@@ -169,6 +169,17 @@ _FW_BODY_24_CASES = "GPiksjxQiisN3t7tNbwX431i"
 _FW_22_CASES = _FW_PREFIX_CASES + _FW_BODY_22_CASES
 _FW_24_CASES = _FW_PREFIX_CASES + _FW_BODY_24_CASES
 
+# ── 2026-11-05 ────────────────────────────────────────────────────────────
+# ntfy access token: 'tk_' + 29 lowercase alnum (32 chars). The bodies are
+# SYNTHETIC (base36 of SHA-512 over 'classifinder-ntfy-synthetic-1' / '-2',
+# first 29 chars) and the prefix is split so no contiguous token literal
+# sits in source.
+_NTFY_PREFIX_CASES = "tk" + "_"
+_NTFY_BODY_CASES = "jm3l4iwcu3x92g04xkwy9r9w7dpki"
+_NTFY_BODY_2_CASES = "5fh9eb47u82y5k419v28ieh7vp922"
+_NTFY_CASES = _NTFY_PREFIX_CASES + _NTFY_BODY_CASES
+_NTFY_2_CASES = _NTFY_PREFIX_CASES + _NTFY_BODY_2_CASES
+
 # ── 2026-10-19 ────────────────────────────────────────────────────────────
 # Browserbase API key: 'bb_live_' + 27 base64url. The body is SYNTHETIC
 # (base64url of SHA-512 over 'classifinder-browserbase-synthetic-6', first 27
@@ -8331,6 +8342,31 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             # Carved out of a snake_case identifier / docs placeholder.
             "fw" + "_" + "update_firmware_image_v2",
             "fw" + "_" + "your_api_key_here",
+        ],
+        "min_confidence": 0.85,
+    },
+    # ── 2026-11-05 ───────────────────────────────────────────────────────
+    # ntfy access token — 'tk_' + 29 lowercase alnum, 32 chars in all (prefix,
+    # width and alphabet per the vendor's own generator and docs).
+    # Source: https://github.com/binwiederhier/ntfy/blob/main/user/util.go
+    "ntfy_access_token": {
+        "positives": [
+            "NTFY_TOKEN=" + _NTFY_CASES,
+            "Authorization: Bearer " + _NTFY_2_CASES,
+            "curl -u :" + _NTFY_CASES + " -d 'backup done' https://ntfy.sh/mytopic",
+            _NTFY_2_CASES,
+        ],
+        "negatives": [
+            # 28 and 30 wide: never truncated to the documented width.
+            _NTFY_CASES[:-1],
+            _NTFY_CASES + "a",
+            # Upper-case, '-' and '_' bodies: the generator never emits them.
+            "tk" + "_" + _NTFY_BODY_CASES.upper(),
+            "tk" + "_" + _NTFY_BODY_CASES[:14] + "-" + _NTFY_BODY_CASES[15:],
+            # Carved out of a longer identifier / a Tk command name.
+            "ptk" + "_" + _NTFY_BODY_CASES,
+            "tk" + "_" + "focusFollowsMouse",
+            "tk" + "_" + "update_handler_for_the_topic_x",
         ],
         "min_confidence": 0.85,
     },
