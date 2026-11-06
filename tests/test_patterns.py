@@ -23747,3 +23747,186 @@ def test_fireworks_api_key_redaction():
         redacted_text, _ = redact(text, findings, style="label")
         assert body not in redacted_text
         assert "FIREWORKS_API_KEY=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-11-06 — Proxmox VE API token (PVEAPIToken header)
+# ═══════════════════════════════════════════════
+# The header value is PVEAPIToken=USER@REALM!TOKENID=UUID; only the UUID (the
+# token VALUE Proxmox's TokenConfig.pm stores from UUID::uuid()) is the secret
+# span. Every UUID below is a SYNTHETIC uuid4, split so no contiguous token
+# value sits in source.
+# Source: https://github.com/proxmox/pve-access-control/blob/master/src/PVE/TokenConfig.pm
+_PVE_UUID = "c0130949-10ed-45cc-" + "a187-d6403aa54ccc"
+_PVE_UUID_2 = "5d5da073-586b-4b6f-" + "a918-9283bd324b1d"
+_PVE_UUID_3 = "375c7723-24b4-4ae4-" + "b534-d63ad6685d35"
+_PVE_SCHEME = "PVEAPI" + "Token"
+_PVE_ID = "root@pam!monitoring"
+_PVE = _PVE_SCHEME + "=" + _PVE_ID + "=" + _PVE_UUID
+
+
+def _pve(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "proxmox_ve_api_token"]
+
+
+def test_proxmox_ve_api_token_fixture_sanity():
+    """Guard the fixtures themselves: dashed 8-4-4-4-12 lowercase-hex UUIDs."""
+    import re as _re
+
+    for u in (_PVE_UUID, _PVE_UUID_2, _PVE_UUID_3):
+        assert _re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", u)
+
+
+def test_proxmox_ve_api_token_true_positives():
+    """The header form is detected in curl, Python, Go, YAML, PowerShell and env carriers,
+    with the vendor's '=' or single-space separator, any realm / token id the vendor's
+    charsets allow, an LDAP-style user containing '@', and an upper-case UUID."""
+    for text, uuid in (
+        (_PVE, _PVE_UUID),
+        (
+            'curl -H "Authorization: ' + _PVE + '" https://pve.example.com:8006/api2/json/nodes',
+            _PVE_UUID,
+        ),
+        (
+            'headers = {"Authorization": "' + _PVE_SCHEME + "=automation@pve!terraform=" + _PVE_UUID_2 + '"}',
+            _PVE_UUID_2,
+        ),
+        (
+            'req.Header.Set("Authorization", "' + _PVE_SCHEME + "=backup@pve!pbs-sync=" + _PVE_UUID_3 + '")',
+            _PVE_UUID_3,
+        ),
+        (
+            "headers:\n  Authorization: " + _PVE_SCHEME + "=root@pam!ci_runner.v2=" + _PVE_UUID_2,
+            _PVE_UUID_2,
+        ),
+        (
+            "$headers = @{ Authorization = '" + _PVE_SCHEME + "=svc@pve!ps=" + _PVE_UUID + "' }",
+            _PVE_UUID,
+        ),
+        ('export PVE_AUTH_HEADER="' + _PVE + '"', _PVE_UUID),
+        # The single-space separator Proxmox's own header parser also accepts.
+        ("Authorization: " + _PVE_SCHEME + " " + _PVE_ID + "=" + _PVE_UUID_3, _PVE_UUID_3),
+        # LDAP / AD style user carrying its own '@' before the realm.
+        (
+            _PVE_SCHEME + "=jdoe@corp.example.com@ad!monitoring=" + _PVE_UUID_2,
+            _PVE_UUID_2,
+        ),
+        # Upper-case hex value.
+        (_PVE_SCHEME + "=" + _PVE_ID + "=" + _PVE_UUID.upper(), _PVE_UUID.upper()),
+    ):
+        matched = _pve(text)
+        assert len(matched) == 1, "not detected: " + text[:80]
+        m = matched[0]
+        assert m.severity == "critical"
+        assert m.provider == "proxmox"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.95
+        assert text[m.span_start:m.span_end] == uuid, text[:80]
+
+
+def test_proxmox_ve_api_token_context_boost():
+    """The scheme literal is itself a context keyword ('PVEAPIToken', 'pve'), so even a
+    bare header value is lifted from the 0.95 base to the 0.99 ceiling; extra
+    proxmox / :8006 context cannot push it past the clamp."""
+    bare = _pve(_PVE)[0].confidence
+    boosted = _pve("# proxmox pve :8006\nAuthorization: " + _PVE)[0].confidence
+    assert bare == pytest.approx(0.99, abs=0.001)
+    assert boosted == pytest.approx(0.99, abs=0.001)
+
+
+def test_proxmox_ve_api_token_known_test_values():
+    """Mask / placeholder UUIDs that fit the shape are pinned to ~0.15."""
+    for value in (
+        "00000000-0000-0000-" + "0000-000000000000",
+        "11111111-1111-1111-" + "1111-111111111111",
+        "12345678-1234-1234-" + "1234-123456789012",
+        "aaaaaaaa-bbbb-cccc-" + "dddd-eeeeeeeeeeee",
+        "AAAAAAAA-BBBB-CCCC-" + "DDDD-EEEEEEEEEEEE",
+        "deadbeef-dead-beef-" + "dead-beefdeadbeef",
+    ):
+        matched = _pve(_PVE_SCHEME + "=" + _PVE_ID + "=" + value)
+        assert len(matched) == 1, value
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_proxmox_ve_api_token_true_negatives():
+    """Only the scheme literal + USER@REALM!TOKENID + '=' + a well-formed UUID."""
+    for neg in (
+        # The bare id=value without the scheme literal (the bpg/proxmox terraform
+        # provider's api_token form) is NOT this header-anchored pattern.
+        _PVE_ID + "=" + _PVE_UUID,
+        'api_token = "' + _PVE_ID + "=" + _PVE_UUID + '"',
+        # Missing the '!TOKENID' segment / the realm.
+        _PVE_SCHEME + "=root@pam=" + _PVE_UUID,
+        _PVE_SCHEME + "=root!monitoring=" + _PVE_UUID,
+        # Realm or token id outside the vendor's charset (must start with a letter,
+        # be at least two characters).
+        _PVE_SCHEME + "=root@1pam!monitoring=" + _PVE_UUID,
+        _PVE_SCHEME + "=root@pam!m=" + _PVE_UUID,
+        _PVE_SCHEME + "=root@pam!1mon=" + _PVE_UUID,
+        # User containing ':' or '/' (never valid in a Proxmox user name).
+        _PVE_SCHEME + "=ro:ot@pam!monitoring=" + _PVE_UUID,
+        _PVE_SCHEME + "=ro/ot@pam!monitoring=" + _PVE_UUID,
+        # Malformed value: 35 characters, 37 characters, a non-hex character, a
+        # trailing word character.
+        _PVE_SCHEME + "=" + _PVE_ID + "=" + _PVE_UUID[:-1],
+        _PVE_SCHEME + "=" + _PVE_ID + "=" + _PVE_UUID + "0",
+        _PVE_SCHEME + "=" + _PVE_ID + "=" + _PVE_UUID + "_old",
+        _PVE_SCHEME + "=" + _PVE_ID + "=" + "g" + _PVE_UUID[1:],
+        # The wiki's illustrative 9-3-4-4-12 placeholder is not a UUID.
+        _PVE_SCHEME + "=" + _PVE_ID + "=aaaaaaaaa-bbb-cccc-dddd-ef0123456789",
+        # Symbolic docs placeholders.
+        _PVE_SCHEME + "=USER@REALM!TOKENID=UUID",
+        _PVE_SCHEME + "=<user>@<realm>!<tokenid>=<uuid>",
+        _PVE_SCHEME + "=${PVE_USER}@pam!${PVE_TOKEN_ID}=${PVE_TOKEN_SECRET}",
+        # The scheme is case-sensitive in Proxmox's own parser; never carved out of
+        # a longer word; the login-ticket cookie is a different credential.
+        "pveapitoken=" + _PVE_ID + "=" + _PVE_UUID,
+        "X" + _PVE,
+        "_" + _PVE,
+        "PVEAuthCookie=PVE:root@pam:5F1E2D3C::" + _PVE_UUID,
+        # A UUID behind the HashiCorp anchors is not a Proxmox token.
+        "X-Consul-Token: " + _PVE_UUID,
+        "NOMAD_TOKEN=" + _PVE_UUID,
+    ):
+        assert _pve(neg) == [], "wrongly matched: " + neg[:80]
+
+
+def test_proxmox_ve_api_token_does_not_collide():
+    """Reported once, as this pattern only, in the header / env / code carriers."""
+    for text in (
+        _PVE,
+        "Authorization: " + _PVE,
+        'curl -H "Authorization: ' + _PVE + '" https://pve.example.com:8006/api2/json/version',
+        'headers = {"Authorization": "' + _PVE + '"}',
+        'export PVE_AUTH_HEADER="' + _PVE + '"',
+        "PVE_API_TOKEN=" + _PVE_SCHEME + "=automation@pve!terraform=" + _PVE_UUID_2,
+    ):
+        findings = scan(text, min_confidence=0.3)
+        assert [f.type for f in findings] == ["proxmox_ve_api_token"], text[:60]
+
+
+def test_proxmox_ve_api_token_does_not_cross_attribute_hashicorp_uuids():
+    """The HashiCorp UUID patterns and this one never claim each other's carriers."""
+    assert [f.type for f in scan("X-Consul-Token: " + _PVE_UUID, min_confidence=0.3)] == [
+        "consul_acl_token"
+    ]
+    assert [f.type for f in scan("NOMAD_TOKEN=" + _PVE_UUID, min_confidence=0.3)] == [
+        "nomad_acl_token"
+    ]
+    assert [f.type for f in scan("Authorization: " + _PVE, min_confidence=0.3)] == [
+        "proxmox_ve_api_token"
+    ]
+
+
+def test_proxmox_ve_api_token_redaction():
+    """Redaction removes the UUID value and keeps the scheme + token id, so the
+    owner can still see which token to revoke."""
+    from app.engine.redactor import redact
+
+    text = "Authorization: " + _PVE
+    findings = scan(text, min_confidence=0.01)
+    redacted_text, _ = redact(text, findings, style="label")
+    assert _PVE_UUID not in redacted_text
+    assert _PVE_SCHEME + "=" + _PVE_ID + "=" in redacted_text

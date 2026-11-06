@@ -158,6 +158,14 @@ _LLX_PREFIX_CASES = "ll" + "x-"
 _LLX_BODY_CASES = "Y9OJZm76EhjsuA9ycJQ0a6JDV19nSxLIJRG1yeHdxYvsfEKr"
 _LLX_CASES = _LLX_PREFIX_CASES + _LLX_BODY_CASES
 
+# ── 2026-11-06 ────────────────────────────────────────────────────────────
+# Proxmox VE API token: the 'PVEAPIToken' Authorization scheme + USER@REALM!
+# TOKENID + '=' + a UUID value. The values are SYNTHETIC uuid4s, split so no
+# contiguous token value sits in source.
+_PVE_SCHEME_CASES = "PVEAPI" + "Token"
+_PVE_UUID_A_CASES = "1c29e3e0-be60-4aac-" + "904f-24fa155fed9f"
+_PVE_UUID_B_CASES = "ff78d6cd-ef26-4a98-" + "a3bb-3c34a1f6acd6"
+
 # ── 2026-11-02 ────────────────────────────────────────────────────────────
 # Fireworks AI API key: 'fw_' + 22 or 24 alphanumeric. The bodies are
 # SYNTHETIC (base62 of SHA-512 over 'classifinder-fireworks-synthetic-4' /
@@ -8333,6 +8341,29 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "fw" + "_" + "your_api_key_here",
         ],
         "min_confidence": 0.85,
+    },
+    # ── 2026-11-06 ───────────────────────────────────────────────────────
+    # Proxmox VE API token — 'PVEAPIToken' scheme ('=' or one space, per the
+    # vendor's own header parser) + USER@REALM!TOKENID + '=' + a UUID value
+    # (TokenConfig.pm stores UUID::uuid()). Only the UUID is the secret span.
+    # Source: https://github.com/proxmox/pve-access-control/blob/master/src/PVE/TokenConfig.pm
+    "proxmox_ve_api_token": {
+        "positives": [
+            'curl -H "Authorization: ' + _PVE_SCHEME_CASES + "=root@pam!monitoring=" + _PVE_UUID_A_CASES + '" https://pve.example.com:8006/api2/json/nodes',
+            _PVE_SCHEME_CASES + "=automation@pve!terraform=" + _PVE_UUID_B_CASES,
+            "Authorization: " + _PVE_SCHEME_CASES + " backup@pve!pbs-sync=" + _PVE_UUID_A_CASES,
+        ],
+        "negatives": [
+            # The bare id=value of the terraform provider's api_token (no scheme literal).
+            'api_token = "root@pam!monitoring=' + _PVE_UUID_A_CASES + '"',
+            # Missing the '!TOKENID' segment.
+            _PVE_SCHEME_CASES + "=root@pam=" + _PVE_UUID_A_CASES,
+            # Malformed value (35 characters).
+            _PVE_SCHEME_CASES + "=root@pam!monitoring=" + _PVE_UUID_A_CASES[:-1],
+            # The wiki's malformed 9-3-4-4-12 placeholder.
+            _PVE_SCHEME_CASES + "=root@pam!monitoring=aaaaaaaaa-bbb-cccc-dddd-ef0123456789",
+        ],
+        "min_confidence": 0.95,
     },
 }
 
