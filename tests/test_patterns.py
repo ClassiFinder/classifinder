@@ -24086,3 +24086,151 @@ def test_ntfy_access_token_redaction():
         redacted_text, _ = redact(text, findings, style="label")
         assert body not in redacted_text
         assert "NTFY_TOKEN=" in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# 2026-11-09 — Formbricks API key (fbk_)
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: base64url of SHA-512 over
+# 'classifinder-formbricks-synthetic-<n>' (n = 3..5), first 43 characters.
+# The prefix is split so no contiguous key literal sits in source.
+# Source: https://github.com/formbricks/formbricks/blob/main/apps/web/modules/organization/settings/api-keys/lib/api-key.ts
+_FBK_PREFIX = "fbk" + "_"
+_FBK_BODY = "CyVIJ0wSnNiU1R_YCsOXyIsf2k_vzj1Gd006FzBhFdf"
+_FBK_BODY_2 = "IktZmYsGLQDY53JMaIr9tNzb3d0nYq5mmQUgmZQyf5-"
+_FBK_BODY_3 = "_BsxJdfALNM7eF6hYLXlfQfH1V5g5vG79bhvr3_AzQd"
+_FBK = _FBK_PREFIX + _FBK_BODY
+_FBK_2 = _FBK_PREFIX + _FBK_BODY_2
+_FBK_3 = _FBK_PREFIX + _FBK_BODY_3
+
+
+def _fbk(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "formbricks_api_key"]
+
+
+def test_formbricks_api_key_fixture_sanity():
+    """Guard the fixtures themselves: exactly 43 base64url characters after the prefix."""
+    import re as _re
+
+    for body in (_FBK_BODY, _FBK_BODY_2, _FBK_BODY_3):
+        assert _re.fullmatch(r"[A-Za-z0-9_-]{43}", body)
+        assert len(_FBK_PREFIX + body) == 47  # 4 + unpadded base64url of 32 bytes
+
+
+def test_formbricks_api_key_true_positives():
+    """Detected in every documented carrier: header, bearer, env, MCP config, SDK and curl."""
+    for text in (
+        _FBK,
+        "x-api-key: " + _FBK_2,
+        "Authorization: Bearer " + _FBK_3,
+        "FORMBRICKS_API_KEY=" + _FBK,
+        "export FORMBRICKS_API_KEY=" + _FBK_2,
+        'curl -H "x-api-key: ' + _FBK_3 + '" https://app.formbricks.com/api/v1/management/surveys',
+        '"env": {"FORMBRICKS_API_KEY": "' + _FBK + '", "FORMBRICKS_HOST": "https://app.formbricks.com"}',
+        "const client = new FormbricksClient({ apiKey: '" + _FBK_2 + "' });",
+        "formbricks_api_key: " + _FBK_3,
+        '{"apiKey": "' + _FBK + '"}',
+    ):
+        matched = _fbk(text)
+        assert len(matched) == 1, "not detected: " + text[:70]
+        m = matched[0]
+        assert m.severity == "high"
+        assert m.provider == "formbricks"
+        assert m.is_likely_test_value is False
+        assert m.confidence >= 0.95
+        assert text[m.span_start:m.span_end] in (_FBK, _FBK_2, _FBK_3)
+
+
+def test_formbricks_api_key_body_edges_are_kept():
+    """Bodies that start or end with '_' / '-' (legal base64url) are matched in full, not trimmed."""
+    for key, body in ((_FBK_2, _FBK_BODY_2), (_FBK_3, _FBK_BODY_3)):
+        assert body[0] == "_" or body[-1] == "-"
+        text = "key=" + key
+        matched = _fbk(text)
+        assert len(matched) == 1
+        assert text[matched[0].span_start:matched[0].span_end] == key
+
+
+def test_formbricks_api_key_context_boost():
+    """Formbricks keywords lift the score above the 0.95 base."""
+    bare = _fbk(_FBK)[0].confidence
+    boosted = _fbk("FORMBRICKS_API_KEY=" + _FBK + "  # formbricks.com")[0].confidence
+    assert bare == pytest.approx(0.95, abs=0.001)
+    assert boosted > bare
+
+
+def test_formbricks_api_key_known_test_values():
+    """Single-character masks and sequential fillers are pinned to ~0.15."""
+    for body in (
+        "x" * 43,
+        "X" * 43,
+        "0" * 43,
+        "a" * 43,
+        "A" * 43,
+        ("0123456789" * 5)[:43],
+        ("abcdefghij" * 5)[:43],
+        ("ABCDEFGHIJ" * 5)[:43],
+    ):
+        matched = _fbk(_FBK_PREFIX + body)
+        assert len(matched) == 1, body
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_formbricks_api_key_true_negatives():
+    """Wrong width, wrong alphabet, or carved out of a longer identifier: no finding at all."""
+    for text in (
+        # 42 and 44 wide: never truncated to the documented width.
+        _FBK[:-1],
+        _FBK + "a",
+        _FBK + "-",
+        # Padded or standard-base64 bodies: the generator emits unpadded base64url only.
+        _FBK[:-1] + "=",
+        _FBK_PREFIX + _FBK_BODY.replace("_", "/"),
+        _FBK_PREFIX + _FBK_BODY_2.replace("-", "+"),
+        # A word character before 'fbk_'.
+        "xfbk" + "_" + _FBK_BODY,
+        "_fbk" + "_" + _FBK_BODY,
+        "a" + _FBK,
+        # The v1 (bare hex, no prefix) key format is deliberately not matched.
+        "x-api-key: " + "0f3a9c7e1b5d2468ace0f3a9c7e1b5d2",
+        # snake_case identifiers that happen to open with the prefix.
+        "fbk" + "_" + "survey_response_handler_v2",
+        "fbk" + "_" + "your_formbricks_api_key_goes_here_xxxxxxxx",
+    ):
+        assert _fbk(text) == [], text[:50]
+
+
+def test_formbricks_api_key_does_not_collide():
+    """Reported once, as this pattern only (wins dedup over generic env / bearer / URL patterns)."""
+    for text in (
+        _FBK,
+        "FORMBRICKS_API_KEY=" + _FBK,
+        "api_key=" + _FBK_2,
+        "SECRET_KEY=" + _FBK_3,
+        "token=" + _FBK,
+        "x-api-key: " + _FBK_2,
+        "Authorization: Bearer " + _FBK_3,
+        "https://user:" + _FBK + "@app.formbricks.com/api/v1/management/me",
+    ):
+        findings = scan(text, min_confidence=0.01)
+        assert [f.type for f in findings] == ["formbricks_api_key"], text[:40]
+
+
+def test_formbricks_api_key_leaves_other_short_prefixes_alone():
+    """Neighbouring 'f*k_' / '*bk_' style prefixes with a 43-wide body do not cross-fire."""
+    for prefix in ("fk", "bk", "fbx", "pbk", "fbk" + "s"):
+        text = prefix + "_" + _FBK_BODY
+        assert _fbk(text) == [], text[:50]
+
+
+def test_formbricks_api_key_redaction():
+    """Redaction removes the key body and keeps the variable name."""
+    from app.engine.redactor import redact
+
+    for key, body in ((_FBK, _FBK_BODY), (_FBK_2, _FBK_BODY_2)):
+        text = "FORMBRICKS_API_KEY=" + key
+        findings = scan(text, min_confidence=0.01)
+        redacted_text, _ = redact(text, findings, style="label")
+        assert body not in redacted_text
+        assert "FORMBRICKS_API_KEY=" in redacted_text
