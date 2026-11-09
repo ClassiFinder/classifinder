@@ -8401,6 +8401,122 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.85,
     },
+    # ── 2026-11-09 batch ─────────────────────────────────────────────────
+    # Synthetic bodies (SHA-512 over 'classifinder-<kind>-synthetic-1' / '-2',
+    # mapped into each vendor alphabet); prefixes split so no contiguous token
+    # literal sits in source.
+    # Source: https://github.com/pubnub/javascript/blob/master/docs-snippets/harness/redact.cjs
+    "pubnub_secret_key": {
+        "positives": [
+            "PUBNUB_SECRET_KEY=sec" + "-c-" + "YzQwMjI3MDItMzNjZi00Y2Y2LWI0ZDMtNDU4ZDNkNjU5NDVi",
+            "sec" + "-c-" + "N2U0NTZmN2QtM2Y3MS00YmQzLTk2ODEtY2RiMmYyOWI4YjRj",
+        ],
+        "negatives": [
+            "sec" + "-c-" + "YzQwMjI3MDItMzNjZi00Y2Y2LWI0ZDMtNDU4ZDNkNjU5NDV",
+            "pub" + "-c-" + "0b5f8a1e-1c2d-4e3f-9a8b-7c6d5e4f3a2b",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Source: https://github.com/rancher/wrangler/blob/master/pkg/randomtoken/token.go
+    "rancher_api_token": {
+        "positives": [
+            "rancher login https://rancher.example.com --token token"
+            + "-k7ktb:2rv87bskd4rvrgn7jjgnw94v7h4prfkl4fwnrd2hmxd99d5pdmcp55",
+            "Authorization: Bearer token"
+            + "-vnxrm:gc7dbn85n2lp8j9vbncq9qxcclm64c84zs6xqj7bdd6625d2mblfm8",
+        ],
+        "negatives": [
+            "token" + "-k7ktb",
+            "token" + "-k7ktb:2rv87bskd4rvrgn7jjgnw94v7h4prfkl4fwnrd2hmxd99d5pdmcp5",
+            "token" + "-k7kta:2rv87bskd4rvrgn7jjgnw94v7h4prfkl4fwnrd2hmxd99d5pdmcp55",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Source: https://docs.rs/riven/latest/riven/struct.RiotApi.html
+    "riot_games_api_key": {
+        "positives": [
+            "RIOT_API_KEY=RGAPI" + "-70de00bf-1cb3-05b5-bf73-ea2a8e95c98a",
+            "X-Riot-Token: RGAPI" + "-0b58858d-c204-9794-ead3-2dc35e2f822b",
+        ],
+        "negatives": [
+            "RGAPI" + "-70de00bf1cb305b5bf73ea2a8e95c98a",
+            "RGAPI" + "-70de00bf-1cb3-05b5-bf73-ea2a8e95c98",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Source: https://github.com/sourcegraph/sourcegraph-public-snapshot/blob/main/doc/dev/security/secret_formats.md
+    "sourcegraph_subscription_token": {
+        "positives": [
+            "sgs" + "_d46a6c35a105f7f0c20ee718b1cac1c8db7c82527ba44bab255f7482a76fa9d5",
+            "token: sgs" + "_fdb4045db9e90b7a481fc4623235afa935af0c0385b15a6ba25e3bd365ad9420",
+        ],
+        "negatives": [
+            "sgs" + "_d46a6c35a105f7f0c20ee718b1cac1c8db7c82527ba44bab255f7482a76fa9d",
+            "sgs" + "_d46a6c35a105f7f0c20ee718b1cac1c8db7c82527ba44bab255f7482a76fa9dz",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Source: https://github.com/sourcegraph/sourcegraph-public-snapshot/blob/main/doc/dev/security/secret_formats.md
+    "sourcegraph_license_key_token": {
+        "positives": [
+            "slk" + "_dc2a2f843a5fc09364d9243a5ce7cb713c8c530ad9e3be318ed615e8f8e331fe",
+            "token: slk" + "_6a82d34a8b4e88e24f374f0f5a1d602353d1c4a92de8e59dd80ffed8a42a3768",
+        ],
+        "negatives": [
+            "slk" + "_dc2a2f843a5fc09364d9243a5ce7cb713c8c530ad9e3be318ed615e8f8e331f",
+            "xslk" + "_dc2a2f843a5fc09364d9243a5ce7cb713c8c530ad9e3be318ed615e8f8e331fe",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Source: https://github.com/tolgee/tolgee-platform/blob/main/backend/data/src/main/kotlin/io/tolgee/service/security/PatService.kt
+    "tolgee_personal_access_token": {
+        "positives": [
+            "TOLGEE_API_KEY=tgpat" + "_1bfptkh54u3aasep4j4bapoulim6m1bb15lucuh9deq7391bl8oq",
+            "X-API-Key: tgpat" + "_1ifojpbal5bqov62c2agvj6fk9qnef53m2fuj99c8sfmmgm2bdoi",
+        ],
+        "negatives": [
+            "tgpat" + "_1bfptkh54u3aasep4j4bapoulim6m1bb15lucuh9deq7391bl8oqz",
+            "tgpat" + "_some_identifier",
+        ],
+        "min_confidence": 0.9,
+    },
+    # Source: https://github.com/tolgee/tolgee-platform/blob/main/backend/data/src/main/kotlin/io/tolgee/service/security/ApiKeyService.kt
+    "tolgee_project_api_key": {
+        "positives": [
+            "TOLGEE_API_KEY=tgpak" + "_geydgn27n53dgmrwm4zw6m3lgf2xc4lmnmydk4dinrrtszdnme",
+            "X-API-Key: tgpak" + "_geydonc7oezxi4jzgeywsobvnzytemlsoezhanjvmjwxcmdggy",
+        ],
+        "negatives": [
+            "tgpak" + "_geydgn27n53dgmrwm4zw6m3lgf2xc4lmnmydk4dinrrtszdnm1",
+            "tgpak" + "_geydgn27n53dgmrw",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Source: https://docs.vectara.com/docs/console-ui/api-access-overview
+    "vectara_api_key": {
+        "positives": [
+            "VECTARA_API_KEY=zut" + "_gcEFEhF_HAt2gx-9hKsPEa3tZmZHooQa8cmGcE",
+            "x-api-key: zqt" + "_mv_UZ4eGKJ-rTjFb9JRB8M6OBm0JmckOYXCUwx",
+            "zwt" + "_dtWEcn5zeLEY_StMVTjx3sJgQ1VH5m_Pe4gcTh",
+        ],
+        "negatives": [
+            "zut" + "_gcEFEhF_HAt2gx-9hKsPEa3tZmZHooQa8cmGc",
+            "zut" + "_some_long_identifier_name_here_abcdefg",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Source: https://yandex.cloud/en/docs/smartcaptcha/concepts/keys
+    "yandex_smartcaptcha_server_key": {
+        "positives": [
+            "SMARTCAPTCHA_SERVER_KEY=ysc2" + "_sUKKmDqPHg3C4BWkkxb9AdUlZfnjLEyk3D8Tc32R8i9LTwUv",
+            "'secret' => 'ysc2" + "_kQGK1FpcrZJ9wE91qC1JZlZrGKl93IKaqLkeUiCTMhL5ZlA0',",
+        ],
+        "negatives": [
+            "ysc1" + "_sUKKmDqPHg3C4BWkkxb9AdUlZfnjLEyk3D8Tc32R8i9LTwUv",
+            "ysc2" + "_sUKKmDqPHg3C4BWkkxb9AdUlZfnjLEyk3D8Tc32R8i9LTwU",
+        ],
+        "min_confidence": 0.9,
+    },
 }
 
 # fmt: on
