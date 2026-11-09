@@ -24234,3 +24234,316 @@ def test_formbricks_api_key_redaction():
         redacted_text, _ = redact(text, findings, style="label")
         assert body not in redacted_text
         assert "FORMBRICKS_API_KEY=" in redacted_text
+
+
+# 2026-11-09 — batch: PubNub sec-c-, Rancher token-xxxxx:<secret>, Riot RGAPI-,
+# Sourcegraph sgs_ / slk_, Tolgee tgpat_ / tgpak_, Vectara zut_/zqt_/zwt_,
+# Yandex SmartCaptcha ysc2_
+# ═══════════════════════════════════════════════
+# Every body is SYNTHETIC: derived from SHA-512 over
+# 'classifinder-<kind>-synthetic-<n>' (n = 3..5) and mapped into each
+# vendor's alphabet / width. Prefixes are split so no contiguous token
+# literal sits in source.
+
+_B1109_PUBNUB = [
+    "sec" + "-c-" + b
+    for b in (
+        "NTliOGZhYjItNThiNy00ZGIzLTk4ZmQtMDgyMmY1OWZmZDdl",
+        "MDM3Mzc1YWQtMDM1Ni00MzI5LWI4MDktOGVlZmM4OTAzOTYz",
+        "NzUwNmIwYzgtMDk2Ni00MDZkLWIwNjYtZWU4MzQyMjk0OTM4",
+    )
+]
+_B1109_RANCHER = [
+    "token" + "-" + n + ":" + b
+    for n, b in (
+        ("r26xh", "2vw6ph2jqx68s96499k2xx4j8q6sm25hw4krrncg2t94mwf6jv6ktx"),
+        ("mxd94", "sbcbxxvlpgthm2pgk58lqpsmn5p447jlnk7vvxcq2snwmzpnrj9db4"),
+        ("sqv8f", "hjjmgpr5br87dgdqgjvs9hbk7btqk6hs4x94zkk2ztrj84pg4m254v"),
+    )
+]
+_B1109_RIOT = [
+    "RGAPI" + "-" + b
+    for b in (
+        "62f2a549-b6f0-ff12-c24b-a20dacd1d695",
+        "3b7c096f-97d3-4ec1-81ae-8ab75a54b688",
+        "854e0d39-0f1e-eede-29a6-2a9cc4e937dc",
+    )
+]
+_B1109_SGS = [
+    "sgs" + "_" + b
+    for b in (
+        "76c4cad0330cedc34812915c2775986f95c27d39fe8f1d4c4580edd27038c070",
+        "56671287cbaaa8a92405faf35379313b87d66952956c73b33851ba7450c7a29d",
+        "65ad8259a708e1b2defe52a906cc58ad390154089d5e271424a554d0b9c60402",
+    )
+]
+_B1109_SLK = [
+    "slk" + "_" + b
+    for b in (
+        "ecbada6ace577cb91f4f468900512c68bf01f6ea12a9c1af182a105fd636cba9",
+        "c96461a22927ea2ce566804be55b823ce7adc6e0833a5a586e5215bba00940d2",
+        "24c9b79365a68aa7e5cffaf2d74d2ac6ea9ca5f9f6fa33f5c7523cea43428007",
+    )
+]
+_B1109_TGPAT = [
+    "tgpat" + "_" + b
+    for b in (
+        "1qqpak5v2jvpu5irlc4sh5hnr35l7750hj1in8o1jnj1hfl3293f",
+        "1vbnun6ks2ilmno5ab5knb29hho12tl1rc0krud626dpjbrmfopf",
+        # 51 wide: the top base-32 digit of the 256-bit number was 0.
+        "e3f9u5kcajpanjbc44a8urr1k32d1pme4mi05nd9mcs3vtvpdtf",
+    )
+]
+_B1109_TGPAK = [
+    "tgpak" + "_" + b
+    for b in (
+        "geytcmk7nuywwztcgbxgczlrgf2wq2tjnf2xc5rsorygs2tdm4",
+        "geytioc7oyydo4zxov3g4ojsna3wo3rynyzw65jqgr2xe3teoe",
+        "geytqnk7nzxw6mtfnnqteodugnwg2ylkhbvw43tigi3de23goq",
+    )
+]
+_B1109_VECTARA = [
+    "zut" + "_" + "VXoqiSxwRAFGmhrqk0zv2vb8sYt8Ow6xQ_PX_l",
+    "zqt" + "_" + "tTXgsxNVNbRQSGY5jvD1-7SvqcB8UhN0qYsOMC",
+    "zwt" + "_" + "qG4UaUn5aP7CEwXINJ2XqX05NeCmbfBwvhUBYu",
+]
+_B1109_YANDEX = [
+    "ysc2" + "_" + b
+    for b in (
+        "gwOei2uAI6qj1tBTjpk94HER5gcn7D40ARhTxPMMIt397rB2",
+        "cnErOdHLt8uYZ492rwjcKME0MkzXiSTPCY2kW9VTq5MlTIEk",
+        "Z1VC0xjukxiz2ggw5ADZUkIZI1FO5GNFUZTKiinpMITAvvUN",
+    )
+]
+
+# pattern_id -> (tokens, severity, carriers, negatives)
+_B1109 = {
+    "pubnub_secret_key": (
+        _B1109_PUBNUB,
+        "high",
+        ["PUBNUB_SECRET_KEY={t}", "secretKey: '{t}'", "pnconfig.secret_key = \"{t}\""],
+        [
+            _B1109_PUBNUB[0][:-1],
+            _B1109_PUBNUB[0] + "A",
+            _B1109_PUBNUB[0] + "=",
+            "x" + _B1109_PUBNUB[0],
+            # Publish / subscribe keys are public client identifiers.
+            "pub" + "-c-" + "0b5f8a1e-1c2d-4e3f-9a8b-7c6d5e4f3a2b",
+            "sub" + "-c-" + "0b5f8a1e-1c2d-4e3f-9a8b-7c6d5e4f3a2b",
+        ],
+    ),
+    "rancher_api_token": (
+        _B1109_RANCHER,
+        "critical",
+        [
+            "rancher login https://rancher.example.com --token {t}",
+            "Authorization: Bearer {t}",
+            "RANCHER_TOKEN={t}",
+        ],
+        [
+            # The token name alone is a public identifier.
+            _B1109_RANCHER[0].split(":")[0],
+            _B1109_RANCHER[0][:-1],
+            _B1109_RANCHER[0] + "b",
+            # Vowels are outside Rancher's alphabet.
+            _B1109_RANCHER[0][:-4] + "aeio",
+            "api" + "-" + _B1109_RANCHER[0],
+        ],
+    ),
+    "riot_games_api_key": (
+        _B1109_RIOT,
+        "medium",
+        ["RIOT_API_KEY={t}", "X-Riot-Token: {t}", "https://na1.api.riotgames.com/lol?api_key={t}"],
+        [
+            _B1109_RIOT[0][:-1],
+            _B1109_RIOT[0] + "a",
+            "RGAPI" + "-" + "62f2a549b6f0ff12c24ba20dacd1d695",
+            "RGAPI" + "-" + "62f2a549-b6f0-ff12-c24b-a20dacd1d69g",
+        ],
+    ),
+    "sourcegraph_subscription_token": (
+        _B1109_SGS,
+        "high",
+        ["SRC_LICENSE_TOKEN={t}", "Authorization: Bearer {t}", '{{"token": "{t}"}}'],
+        [_B1109_SGS[0][:-1], _B1109_SGS[0] + "a", "xsgs" + "_" + _B1109_SGS[0][4:]],
+    ),
+    "sourcegraph_license_key_token": (
+        _B1109_SLK,
+        "high",
+        ["SRC_LICENSE_TOKEN={t}", "Authorization: Bearer {t}", '{{"token": "{t}"}}'],
+        [_B1109_SLK[0][:-1], _B1109_SLK[0] + "a", "xslk" + "_" + _B1109_SLK[0][4:]],
+    ),
+    "tolgee_personal_access_token": (
+        _B1109_TGPAT,
+        "high",
+        ["TOLGEE_API_KEY={t}", "X-API-Key: {t}", "tolgee push --api-key {t}"],
+        [
+            _B1109_TGPAT[0] + "0",  # 53 wide
+            "tgpat" + "_" + "1qqpak5v2jvpu5irlc4sh5hnr35l7750hj",  # too short
+            "tgpat" + "_" + "1qqpak5v2jvpu5irlc4sh5hnr35l7750hj1in8o1jnj1hfl329wz",
+            "tgpat" + "_" + "SOME_identifier_name",
+        ],
+    ),
+    "tolgee_project_api_key": (
+        _B1109_TGPAK,
+        "medium",
+        ["TOLGEE_API_KEY={t}", "X-API-Key: {t}", "VITE_APP_TOLGEE_API_KEY={t}"],
+        [
+            "tgpak" + "_" + "geytcmk7nuywwztcgbxgczlrgf2wq2tjnf2xc5rsorygs2tdm8",  # '8' not base32
+            "tgpak" + "_" + "geytcmk7nuywwztcgbxg",
+            "tgpak" + "_" + "Geytcmk7nuywwztcgbxgczlrgf2wq2tjnf2xc5rsorygs2tdm4",
+        ],
+    ),
+    "vectara_api_key": (
+        _B1109_VECTARA,
+        "high",
+        ["VECTARA_API_KEY={t}", "x-api-key: {t}", "vectara.Client(api_key=\"{t}\")"],
+        [
+            _B1109_VECTARA[0][:-1],
+            _B1109_VECTARA[0] + "a",
+            "xzut" + "_" + _B1109_VECTARA[0][4:],
+            "zat" + "_" + _B1109_VECTARA[0][4:],
+            # snake_case identifiers: no digit / no upper-case in the body.
+            "zut" + "_" + "some_long_identifier_name_here_abcdefg",
+            "zqt" + "_" + "SOME_LONG_IDENTIFIER_NAME_HERE_ABCDEFG",
+        ],
+    ),
+    "yandex_smartcaptcha_server_key": (
+        _B1109_YANDEX,
+        "medium",
+        ["SMARTCAPTCHA_SERVER_KEY={t}", "'secret' => '{t}',", "server_key: {t}"],
+        [
+            _B1109_YANDEX[0][:-1],
+            _B1109_YANDEX[0] + "a",
+            # The client key is public (embedded in the page).
+            "ysc1" + "_" + _B1109_YANDEX[0][5:],
+            "ysc2" + "_" + _B1109_YANDEX[0][5:-1] + "-",
+        ],
+    ),
+}
+
+
+def _b1109_pattern(pid):
+    from app.engine.patterns.registry import PATTERN_REGISTRY
+
+    return next(p for p in PATTERN_REGISTRY if p.id == pid)
+
+
+def _b1109_secret(pid, token):
+    """The span each pattern reports (Rancher: only the 54-char secret)."""
+    return token.split(":", 1)[1] if pid == "rancher_api_token" else token
+
+
+@pytest.mark.parametrize("pid", sorted(_B1109))
+def test_batch_2026_11_09_true_positives(pid):
+    """Each synthetic token is found, alone and in every carrier, as exactly one finding."""
+    tokens, severity, carriers, _ = _B1109[pid]
+    pattern = _b1109_pattern(pid)
+    for token in tokens:
+        for text in [token] + [c.format(t=token) for c in carriers]:
+            matched = [f for f in scan(text, min_confidence=0.01) if f.type == pid]
+            assert len(matched) == 1, f"{pid} not detected: {text[:70]}"
+            m = matched[0]
+            assert m.severity == severity
+            assert m.is_likely_test_value is False
+            assert m.confidence >= pattern.confidence_base
+            assert text[m.span_start:m.span_end] == _b1109_secret(pid, token)
+
+
+@pytest.mark.parametrize("pid", sorted(_B1109))
+def test_batch_2026_11_09_does_not_collide(pid):
+    """The provider pattern is the only finding (wins dedup over generic patterns)."""
+    tokens, _, carriers, _ = _B1109[pid]
+    for token in tokens:
+        for text in [token, "api_key=" + token, "SECRET=" + token]:
+            assert [f.type for f in scan(text, min_confidence=0.01)] == [pid], text[:60]
+
+
+@pytest.mark.parametrize("pid", sorted(_B1109))
+def test_batch_2026_11_09_true_negatives(pid):
+    """Wrong width, wrong alphabet, public sibling keys, carved identifiers: no finding."""
+    for text in _B1109[pid][3]:
+        assert [f for f in scan(text, min_confidence=0.01) if f.type == pid] == [], text[:60]
+
+
+@pytest.mark.parametrize("pid", sorted(_B1109))
+def test_batch_2026_11_09_known_test_values(pid):
+    """Every known_test_value still matches the regex and is pinned to ~0.15."""
+    pattern = _b1109_pattern(pid)
+    assert pattern.known_test_values
+    for value in pattern.known_test_values:
+        text = ("token" + "-" + "bbbbb:" + value) if pid == "rancher_api_token" else value
+        matched = [f for f in scan(text, min_confidence=0.01) if f.type == pid]
+        assert len(matched) == 1, value
+        assert matched[0].is_likely_test_value is True
+        assert matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+@pytest.mark.parametrize("pid", sorted(_B1109))
+def test_batch_2026_11_09_context_boost(pid):
+    """A vendor context keyword lifts the score above the bare base."""
+    token = _B1109[pid][0][0]
+    keyword = _b1109_pattern(pid).context_keywords[0]
+    bare = [f for f in scan(token, min_confidence=0.01) if f.type == pid][0].confidence
+    boosted = [
+        f for f in scan(keyword + " " + token, min_confidence=0.01) if f.type == pid
+    ][0].confidence
+    assert boosted > bare
+
+
+def test_batch_2026_11_09_tolgee_vendor_doc_examples_are_test_values():
+    """The example token / key printed in Tolgee's docs are flagged as test values."""
+    for pid, value in (
+        ("tolgee_personal_access_token",
+         "tgpat" + "_" + "c813fppevpm6smlv8gld2fqq7knqqfht5ri1vgo57gj6ivkbhp5"),
+        ("tolgee_project_api_key",
+         "tgpak" + "_" + "mmztgz2hmaxts2rynu3w6zlkobsksksnfvg6mlrgq2gc2dq"),
+    ):
+        matched = [f for f in scan("X-API-Key: " + value, min_confidence=0.01) if f.type == pid]
+        assert len(matched) == 1 and matched[0].is_likely_test_value is True
+
+
+def test_batch_2026_11_09_riot_doc_example_is_test_value():
+    """The riven crate's documented RGAPI example shape is a known test value."""
+    value = "RGAPI" + "-" + "01234567-89ab-cdef-0123-456789abcdef"
+    matched = [f for f in scan(value, min_confidence=0.01) if f.type == "riot_games_api_key"]
+    assert len(matched) == 1 and matched[0].confidence == pytest.approx(0.15, abs=0.001)
+
+
+def test_batch_2026_11_09_sourcegraph_prefixes_stay_distinct():
+    """sgs_ / slk_ / sgp_ never cross-fire on each other's prefix."""
+    sgs, slk = _B1109_SGS[0], _B1109_SLK[0]
+    assert {f.type for f in scan(sgs, min_confidence=0.01)} == {"sourcegraph_subscription_token"}
+    assert {f.type for f in scan(slk, min_confidence=0.01)} == {"sourcegraph_license_key_token"}
+    sgp = "sgp" + "_" + sgs[4:44]
+    types = {f.type for f in scan(sgp, min_confidence=0.01)}
+    assert "sourcegraph_subscription_token" not in types
+    assert "sourcegraph_license_key_token" not in types
+
+
+def test_batch_2026_11_09_entropy_gate_sinks_repeated_fillers():
+    """Repeated-pair fillers that are not exact known masks fall below the 0.5 default."""
+    for pid, text in (
+        ("pubnub_secret_key", "sec" + "-c-" + "Ab" * 24),
+        ("yandex_smartcaptcha_server_key", "ysc2" + "_" + "Ab" * 24),
+        ("tolgee_personal_access_token", "tgpat" + "_" + "ab" * 26),
+        ("vectara_api_key", "zut" + "_" + "A1" * 19),
+        ("rancher_api_token", "token" + "-" + "bbbbb:" + "bc" * 27),
+    ):
+        matched = [f for f in scan(text, min_confidence=0.01) if f.type == pid]
+        assert len(matched) == 1, pid
+        assert matched[0].confidence < 0.5, pid
+
+
+def test_batch_2026_11_09_redaction():
+    """Redaction removes every secret span and keeps the carrier (and Rancher's token name)."""
+    from app.engine.redactor import redact
+
+    for pid, (tokens, _, _, _) in _B1109.items():
+        text = "TOKEN=" + tokens[1]
+        findings = scan(text, min_confidence=0.01)
+        redacted_text, _ = redact(text, findings, style="label")
+        assert _b1109_secret(pid, tokens[1]) not in redacted_text, pid
+        assert redacted_text.startswith("TOKEN="), pid
+        if pid == "rancher_api_token":
+            assert tokens[1].split(":")[0] in redacted_text
