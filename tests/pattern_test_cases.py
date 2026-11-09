@@ -177,6 +177,17 @@ _FW_BODY_24_CASES = "GPiksjxQiisN3t7tNbwX431i"
 _FW_22_CASES = _FW_PREFIX_CASES + _FW_BODY_22_CASES
 _FW_24_CASES = _FW_PREFIX_CASES + _FW_BODY_24_CASES
 
+# ── 2026-11-09 ────────────────────────────────────────────────────────────
+# Formbricks API key: 'fbk_' + 43 base64url (47 chars). The bodies are
+# SYNTHETIC (base64url of SHA-512 over 'classifinder-formbricks-synthetic-1'
+# / '-2', first 43 chars) and the prefix is split so no contiguous key
+# literal sits in source.
+_FBK_PREFIX_CASES = "fbk" + "_"
+_FBK_BODY_CASES = "FKHOq8lD1pmF7qjwTXAsgJdCjGsj4d8n2Yt-WOBY1SQ"
+_FBK_BODY_2_CASES = "pTu9Kn0xvfQFanRhbUVU85OnNptnQ-eUFF8VCfrOg1_"
+_FBK_CASES = _FBK_PREFIX_CASES + _FBK_BODY_CASES
+_FBK_2_CASES = _FBK_PREFIX_CASES + _FBK_BODY_2_CASES
+
 # ── 2026-11-05 ────────────────────────────────────────────────────────────
 # ntfy access token: 'tk_' + 29 lowercase alnum (32 chars). The bodies are
 # SYNTHETIC (base36 of SHA-512 over 'classifinder-ntfy-synthetic-1' / '-2',
@@ -8400,6 +8411,32 @@ PATTERN_TEST_CASES: dict[str, dict] = {
             "tk" + "_" + "update_handler_for_the_topic_x",
         ],
         "min_confidence": 0.85,
+    },
+    # ── 2026-11-09 ───────────────────────────────────────────────────────
+    # Formbricks API key — 'fbk_' + 43 base64url, 47 chars in all (prefix,
+    # width and alphabet per the vendor's own generator and validator).
+    # Source: https://github.com/formbricks/formbricks/blob/main/apps/web/modules/organization/settings/api-keys/lib/api-key.ts
+    "formbricks_api_key": {
+        "positives": [
+            "FORMBRICKS_API_KEY=" + _FBK_CASES,
+            "x-api-key: " + _FBK_2_CASES,
+            "curl -H 'x-api-key: " + _FBK_CASES + "' https://app.formbricks.com/api/v1/management/surveys",
+            _FBK_2_CASES,
+        ],
+        "negatives": [
+            # 42 and 44 wide: never truncated to the documented width.
+            _FBK_CASES[:-1],
+            _FBK_CASES + "a",
+            # Padded / standard-base64 bodies: the generator emits unpadded base64url only.
+            _FBK_CASES[:-1] + "=",
+            _FBK_PREFIX_CASES + _FBK_BODY_CASES.replace("-", "+"),
+            # Carved out of a longer identifier.
+            "xfbk" + "_" + _FBK_BODY_CASES,
+            _FBK_CASES + "_suffix",
+            # A snake_case identifier that happens to open with the prefix.
+            "fbk" + "_" + "survey_response_handler_v2",
+        ],
+        "min_confidence": 0.95,
     },
 }
 
