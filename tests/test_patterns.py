@@ -24547,3 +24547,64 @@ def test_batch_2026_11_09_redaction():
         assert redacted_text.startswith("TOKEN="), pid
         if pid == "rancher_api_token":
             assert tokens[1].split(":")[0] in redacted_text
+
+
+# ═══════════════════════════════════════════════
+# SMTP2GO API KEY (2026-11-10)
+# ═══════════════════════════════════════════════
+
+# Synthetic 32-alnum body, assembled by concatenation so no contiguous key
+# literal exists in this source file.
+_SMTP2GO_KEY = "api" + "-" + "Xk3mQ9vTz2" + "LpR7wBn4Hc" + "Y8dJf5GsA1" + "eU"
+_SMTP2GO_PLACEHOLDER = "api" + "-" + "0123456789abcdef" + "0123456789abcdef"
+
+
+def test_smtp2go_api_key_detected_with_label():
+    """Detected behind the SMTP2GO env var, header, and API-request label forms."""
+    for text in (
+        "SMTP2GO_API_KEY=" + _SMTP2GO_KEY,
+        'smtp2go_api_key: "' + _SMTP2GO_KEY + '"',
+        "X-Smtp2go-Api-Key: " + _SMTP2GO_KEY,
+        "curl https://api.smtp2go.com/v3/email/send -d '{\"api_key\": \"" + _SMTP2GO_KEY + "\"}'",
+    ):
+        matched = [f for f in scan(text, min_confidence=0.01) if f.type == "smtp2go_api_key"]
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].confidence >= 0.55
+        assert matched[0].provider == "smtp2go"
+        assert matched[0].severity == "high"
+
+
+def test_smtp2go_api_key_requires_smtp2go_label():
+    """A bare api-<32> string or a generic api_key label must NOT fire this pattern."""
+    for text in (
+        _SMTP2GO_KEY,
+        "API_KEY=" + _SMTP2GO_KEY,
+        "api_key: " + _SMTP2GO_KEY,
+        "MAILGUN_API_KEY=" + _SMTP2GO_KEY,
+    ):
+        assert [f for f in scan(text, min_confidence=0.01) if f.type == "smtp2go_api_key"] == [], (
+            "fired without an SMTP2GO label: " + text[:60]
+        )
+
+
+def test_smtp2go_api_key_width_is_exactly_32():
+    """31- and 33-wide bodies miss cleanly (no partial match)."""
+    for body in (_SMTP2GO_KEY[:-1], _SMTP2GO_KEY + "a"):
+        text = "SMTP2GO_API_KEY=" + body
+        assert [f for f in scan(text, min_confidence=0.01) if f.type == "smtp2go_api_key"] == []
+
+
+def test_smtp2go_api_key_known_test_value_scores_low():
+    """Registered placeholder values are pinned to ~0.15."""
+    text = "SMTP2GO_API_KEY=" + _SMTP2GO_PLACEHOLDER
+    matched = [f for f in scan(text, min_confidence=0.01) if f.type == "smtp2go_api_key"]
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.2
+
+
+def test_smtp2go_api_key_does_not_collide_with_neighbours():
+    """The SMTP2GO key is not claimed by the devops API-<26> or sk-api- patterns."""
+    findings = scan("SMTP2GO_API_KEY=" + _SMTP2GO_KEY, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "smtp2go_api_key" in types
+    assert "minimax_api_key" not in types
