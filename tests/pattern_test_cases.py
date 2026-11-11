@@ -8554,6 +8554,29 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.9,
     },
+
+    # ── 2026-11-10 — SMTP2GO API key (context-gated 'api-' + 32 alnum) ───
+    # Synthetic bodies; prefix split so no contiguous key literal sits in source.
+    # Source: https://github.com/smtp2go-oss/smtp2go-go/blob/master/core.go
+    "smtp2go_api_key": {
+        "positives": [
+            "SMTP2GO_API_KEY=api" + "-" + "Xk3mQ9vTz2LpR7wBn4HcY8dJf5GsA1eU",
+            "X-Smtp2go-Api-Key: api" + "-" + "Xk3mQ9vTz2LpR7wBn4HcY8dJf5GsA1eU",
+            "curl https://api.smtp2go.com/v3/email/send -d '{\"api_key\": \"api" + "-"
+            + "Xk3mQ9vTz2LpR7wBn4HcY8dJf5GsA1eU\"}'",
+        ],
+        "negatives": [
+            # Bare api-<32> without an SMTP2GO label is a generic identifier.
+            "api" + "-" + "Xk3mQ9vTz2LpR7wBn4HcY8dJf5GsA1eU",
+            "API_KEY=api" + "-" + "Xk3mQ9vTz2LpR7wBn4HcY8dJf5GsA1eU",
+            # Wrong widths (31 and 33).
+            "SMTP2GO_API_KEY=api" + "-" + "Xk3mQ9vTz2LpR7wBn4HcY8dJf5GsA1e",
+            "SMTP2GO_API_KEY=api" + "-" + "Xk3mQ9vTz2LpR7wBn4HcY8dJf5GsA1eUa",
+            # Env-var indirection carries no credential.
+            "smtp2go_api_key = os.environ['SMTP2GO_API_KEY']",
+        ],
+        "min_confidence": 0.55,
+    },
 }
 
 # fmt: on
