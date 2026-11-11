@@ -24608,3 +24608,66 @@ def test_smtp2go_api_key_does_not_collide_with_neighbours():
     types = {f.type for f in findings}
     assert "smtp2go_api_key" in types
     assert "minimax_api_key" not in types
+
+
+# ═══════════════════════════════════════════════
+# MEDUSA SECRET API KEY (2026-11-11)
+# ═══════════════════════════════════════════════
+
+# Synthetic 64-hex body, assembled by concatenation so no contiguous key
+# literal exists in this source file.
+_MEDUSA_BODY = "3e04f8680e4671de" + "ce4d7501b093e0ee" + "508b87857b853e62" + "bcc19c0383516499"
+_MEDUSA_KEY = "sk" + "_" + _MEDUSA_BODY
+_MEDUSA_PLACEHOLDER = "sk" + "_" + "0123456789abcdef" * 4
+
+
+def _medusa_findings(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "medusa_secret_api_key"]
+
+
+def test_medusa_secret_api_key_detected():
+    """Detected bare and behind Medusa labels; critical severity."""
+    for text in (
+        "MEDUSA_ADMIN_API_KEY=" + _MEDUSA_KEY,
+        "Authorization: Basic " + _MEDUSA_KEY,
+        'medusa secret key: "' + _MEDUSA_KEY + '"',
+    ):
+        matched = _medusa_findings(text)
+        assert len(matched) == 1, "not detected: " + text[:60]
+        assert matched[0].confidence >= 0.70
+        assert matched[0].provider == "medusa"
+        assert matched[0].severity == "critical"
+
+
+def test_medusa_secret_api_key_width_and_alphabet():
+    """63/65-wide, uppercase-hex and pk_ publishable keys miss cleanly."""
+    for text in (
+        "MEDUSA_KEY=sk" + "_" + _MEDUSA_BODY[:-1],
+        "MEDUSA_KEY=sk" + "_" + _MEDUSA_BODY + "a",
+        "MEDUSA_KEY=sk" + "_" + _MEDUSA_BODY.upper(),
+        "MEDUSA_PUBLISHABLE_KEY=pk" + "_" + _MEDUSA_BODY,
+        "x" + _MEDUSA_KEY,
+    ):
+        assert _medusa_findings(text) == [], text[:60]
+
+
+def test_medusa_secret_api_key_known_test_value_scores_low():
+    """Registered placeholder values are pinned to ~0.15."""
+    matched = _medusa_findings("MEDUSA_ADMIN_API_KEY=" + _MEDUSA_PLACEHOLDER)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.2
+
+
+def test_medusa_secret_api_key_does_not_collide_with_other_sk_shapes():
+    """Stripe/Liveblocks/Cartesia sk_ shapes do not fire Medusa, and vice versa."""
+    others = (
+        "sk" + "_live_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4",
+        "sk" + "_test_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4",
+        "sk" + "_prod_" + _MEDUSA_BODY[:40],
+        "sk" + "_car_" + "A1b2C3d4E5f6G7h8I9j0K1",
+    )
+    for text in others:
+        assert _medusa_findings(text) == [], text[:20]
+    types = {f.type for f in scan("MEDUSA_ADMIN_API_KEY=" + _MEDUSA_KEY, min_confidence=0.01)}
+    assert "medusa_secret_api_key" in types
+    assert not {t for t in types if t.startswith("stripe")}

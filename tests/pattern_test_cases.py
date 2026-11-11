@@ -8577,6 +8577,26 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.55,
     },
+
+    # ── 2026-11-11 — Medusa secret API key ('sk_' + 64 lowercase hex) ────
+    # Synthetic body; prefix split so no contiguous key literal sits in source.
+    # Source: https://github.com/medusajs/medusa/blob/develop/packages/modules/api-key/src/services/api-key-module-service.ts
+    "medusa_secret_api_key": {
+        "positives": [
+            "MEDUSA_ADMIN_API_KEY=sk" + "_" + "3e04f8680e4671de" + "ce4d7501b093e0ee" + "508b87857b853e62" + "bcc19c0383516499",
+            "Authorization: Basic sk" + "_" + "3e04f8680e4671de" + "ce4d7501b093e0ee" + "508b87857b853e62" + "bcc19c0383516499",
+        ],
+        "negatives": [
+            # Wrong widths (63 and 65 hex).
+            "MEDUSA_KEY=sk" + "_" + "3e04f8680e4671dece4d7501b093e0ee508b87857b853e62bcc19c038351649",
+            "MEDUSA_KEY=sk" + "_" + "3e04f8680e4671dece4d7501b093e0ee508b87857b853e62bcc19c0383516499a",
+            # Uppercase hex is not the generator's alphabet.
+            "MEDUSA_KEY=sk" + "_" + "3E04F8680E4671DECE4D7501B093E0EE508B87857B853E62BCC19C0383516499",
+            # Publishable key prefix is public and not matched.
+            "MEDUSA_PUBLISHABLE_KEY=pk" + "_" + "3e04f8680e4671dece4d7501b093e0ee508b87857b853e62bcc19c0383516499",
+        ],
+        "min_confidence": 0.70,
+    },
 }
 
 # fmt: on
