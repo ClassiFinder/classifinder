@@ -12,8 +12,6 @@ RuntimeError as documented per function.
 import time
 from typing import Optional
 
-import libsql_experimental as libsql
-
 from app.config import get_settings
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -29,6 +27,10 @@ def _get_conn():
     settings = get_settings()
     if not settings.turso_enabled:
         raise RuntimeError("Turso is not configured")
+    # Imported lazily: the self-host image ships without the Turso driver
+    # (no linux/arm64 wheel), so it must not be required at import time.
+    import libsql_experimental as libsql
+
     _db_conn = libsql.connect(
         settings.turso_database_url,
         auth_token=settings.turso_auth_token,

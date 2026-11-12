@@ -8,3 +8,4 @@ tests/
 fly.toml
 Dockerfile.lambda
 docs/
+Dockerfile.selfhost

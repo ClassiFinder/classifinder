@@ -1,0 +1,39 @@
+# ClassiFinder — self-host image (published to ghcr.io/classifinder/classifinder)
+#
+# Same app as the Fly.io image, minus the Turso driver: self-hosted instances
+# authenticate with CLASSIFINDER_API_KEYS and never need a database. Dropping
+# libsql-experimental (no linux/arm64 wheel) is what makes the arm64 build work.
+#
+#   docker run -p 8000:8000 -e CLASSIFINDER_API_KEYS=<your-key> \
+#     ghcr.io/classifinder/classifinder:latest
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.lock .
+RUN grep -v '^libsql-experimental' requirements.lock > requirements.selfhost.txt \
+    && pip install --no-cache-dir -r requirements.selfhost.txt \
+    && rm requirements.lock requirements.selfhost.txt
+
+COPY app/ app/
+
+ARG CLASSIFINDER_VERSION=dev
+ENV CLASSIFINDER_API_KEYS="" \
+    CLASSIFINDER_RATE_LIMIT_PER_MINUTE="60" \
+    CLASSIFINDER_MAX_PAYLOAD_BYTES="262144" \
+    CLASSIFINDER_VERSION="${CLASSIFINDER_VERSION}" \
+    WEB_CONCURRENCY="2" \
+    PYTHONUNBUFFERED="1"
+
+RUN adduser --disabled-password --no-create-home appuser
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/v1/health', timeout=4).status == 200 else 1)"
+
+# Worker count comes from WEB_CONCURRENCY (uvicorn reads it natively). Note the
+# in-memory rate limiter is per worker, so the effective per-key limit is
+# WEB_CONCURRENCY x CLASSIFINDER_RATE_LIMIT_PER_MINUTE.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
