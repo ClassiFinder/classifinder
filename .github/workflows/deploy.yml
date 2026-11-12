@@ -47,8 +47,6 @@ jobs:
     permissions:
       contents: read
       packages: write       # push to GHCR with GITHUB_TOKEN
-      id-token: write       # OIDC for build provenance
-      attestations: write   # store the provenance attestation
     env:
       IMAGE: ghcr.io/classifinder/classifinder
     steps:
@@ -92,6 +90,10 @@ jobs:
           build-args: CLASSIFINDER_VERSION=${{ steps.ver.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # SBOM + SLSA provenance are stored in the registry alongside the image
+          # (docker buildx imagetools inspect --format '{{json .Provenance}}').
+          # GitHub artifact attestations are not used: they need a public repo
+          # or a paid plan for private repos.
           sbom: true
           provenance: mode=max
           cache-from: type=gha
@@ -107,9 +109,3 @@ jobs:
             -H 'X-API-Key: ss_test_smoke000000000000000000000000000000000' \
             -H 'content-type: application/json' \
             -d '{"text":"AWS_ACCESS_KEY_ID=AKIAQWERTYUIOPASDFGH"}' | grep -q aws_access_key
-
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
