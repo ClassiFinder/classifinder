@@ -9,6 +9,7 @@ Run with:
     uvicorn app.main:app --reload --port 8000
 """
 
+import logging
 import uuid
 from contextlib import asynccontextmanager
 
@@ -29,6 +30,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan: initialize Turso tables if configured."""
     from app.key_store import init_db
     from app.feedback_store import init_feedback_table
+    settings = get_settings()
+    if not settings.api_keys and not settings.turso_enabled:
+        logging.getLogger("classifinder").warning(
+            "No API keys configured: every authenticated request will return 401. "
+            "Set CLASSIFINDER_API_KEYS to a comma-separated list of keys."
+        )
     init_db()
     init_feedback_table()
     yield

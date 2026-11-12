@@ -18,6 +18,7 @@ python tests/test_patterns.py                 # run pattern tests standalone
 uvicorn app.main:app --reload --port 8000     # dev server
 docker build -t classifinder .                # build Docker image
 docker build -f Dockerfile.lambda -t classifinder-lambda .  # build Lambda image
+docker build -f Dockerfile.selfhost -t classifinder-selfhost .  # build self-host image
 ```
 
 ## Architecture
@@ -84,8 +85,9 @@ Fly.io config: `shared-cpu-1x`, 256MB RAM, scale-to-zero enabled. Secrets manage
 |------|---------|
 | `Dockerfile` | Standard deployment (Fly.io) |
 | `Dockerfile.lambda` | AWS Lambda with Lambda Web Adapter |
+| `Dockerfile.selfhost` | Public self-host image (no Turso driver, amd64+arm64), published to `ghcr.io/classifinder/classifinder` by the `publish-image` job |
 | `fly.toml` | Fly.io configuration |
-| `.github/workflows/deploy.yml` | CI/CD: push to main → test (423 tests) → deploy to Fly.io |
+| `.github/workflows/deploy.yml` | CI/CD: push to main → test → deploy to Fly.io, and in parallel build + push + attest the GHCR self-host image |
 | `.dockerignore` | Excludes tests, docs, .git from Docker builds |
 
 ## Reference Docs (in `classifinder-knowledge/`)
