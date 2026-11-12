@@ -78,6 +78,11 @@ jobs:
             org.opencontainers.image.title=ClassiFinder
             org.opencontainers.image.description=Self-hosted ClassiFinder: scan text for leaked secrets and prompt-injection markers. Stateless, no database, no request logging.
             org.opencontainers.image.url=https://classifinder.ai
+            org.opencontainers.image.licenses=MIT
+            # Link the public package to the public engine repo so the GHCR page
+            # shows its README (this repo is private).
+            org.opencontainers.image.source=https://github.com/ClassiFinder/classifinder-engine
+            org.opencontainers.image.documentation=https://github.com/ClassiFinder/classifinder-engine#self-host-with-docker
             org.opencontainers.image.version=${{ steps.ver.outputs.version }}
 
       - id: push
