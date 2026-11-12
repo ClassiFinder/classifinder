@@ -24671,3 +24671,71 @@ def test_medusa_secret_api_key_does_not_collide_with_other_sk_shapes():
     types = {f.type for f in scan("MEDUSA_ADMIN_API_KEY=" + _MEDUSA_KEY, min_confidence=0.01)}
     assert "medusa_secret_api_key" in types
     assert not {t for t in types if t.startswith("stripe")}
+
+
+# ═══════════════════════════════════════════════
+# ONYX PERSONAL ACCESS TOKEN (2026-11-12)
+# ═══════════════════════════════════════════════
+
+# Synthetic 256-char base64url body, generated at test time (deterministic) so
+# no contiguous token literal exists in this source file.
+_ONYX_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+_ONYX_BODY = "".join(_ONYX_ALPHABET[(i * 37 + (i // 5) * 11 + 5) % 64] for i in range(256))
+_ONYX_PREFIX = "onyx_pat" + "_"
+_ONYX_TOKEN = _ONYX_PREFIX + _ONYX_BODY
+
+
+def _onyx_findings(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "onyx_personal_access_token"]
+
+
+def test_onyx_personal_access_token_detected():
+    """Detected bare, in env/header carriers; critical severity."""
+    for text in (
+        "ONYX_PAT=" + _ONYX_TOKEN,
+        "Authorization: Bearer " + _ONYX_TOKEN,
+        '"token": "' + _ONYX_TOKEN + '"',
+    ):
+        matched = _onyx_findings(text)
+        assert len(matched) == 1, "not detected: " + text[:40]
+        assert matched[0].confidence >= 0.70
+        assert matched[0].provider == "onyx"
+        assert matched[0].severity == "critical"
+
+
+def test_onyx_personal_access_token_tenant_segment():
+    """Multi-tenant form: URL-encoded tenant id + '.' before the body, up to 189 chars."""
+    for tenant in ("acme", "tenant_abc-123", "my%20tenant~x.y", "t" * 189):
+        text = "ONYX_PAT=" + _ONYX_PREFIX + tenant + "." + _ONYX_BODY
+        matched = _onyx_findings(text)
+        assert len(matched) == 1, tenant[:20]
+        assert matched[0].confidence >= 0.70
+    # A 190-char tenant segment is outside the vendor's documented bound.
+    assert _onyx_findings("ONYX_PAT=" + _ONYX_PREFIX + "t" * 190 + "." + _ONYX_BODY) == []
+
+
+def test_onyx_personal_access_token_width_and_prefix():
+    """255/257-wide bodies, sibling prefixes and glued left context miss cleanly."""
+    for text in (
+        "ONYX_PAT=" + _ONYX_PREFIX + _ONYX_BODY[:-1],
+        "ONYX_PAT=" + _ONYX_PREFIX + _ONYX_BODY + "a",
+        "ONYX_TOKEN=onyx_oat" + "_" + _ONYX_BODY,
+        "ONYX_TOKEN=onyx_ort" + "_" + _ONYX_BODY,
+        "ONYX_TOKEN=onyx_scim" + "_" + _ONYX_BODY,
+        "x" + _ONYX_TOKEN,
+    ):
+        assert _onyx_findings(text) == [], text[:30]
+
+
+def test_onyx_personal_access_token_known_test_value_scores_low():
+    """Single-character masks are pinned to ~0.15."""
+    for mask in ("A" * 256, "X" * 256, "0" * 256, "AB" * 128):
+        matched = _onyx_findings("ONYX_PAT=" + _ONYX_PREFIX + mask)
+        assert len(matched) == 1
+        assert matched[0].confidence <= 0.2
+
+
+def test_onyx_personal_access_token_does_not_collide_with_neighbours():
+    """The token is typed onyx_personal_access_token and not generic-high-entropy."""
+    types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
+    assert "onyx_personal_access_token" in types

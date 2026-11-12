@@ -8597,6 +8597,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # ── 2026-11-12 — Onyx personal access token ('onyx_pat_' + 256 base64url) ──
+    # Synthetic deterministic bodies generated at import; prefix split so no contiguous token literal sits in source.
+    # Source: https://github.com/onyx-dot-app/onyx/blob/main/backend/onyx/auth/pat.py
+    "onyx_personal_access_token": {
+        "positives": [
+            "ONYX_PAT=onyx_pat" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(256)),
+            "Authorization: Bearer onyx_pat" + "_" + "".join(chr(97 + (i * 11 + 1) % 26) if i % 4 else str(i % 10) for i in range(256)),
+        ],
+        "negatives": [
+            # Wrong widths (255 and 257 body chars) and a family-sibling prefix.
+            "ONYX_PAT=onyx_pat" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(255)),
+            "ONYX_PAT=onyx_pat" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(257)),
+            "ONYX_TOKEN=onyx_oat" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(256)),
+        ],
+        "min_confidence": 0.70,
+    },
 }
 
 # fmt: on
