@@ -3,6 +3,7 @@ name = "classifinder"
 version = "1.0.0"
 description = "Lightweight stateless API for scanning text for leaked secrets and credentials"
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
