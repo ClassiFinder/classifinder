@@ -85,6 +85,34 @@ jobs:
             org.opencontainers.image.documentation=https://github.com/ClassiFinder/classifinder-engine#self-host-with-docker
             org.opencontainers.image.version=${{ steps.ver.outputs.version }}
 
+      # Smoke-test a locally loaded amd64 build BEFORE pushing. Testing the
+      # published digest would pull from GHCR, inflating the public download
+      # count (the relaunch adoption signal), and would only catch a broken
+      # image after it was already live. The push below reuses these cached layers.
+      - name: Build amd64 image for smoke test
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.selfhost
+          platforms: linux/amd64
+          load: true
+          push: false
+          build-args: CLASSIFINDER_VERSION=${{ steps.ver.outputs.version }}
+          tags: classifinder-smoke:local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test local image
+        run: |
+          docker run -d --name cf -p 8000:8000 \
+            -e CLASSIFINDER_API_KEYS=ss_test_smoke000000000000000000000000000000000 \
+            classifinder-smoke:local
+          for i in $(seq 1 20); do curl -fs localhost:8000/v1/health && break; sleep 1; done
+          curl -fs -X POST localhost:8000/v1/scan \
+            -H 'X-API-Key: ss_test_smoke000000000000000000000000000000000' \
+            -H 'content-type: application/json' \
+            -d '{"text":"AWS_ACCESS_KEY_ID=AKIAQWERTYUIOPASDFGH"}' | grep -q aws_access_key
+
       - id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -103,14 +131,3 @@ jobs:
           provenance: mode=max
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Smoke-test published image
-        run: |
-          docker run -d --name cf -p 8000:8000 \
-            -e CLASSIFINDER_API_KEYS=ss_test_smoke000000000000000000000000000000000 \
-            "${IMAGE}@${{ steps.push.outputs.digest }}"
-          for i in $(seq 1 20); do curl -fs localhost:8000/v1/health && break; sleep 1; done
-          curl -fs -X POST localhost:8000/v1/scan \
-            -H 'X-API-Key: ss_test_smoke000000000000000000000000000000000' \
-            -H 'content-type: application/json' \
-            -d '{"text":"AWS_ACCESS_KEY_ID=AKIAQWERTYUIOPASDFGH"}' | grep -q aws_access_key
