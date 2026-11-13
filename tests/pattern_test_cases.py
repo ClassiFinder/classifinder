@@ -8613,6 +8613,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # ── 2026-11-13 — Onyx API key ('on_' + optional '<tenant>.' + 256 base64url) ──
+    # Synthetic deterministic bodies generated at import; prefix split so no contiguous key literal sits in source.
+    # Source: https://github.com/onyx-dot-app/onyx/blob/main/backend/onyx/auth/api_key.py
+    "onyx_api_key": {
+        "positives": [
+            "ONYX_API_KEY=on" + "_" + "".join(chr(65 + (i * 9 + 4) % 26) if i % 3 else chr(97 + (i * 7) % 26) for i in range(256)),
+            "Authorization: Bearer on" + "_" + "acme." + "".join(chr(97 + (i * 11 + 2) % 26) if i % 4 else str(i % 10) for i in range(256)),
+        ],
+        "negatives": [
+            # Wrong widths (255 and 257 body chars) and the deprecated dn_ prefix.
+            "ONYX_API_KEY=on" + "_" + "".join(chr(65 + (i * 9 + 4) % 26) if i % 3 else chr(97 + (i * 7) % 26) for i in range(255)),
+            "ONYX_API_KEY=on" + "_" + "".join(chr(65 + (i * 9 + 4) % 26) if i % 3 else chr(97 + (i * 7) % 26) for i in range(257)),
+            "ONYX_API_KEY=dn" + "_" + "".join(chr(65 + (i * 9 + 4) % 26) if i % 3 else chr(97 + (i * 7) % 26) for i in range(256)),
+        ],
+        "min_confidence": 0.70,
+    },
 }
 
 # fmt: on

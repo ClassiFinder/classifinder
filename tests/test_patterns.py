@@ -24739,3 +24739,75 @@ def test_onyx_personal_access_token_does_not_collide_with_neighbours():
     """The token is typed onyx_personal_access_token and not generic-high-entropy."""
     types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in types
+
+
+# ═══════════════════════════════════════════════
+# ONYX API KEY (2026-11-13)
+# ═══════════════════════════════════════════════
+
+# Synthetic 256-char base64url body, generated at test time (deterministic) so
+# no contiguous key literal exists in this source file.
+_ONYX_KEY_BODY = "".join(_ONYX_ALPHABET[(i * 29 + (i // 7) * 13 + 3) % 64] for i in range(256))
+_ONYX_KEY_PREFIX = "on" + "_"
+_ONYX_KEY = _ONYX_KEY_PREFIX + _ONYX_KEY_BODY
+
+
+def _onyx_key_findings(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "onyx_api_key"]
+
+
+def test_onyx_api_key_detected():
+    """Detected in env/header/JSON carriers; critical severity, provider onyx."""
+    for text in (
+        "ONYX_API_KEY=" + _ONYX_KEY,
+        "Authorization: Bearer " + _ONYX_KEY,
+        "X-Onyx-Authorization: " + _ONYX_KEY,
+        '"api_key": "' + _ONYX_KEY + '"',
+    ):
+        matched = _onyx_key_findings(text)
+        assert len(matched) == 1, "not detected: " + text[:40]
+        assert matched[0].confidence >= 0.70
+        assert matched[0].provider == "onyx"
+        assert matched[0].severity == "critical"
+
+
+def test_onyx_api_key_tenant_segment():
+    """Multi-tenant form: quote()-encoded tenant id + '.' before the body, up to 189 chars."""
+    for tenant in ("acme", "tenant_abc-123", "my%20tenant~x.y", "t" * 189):
+        text = "ONYX_API_KEY=" + _ONYX_KEY_PREFIX + tenant + "." + _ONYX_KEY_BODY
+        matched = _onyx_key_findings(text)
+        assert len(matched) == 1, tenant[:20]
+        assert matched[0].confidence >= 0.70
+    assert _onyx_key_findings(
+        "ONYX_API_KEY=" + _ONYX_KEY_PREFIX + "t" * 190 + "." + _ONYX_KEY_BODY
+    ) == []
+
+
+def test_onyx_api_key_width_and_boundaries():
+    """255/257-wide bodies, the deprecated dn_ prefix and glued left context miss."""
+    for text in (
+        "ONYX_API_KEY=" + _ONYX_KEY_PREFIX + _ONYX_KEY_BODY[:-1],
+        "ONYX_API_KEY=" + _ONYX_KEY_PREFIX + _ONYX_KEY_BODY + "a",
+        "ONYX_API_KEY=dn" + "_" + _ONYX_KEY_BODY,
+        "x" + _ONYX_KEY,
+        "session" + _ONYX_KEY,
+    ):
+        assert _onyx_key_findings(text) == [], text[:30]
+
+
+def test_onyx_api_key_known_test_value_scores_low():
+    """Single-character masks are pinned to ~0.15."""
+    for mask in ("A" * 256, "X" * 256, "0" * 256, "AB" * 128):
+        matched = _onyx_key_findings("ONYX_API_KEY=" + _ONYX_KEY_PREFIX + mask)
+        assert len(matched) == 1
+        assert matched[0].confidence <= 0.2
+
+
+def test_onyx_api_key_does_not_double_match_personal_access_token():
+    """An onyx_pat_ token is only the PAT; an on_ key is not typed as a PAT."""
+    pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
+    assert "onyx_personal_access_token" in pat_types
+    assert "onyx_api_key" not in pat_types
+    key_types = {f.type for f in scan("ONYX_API_KEY=" + _ONYX_KEY, min_confidence=0.01)}
+    assert "onyx_api_key" in key_types
+    assert "onyx_personal_access_token" not in key_types
