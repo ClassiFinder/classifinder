@@ -24905,3 +24905,77 @@ def test_onyx_api_key_does_not_double_match_personal_access_token():
     key_types = {f.type for f in scan("ONYX_API_KEY=" + _ONYX_KEY, min_confidence=0.01)}
     assert "onyx_api_key" in key_types
     assert "onyx_personal_access_token" not in key_types
+
+
+# âââââââââââââââââââââââââââââââââââââââââââââââ
+# ONYX SCIM TOKEN (2026-11-14)
+# ═══════════════════════════════════════════════
+
+# Synthetic 64-char base64url body (secrets.token_urlsafe(48) width), generated
+# at test time (deterministic) so no contiguous token literal exists in source.
+_ONYX_SCIM_BODY = "".join(_ONYX_ALPHABET[(i * 29 + (i // 3) * 7 + 2) % 64] for i in range(64))
+_ONYX_SCIM_PREFIX = "onyx_scim" + "_"
+_ONYX_SCIM_TOKEN = _ONYX_SCIM_PREFIX + _ONYX_SCIM_BODY
+
+
+def _onyx_scim_findings(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "onyx_scim_token"]
+
+
+def test_onyx_scim_token_detected():
+    """Detected in env/header/JSON carriers; critical severity."""
+    for text in (
+        "ONYX_SCIM_TOKEN=" + _ONYX_SCIM_TOKEN,
+        "Authorization: Bearer " + _ONYX_SCIM_TOKEN,
+        '"scim_token": "' + _ONYX_SCIM_TOKEN + '"',
+    ):
+        matched = _onyx_scim_findings(text)
+        assert len(matched) == 1, "not detected: " + text[:40]
+        assert matched[0].confidence >= 0.70
+        assert matched[0].provider == "onyx"
+        assert matched[0].severity == "critical"
+
+
+def test_onyx_scim_token_tenant_segment():
+    """Multi-tenant form: URL-encoded tenant id + '.' before the body, up to 189 chars."""
+    # 189 = a 63-char tenant id of 3-byte UTF-8 characters, each quote()-encoded to 9.
+    max_tenant = "".join("%E4%B8%" + "%02X" % (0x80 + i) for i in range(21))
+    assert len(max_tenant) == 189
+    for tenant in ("acme", "tenant_abc-123", "my%20tenant~x.y", max_tenant):
+        text = "ONYX_SCIM_TOKEN=" + _ONYX_SCIM_PREFIX + tenant + "." + _ONYX_SCIM_BODY
+        matched = _onyx_scim_findings(text)
+        assert len(matched) == 1, tenant[:20]
+        assert matched[0].confidence >= 0.70
+    # A 190-char tenant segment is outside the vendor's documented bound.
+    text = "ONYX_SCIM_TOKEN=" + _ONYX_SCIM_PREFIX + "t" * 190 + "." + _ONYX_SCIM_BODY
+    assert _onyx_scim_findings(text) == []
+
+
+def test_onyx_scim_token_width_and_prefix():
+    """63/65-wide bodies, sibling prefixes and glued left context miss cleanly."""
+    for text in (
+        "ONYX_SCIM_TOKEN=" + _ONYX_SCIM_PREFIX + _ONYX_SCIM_BODY[:-1],
+        "ONYX_SCIM_TOKEN=" + _ONYX_SCIM_PREFIX + _ONYX_SCIM_BODY + "a",
+        "ONYX_TOKEN=onyx_pat" + "_" + _ONYX_SCIM_BODY,
+        "ONYX_TOKEN=onyx_oat" + "_" + _ONYX_SCIM_BODY,
+        "x" + _ONYX_SCIM_TOKEN,
+    ):
+        assert _onyx_scim_findings(text) == [], text[:30]
+
+
+def test_onyx_scim_token_known_test_value_scores_low():
+    """Single-character masks are pinned to ~0.15."""
+    for mask in ("A" * 64, "X" * 64, "0" * 64, "AB" * 32):
+        matched = _onyx_scim_findings("ONYX_SCIM_TOKEN=" + _ONYX_SCIM_PREFIX + mask)
+        assert len(matched) == 1
+        assert matched[0].confidence <= 0.2
+
+
+def test_onyx_scim_token_does_not_collide_with_onyx_pat():
+    """SCIM and PAT patterns are disjoint in both directions."""
+    scim_types = {f.type for f in scan("ONYX_SCIM_TOKEN=" + _ONYX_SCIM_TOKEN, min_confidence=0.01)}
+    assert "onyx_scim_token" in scim_types
+    assert "onyx_personal_access_token" not in scim_types
+    pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
+    assert "onyx_personal_access_token" in pat_types
+    assert "onyx_scim_token" not in pat_types

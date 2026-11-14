@@ -8645,6 +8645,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # ── 2026-11-14 — Onyx SCIM token ('onyx_scim_' + 64 base64url) ──
+    # Synthetic deterministic bodies generated at import; prefix split so no contiguous token literal sits in source.
+    # Source: https://github.com/onyx-dot-app/onyx/blob/main/backend/ee/onyx/server/scim/auth.py
+    "onyx_scim_token": {
+        "positives": [
+            "ONYX_SCIM_TOKEN=onyx_scim" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(64)),
+            "Authorization: Bearer onyx_scim" + "_" + "".join(chr(97 + (i * 11 + 1) % 26) if i % 4 else str(i % 10) for i in range(64)),
+        ],
+        "negatives": [
+            # Wrong widths (63 and 65 body chars) and the PAT sibling prefix.
+            "ONYX_SCIM_TOKEN=onyx_scim" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(63)),
+            "ONYX_SCIM_TOKEN=onyx_scim" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(65)),
+            "ONYX_TOKEN=onyx_pat" + "_" + "".join(chr(65 + (i * 7 + 3) % 26) if i % 3 else chr(97 + (i * 5) % 26) for i in range(64)),
+        ],
+        "min_confidence": 0.70,
+    },
 }
 
 # fmt: on
