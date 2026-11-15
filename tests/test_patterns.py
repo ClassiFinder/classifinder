@@ -24739,3 +24739,97 @@ def test_onyx_personal_access_token_does_not_collide_with_neighbours():
     """The token is typed onyx_personal_access_token and not generic-high-entropy."""
     types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in types
+
+
+# ═══════════════════════════════════════════════
+# LOGSEQ PERSONAL ACCESS TOKEN (2026-11-15)
+# ═══════════════════════════════════════════════
+# 'logseq_pat_' (personal-access-token-prefix in worker/auth.cljs) + random-hex 32
+# (generate-token in worker/handler/personal_access_token.cljs), i.e. exactly 64
+# lowercase hex. SYNTHETIC bodies (SHA-256 over 'classifinder-logseq-synthetic-<n>'),
+# split so no scannable token literal exists in source.
+# Source: https://github.com/logseq/logseq/blob/master/deps/db-sync/src/logseq/db_sync/worker/handler/personal_access_token.cljs
+_LSQ_HEX = "3d6f11317877889247f5c941687e59b988af77c943bf6bbba22381a38bd048d6"
+_LSQ_HEX2 = "6c60bb62d678dbddb4b7b0e8ccdcb27d5ac10db4dd0ccd08b349d3e4eff75bdb"
+_LSQ_PREFIX = "logseq" + "_pat_"
+_LSQ_TOK = _LSQ_PREFIX + _LSQ_HEX
+_LSQ_TOK2 = _LSQ_PREFIX + _LSQ_HEX2
+
+
+def _lsq(text):
+    return [
+        f
+        for f in scan(text, min_confidence=0.01)
+        if f.type == "logseq_personal_access_token"
+    ]
+
+
+def test_logseq_personal_access_token_fixture_widths():
+    assert len(_LSQ_HEX) == 64 and len(_LSQ_HEX2) == 64
+    # 32 random bytes hex-encoded is always 64 characters.
+    assert len(bytes(32).hex()) == 64
+    assert len(_LSQ_TOK) == 75 and len(_LSQ_TOK2) == 75
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("LOGSEQ_TOKEN=" + _LSQ_TOK, _LSQ_TOK),
+        ("export LOGSEQ_PAT='" + _LSQ_TOK2 + "'", _LSQ_TOK2),
+        ("Authorization: Bearer " + _LSQ_TOK, _LSQ_TOK),
+        ('{"token": "' + _LSQ_TOK2 + '"}', _LSQ_TOK2),
+        # Bare token with no context — the literal prefix + fixed width is the anchor.
+        (_LSQ_TOK, _LSQ_TOK),
+    ],
+)
+def test_logseq_personal_access_token_true_positives(text, tok):
+    matched = _lsq(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert matched[0].provider == "logseq"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long.
+        "LOGSEQ_TOKEN=" + _LSQ_PREFIX + _LSQ_HEX[:-1],
+        "LOGSEQ_TOKEN=" + _LSQ_PREFIX + _LSQ_HEX + "a",
+        # Uppercase hex (the generator emits lowercase).
+        "LOGSEQ_TOKEN=" + _LSQ_PREFIX + _LSQ_HEX.upper(),
+        # Non-hex character in the body.
+        "LOGSEQ_TOKEN=" + _LSQ_PREFIX + _LSQ_HEX[:-1] + "g",
+        # Different prefix.
+        "LOGSEQ_TOKEN=logseq" + "_key_" + _LSQ_HEX,
+        # Embedded after a word character.
+        "my" + _LSQ_TOK,
+        # Prose naming the format.
+        "Logseq personal access tokens look like logseq_pat_<64 hex>",
+    ],
+)
+def test_logseq_personal_access_token_true_negatives(text):
+    assert _lsq(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _LSQ_PREFIX + "0" * 64,
+        _LSQ_PREFIX + "a" * 64,
+        _LSQ_PREFIX + "0123456789abcdef" * 4,
+    ],
+)
+def test_logseq_personal_access_token_placeholders_are_test_values(tok):
+    matched = _lsq("LOGSEQ_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_logseq_personal_access_token_bearer_is_typed_logseq():
+    """In a Bearer header the token is reported as Logseq, not only generic bearer."""
+    findings = scan("Authorization: Bearer " + _LSQ_TOK, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "logseq_personal_access_token" in types
+    assert "generic_high_entropy" not in types

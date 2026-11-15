@@ -8613,6 +8613,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # Logseq DB Sync personal access token. SYNTHETIC bodies (SHA-256 over
+    # 'classifinder-logseq-synthetic-<n>'), split so no scannable literal exists.
+    # Source: https://github.com/logseq/logseq/blob/master/deps/db-sync/src/logseq/db_sync/worker/handler/personal_access_token.cljs
+    "logseq_personal_access_token": {
+        "positives": [
+            "LOGSEQ_TOKEN=logseq" + "_pat_" + "3d6f11317877889247f5c941687e59b988af77c943bf6bbba22381a38bd048d6",
+            "Authorization: Bearer logseq" + "_pat_" + "6c60bb62d678dbddb4b7b0e8ccdcb27d5ac10db4dd0ccd08b349d3e4eff75bdb",
+        ],
+        "negatives": [
+            # Body one character short of 32 random bytes hex-encoded.
+            "LOGSEQ_TOKEN=logseq" + "_pat_" + "3d6f11317877889247f5c941687e59b988af77c943bf6bbba22381a38bd048d",
+            # Prose naming the prefix but carrying no token.
+            "Logseq personal access tokens start with logseq_pat_ followed by hex",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
