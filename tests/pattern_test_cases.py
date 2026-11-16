@@ -8661,6 +8661,125 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # ── 2026-11-16 weekly batch. Every value below is SYNTHETIC (random bytes,
+    # encoded per the cited format) and split so no scannable literal exists.
+    # Source: https://github.com/nostr-protocol/nips/blob/master/19.md
+    "nostr_nsec_private_key": {
+        "positives": [
+            "NOSTR_PRIVATE_KEY=nsec1" + "fm7n8ajl7swjgrl3km0v0659946kw5cwapg8jjjc8yqh3dlcdemsmuxlt3",
+            "nsec1" + "76nyqvtzz980elkr2q30hvxm25tgujhed7wxedxqe6e4ftgs6zdq9vnjdp",
+        ],
+        "negatives": [
+            # Public key (npub) of the same shape.
+            "NOSTR_PUBKEY=npub1" + "sm96n3wxaek6j34ljhz6fytmk7ujpe4dacnyfwtmadc0q5pccx9q4z8a0t",
+            # One character short.
+            "nsec1" + "fm7n8ajl7swjgrl3km0v0659946kw5cwapg8jjjc8yqh3dlcdemsmuxlt",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Source: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
+    "bip32_extended_private_key": {
+        "positives": [
+            "WALLET_XPRV=xprv" + "Aw4z2Q47ef1wE9de89hotg8oa55Y42fpEV1EKcYniP2WsKsadXsr8XSPgwEUCn5sdiRkBKoxvB6fx5XnydfjuJ8AxzGnGScLcj1FCjLKynV",
+            "zprv" + "JCUorviJBngETSnsdiJt71LeGrPG2SGk4ueEcmGtZxDDpZm8o9u9BfnY89JVLtWPcWd21QH4Fxe2K67qMYLYFtXwvyffrcsB3XnNUqsgTrP",
+        ],
+        "negatives": [
+            # Extended PUBLIC key.
+            "xpub" + "CxAESiFu1ygMUBLqVr8SuHv1Y1rdWkLu1xac2Y98ghHUL46HMcQpDnY6CroSrz7s7k1QLVQvVMuPcKuYGtFqds54AaJxcmteZyXvpi4sywf",
+            "Paste your xprv here",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Source: https://github.com/laravel/framework/blob/12.x/src/Illuminate/Foundation/Console/KeyGenerateCommand.php
+    "laravel_app_key": {
+        "positives": [
+            "APP_KEY=base64:" + "bs5Isot6FmVulc3L7ONQ+CEvpyIgGBN+3VWJkNMxYME=",
+            "'key' => env('APP_KEY', 'base64:" + "HEGYdz/wm9u1wbZBwi/mtRgUneP5Xsr81++SmUGBGek=" + "'),",
+        ],
+        "negatives": [
+            # Not an APP_KEY assignment.
+            "SECRET=base64:" + "wkue9E7XghvOJ0P2YfhEvsHoKEMeLi1HBd7Vz44TEbc=",
+            # Empty key, as in .env.example.
+            "APP_KEY=",
+        ],
+        "min_confidence": 0.85,
+    },
+    # Source: https://the.earth.li/~sgtatham/putty/latest/htmldoc/AppendixC.html
+    "putty_ppk_private_key": {
+        "positives": [
+            "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\nComment: eddsa-key-20261116\n"
+            "Public-Lines: 2\nMiMSvngE7MXS9Bb54Rx8gsnFoJq0QdMsjsKKpH3vC6RxweT3CxIiR28VTQL90hvD\n"
+            "8gYswk86t6Rqv1YATGp5Rx0G\nPrivate-Lines: 1\n"
+            "NpJL8mYZxvbrVT9INtmbX5xRTrC3OZw2r8dFtT/WXOwqhGPW6C3TDwZ8fMhjjkz8\n"
+            "Private-MAC: " + "dea22e005277e58dd3454454c597f252d0f81475609f40830b175ff67d3738f9\n",
+        ],
+        "negatives": [
+            # Header with no key body (truncated paste).
+            "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\n",
+            "Convert the .ppk with puttygen before using it with OpenSSH.",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Source: https://github.com/sigstore/cosign/blob/main/pkg/cosign/keys.go
+    "cosign_encrypted_private_key": {
+        "positives": [
+            "-----BEGIN ENCRYPTED SIGSTORE PRIVATE KEY-----\n"
+            "oMAt4zeIfQt4KvhFCRDQos3HUHAk1R2GVf1FZV4BHef5jYpemUsj/isRh2F57xMX\n"
+            "i7SL9H1Qj9Gf8NvJrdS6/WQIT+dDjmE+8KTHNRKWNs/iX4JOhtZ5zfVZsJiW8xqT\n"
+            "-----END ENCRYPTED SIGSTORE PRIVATE KEY-----",
+        ],
+        "negatives": [
+            # Public key half of the pair.
+            "-----BEGIN PUBLIC KEY-----\n"
+            "oMAt4zeIfQt4KvhFCRDQos3HUHAk1R2GVf1FZV4BHef5jYpemUsj/isRh2F57xMX\n"
+            "-----END PUBLIC KEY-----",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Source: https://github.com/k3s-io/k3s/blob/master/pkg/clientaccess/token.go
+    "k3s_join_token": {
+        "positives": [
+            "K3S_TOKEN=K10" + "55538d3380e9b940b58440febd92a66a9e669730fe001a76138c93ba8ae94d64"
+            + "::server:83f4aee6dfdb032b6f6fe495d87d1296",
+            "k3s agent --token K10" + "997ca3c9889aa0f8d14a2421bedc8be1876428075bf48b2bdbb3c501ec828275"
+            + "::4d9398.fe1369e6118535dc",
+        ],
+        "negatives": [
+            # Short-format token (no K10 CA digest) is out of scope.
+            "K3S_TOKEN=83f4aee6dfdb032b6f6fe495d87d1296",
+            # Digest one character short.
+            "K3S_TOKEN=K10" + "55538d3380e9b940b58440febd92a66a9e669730fe001a76138c93ba8ae94d6"
+            + "::server:83f4aee6dfdb032b6f6fe495d87d1296",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Source: https://github.com/cardano-foundation/CIPs/blob/master/CIP-0005/README.md
+    "cardano_signing_key": {
+        "positives": [
+            "addr" + "_sk1" + "5ee9n65jh9gjlvzmeqlvl0c3gm79readp6t4v873ry5sjw7y0f6sqlm47e",
+            "ROOT_KEY=root" + "_xsk1" + "w7zyg633khf26cvg6uzvvvnpx949e8zaarhtfh6jmds8atnezyanc9w9p9xeap6cdej0r49vfy7wkfh6f0fgkgkd8tsylnftev3waxtrcpt0kyf7epjjjm3p403vjx8fvp2309nfe7exw4725fz63xulmuhjkcwq",
+        ],
+        "negatives": [
+            # Verification (public) keys.
+            "addr" + "_vk1" + "zfn42ytls0ua3xzpjfaj599nwzg8hahxscdjya5ptw4hhjaksduss02d56",
+            "root" + "_xvk1" + "kyqmt6lpntdkqukx2s9cswn9lpf3jcyf4sff5wwqgm0v755dna4qxdx8mw47mn96tnkxpynjcf5qyftnjcuj5euummvshzhy8esunmgtchd4v",
+        ],
+        "min_confidence": 0.90,
+    },
+    # Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/security/apitoken/ApiTokenStore.java
+    "jenkins_api_token": {
+        "positives": [
+            "JENKINS_API_TOKEN=11" + "41051391c65b4c64022ff55072a6f5aa",
+            "jenkins.token: '11" + "af08a0faa78ce8df0add3eac821b070b" + "'",
+        ],
+        "negatives": [
+            # Same shape with no Jenkins context.
+            "API_TOKEN=11" + "5a742d5deb7c033bd2269ba427a69bcf",
+            # Legacy 32-hex token without the '11' hash-version prefix.
+            "JENKINS_API_TOKEN=" + "41051391c65b4c64022ff55072a6f5aa",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on
