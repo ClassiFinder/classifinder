@@ -8661,6 +8661,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # ── 2026-11-17 — n8n legacy API key ('n8n_api_' + 80 lowercase hex) ──
+    # Synthetic deterministic bodies generated at import; prefix split so no contiguous token literal sits in source.
+    # Source: https://github.com/n8n-io/n8n/blob/a13a4f74425559f5caff4d696ab2b00486295fee/packages/cli/src/services/public-api-key.service.ts
+    "n8n_legacy_api_key": {
+        "positives": [
+            "N8N_API_KEY=n8n" + "_api_" + "".join("0123456789abcdef"[(i * 7 + 3) % 16] for i in range(80)),
+            "X-N8N-API-KEY: n8n" + "_api_" + "".join("0123456789abcdef"[(i * 11 + i // 5) % 16] for i in range(80)),
+        ],
+        "negatives": [
+            # Wrong widths (79 and 81 body chars) and an uppercase-hex body.
+            "N8N_API_KEY=n8n" + "_api_" + "".join("0123456789abcdef"[(i * 7 + 3) % 16] for i in range(79)),
+            "N8N_API_KEY=n8n" + "_api_" + "".join("0123456789abcdef"[(i * 7 + 3) % 16] for i in range(81)),
+            "N8N_API_KEY=n8n" + "_api_" + "".join("0123456789ABCDEF"[(i * 7 + 3) % 16] for i in range(80)),
+        ],
+        "min_confidence": 0.70,
+    },
 }
 
 # fmt: on

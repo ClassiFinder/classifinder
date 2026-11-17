@@ -24979,3 +24979,105 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# N8N LEGACY API KEY (2026-11-17)
+# ═══════════════════════════════════════════════
+# 'n8n_api_' (API_KEY_PREFIX) + randomBytes(40).toString('hex'), i.e. exactly 80
+# lowercase hex, per createApiKeyString in the vendor's own
+# public-api-key.service.ts at the last revision before JWT keys. Current n8n
+# keys are JWTs and are out of scope here. SYNTHETIC bodies (SHA-256 over
+# 'classifinder-n8n-synthetic-<n>', 80 hex kept), built at test time so no
+# scannable token literal exists in source.
+# Source: https://github.com/n8n-io/n8n/blob/a13a4f74425559f5caff4d696ab2b00486295fee/packages/cli/src/services/public-api-key.service.ts
+
+
+def _n8n_hex(n):
+    seed = ("classifinder-n8n-synthetic-%d" % n).encode()
+    digest = _wk_hashlib.sha256(seed).hexdigest() + _wk_hashlib.sha256(seed + b"-b").hexdigest()
+    return digest[:80]
+
+
+_N8N_HEX = _n8n_hex(1)
+_N8N_HEX2 = _n8n_hex(2)
+_N8N_PREFIX = "n8n" + "_api_"
+_N8N_KEY = _N8N_PREFIX + _N8N_HEX
+_N8N_KEY2 = _N8N_PREFIX + _N8N_HEX2
+
+
+def _n8n(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "n8n_legacy_api_key"]
+
+
+def test_n8n_legacy_api_key_fixture_widths():
+    assert len(_N8N_HEX) == 80 and len(_N8N_HEX2) == 80
+    # 40 random bytes hex-encoded is always 80 characters.
+    assert len(bytes(40).hex()) == 80
+    assert len(_N8N_KEY) == 88 and len(_N8N_KEY2) == 88
+
+
+@pytest.mark.parametrize(
+    "text,key",
+    [
+        ("N8N_API_KEY=" + _N8N_KEY, _N8N_KEY),
+        ("export N8N_API_KEY='" + _N8N_KEY2 + "'", _N8N_KEY2),
+        ("X-N8N-API-KEY: " + _N8N_KEY, _N8N_KEY),
+        ('{"apiKey": "' + _N8N_KEY2 + '"}', _N8N_KEY2),
+        # Bare key with no context — the literal prefix + fixed width is the anchor.
+        (_N8N_KEY, _N8N_KEY),
+    ],
+)
+def test_n8n_legacy_api_key_true_positives(text, key):
+    matched = _n8n(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert matched[0].provider == "n8n"
+    assert text[matched[0].span_start : matched[0].span_end] == key
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long.
+        "N8N_API_KEY=" + _N8N_PREFIX + _N8N_HEX[:-1],
+        "N8N_API_KEY=" + _N8N_PREFIX + _N8N_HEX + "a",
+        # Uppercase hex (Buffer.toString('hex') emits lowercase).
+        "N8N_API_KEY=" + _N8N_PREFIX + _N8N_HEX.upper(),
+        # Non-hex character in the body.
+        "N8N_API_KEY=" + _N8N_PREFIX + _N8N_HEX[:-1] + "g",
+        # Different prefix.
+        "N8N_API_KEY=n8n" + "_key_" + _N8N_HEX,
+        # Embedded after a word character.
+        "my" + _N8N_KEY,
+        # Vendor docs placeholder and prose naming the format.
+        "export N8N_API_KEY=n8n" + "_api_xxxxx",
+        "Legacy n8n API keys look like n8n" + "_api_<80 hex>",
+    ],
+)
+def test_n8n_legacy_api_key_true_negatives(text):
+    assert _n8n(text) == []
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        _N8N_PREFIX + "0" * 80,
+        _N8N_PREFIX + "a" * 80,
+        _N8N_PREFIX + "f" * 80,
+        _N8N_PREFIX + "0123456789abcdef" * 5,
+    ],
+)
+def test_n8n_legacy_api_key_placeholders_are_test_values(key):
+    matched = _n8n("N8N_API_KEY=" + key)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_n8n_legacy_api_key_header_is_typed_n8n():
+    """In an API-key header the key is reported as n8n, not as a generic finding."""
+    findings = scan("X-N8N-API-KEY: " + _N8N_KEY, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "n8n_legacy_api_key" in types
+    assert "generic_high_entropy" not in types
