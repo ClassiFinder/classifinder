@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Pre-commit hook: block commits if engine files are out of sync
+# with classifinder-engine/; also enforces pattern provenance.
+
+STAGED=$(git diff --cached --name-only)
+
+# Engine sync check
+if echo "$STAGED" | grep -q "^app/engine/"; then
+    echo "Engine files staged — checking sync with classifinder-engine/..."
+    bash "$(git rev-parse --show-toplevel)/scripts/check_engine_sync.sh"
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+fi
+
+# Pattern provenance check
+if echo "$STAGED" | grep -qE "^app/engine/patterns/[^/]+\.py$"; then
+    echo "Pattern files staged — running provenance check..."
+    python3 "$(git rev-parse --show-toplevel)/scripts/check_pattern_provenance.py"
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+fi
