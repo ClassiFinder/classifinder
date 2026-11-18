@@ -8661,6 +8661,25 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # ── 2026-11-18 — Hoppscotch personal access token ('pat-' + lowercase UUIDv4) ──
+    # SYNTHETIC UUIDs (SHA-256 over 'classifinder-hoppscotch-synthetic-<n>', v4 bits set),
+    # prefix split so no contiguous token literal sits in source.
+    # Source: https://github.com/hoppscotch/hoppscotch/blob/main/packages/hoppscotch-backend/src/access-token/access-token.service.ts
+    "hoppscotch_personal_access_token": {
+        "positives": [
+            "hopp test collection.json --token " + "pat" + "-" + "f1793c1a-cde2-468b-b465-c015d0fda0a0",
+            "HOPP_TOKEN=" + "pat" + "-" + "c7bed637-07ae-42e9-86f1-226d4df37c2c",
+        ],
+        "negatives": [
+            # HubSpot private app token (region tag, not 8 hex).
+            "HUBSPOT_TOKEN=" + "pat" + "-na1-" + "f1793c1a-cde2-468b-b465-c015d0fda0a0",
+            # GitLab-style glpat- prefix in front of a UUID.
+            "TOKEN=gl" + "pat" + "-" + "f1793c1a-cde2-468b-b465-c015d0fda0a0",
+            # UUID one hex short in the last group.
+            "HOPP_TOKEN=" + "pat" + "-" + "c7bed637-07ae-42e9-86f1-226d4df37c2",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on

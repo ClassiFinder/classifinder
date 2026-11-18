@@ -24979,3 +24979,110 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# HOPPSCOTCH PERSONAL ACCESS TOKEN (2026-11-18)
+# ═══════════════════════════════════════════════
+# TOKEN_PREFIX = 'pat-' (access-token.service.ts) + prisma `token String @default(uuid())`,
+# i.e. 'pat-' + a lowercase 8-4-4-4-12 UUID, 40 characters. SYNTHETIC UUIDs (SHA-256 over
+# 'classifinder-hoppscotch-synthetic-<n>', v4 bits set), split so no token literal sits
+# in source.
+# Source: https://github.com/hoppscotch/hoppscotch/blob/main/packages/hoppscotch-backend/src/access-token/access-token.service.ts
+_HOPP_UUID = "f1793c1a-cde2-468b-b465-c015d0fda0a0"
+_HOPP_UUID2 = "c7bed637-07ae-42e9-86f1-226d4df37c2c"
+_HOPP_PREFIX = "pat" + "-"
+_HOPP_TOK = _HOPP_PREFIX + _HOPP_UUID
+_HOPP_TOK2 = _HOPP_PREFIX + _HOPP_UUID2
+
+
+def _hopp(text):
+    return [
+        f
+        for f in scan(text, min_confidence=0.01)
+        if f.type == "hoppscotch_personal_access_token"
+    ]
+
+
+def test_hoppscotch_personal_access_token_fixture_widths():
+    assert len(_HOPP_UUID) == 36 and len(_HOPP_UUID2) == 36
+    assert len(_HOPP_TOK) == 40 and len(_HOPP_TOK2) == 40
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("hopp test collection.json --token " + _HOPP_TOK, _HOPP_TOK),
+        ("HOPP_TOKEN=" + _HOPP_TOK2, _HOPP_TOK2),
+        ("export HOPPSCOTCH_TOKEN='" + _HOPP_TOK + "'", _HOPP_TOK),
+        ('{"hoppscotch_pat": "' + _HOPP_TOK2 + '"}', _HOPP_TOK2),
+        # Bare token: literal prefix + fixed-width UUID is the anchor.
+        (_HOPP_TOK, _HOPP_TOK),
+    ],
+)
+def test_hoppscotch_personal_access_token_true_positives(text, tok):
+    matched = _hopp(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert matched[0].severity == "high"
+    assert matched[0].provider == "hoppscotch"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+def test_hoppscotch_personal_access_token_context_boost():
+    bare = _hopp(_HOPP_TOK)[0].confidence
+    ctx = _hopp("hopp test collection.json --token " + _HOPP_TOK)[0].confidence
+    assert ctx > bare
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Last group one short / one long.
+        "HOPP_TOKEN=" + _HOPP_TOK[:-1],
+        "HOPP_TOKEN=" + _HOPP_TOK + "a",
+        # Uppercase UUID (Prisma uuid() emits lowercase).
+        "HOPP_TOKEN=" + _HOPP_PREFIX + _HOPP_UUID.upper(),
+        # Non-hex character in the body.
+        "HOPP_TOKEN=" + _HOPP_TOK[:-1] + "g",
+        # Unhyphenated UUID.
+        "HOPP_TOKEN=" + _HOPP_PREFIX + _HOPP_UUID.replace("-", ""),
+        # Embedded after a word character or hyphen.
+        "my" + _HOPP_TOK,
+        "x-" + _HOPP_TOK,
+        # Prose naming the format.
+        "Hoppscotch personal access tokens look like pat-<uuid>",
+    ],
+)
+def test_hoppscotch_personal_access_token_true_negatives(text):
+    assert _hopp(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _HOPP_PREFIX + "00000000-0000-0000-0000-000000000000",
+        _HOPP_PREFIX + "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        _HOPP_PREFIX + "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    ],
+)
+def test_hoppscotch_personal_access_token_placeholders_are_test_values(tok):
+    matched = _hopp("HOPP_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_hoppscotch_personal_access_token_does_not_claim_hubspot():
+    """HubSpot 'pat-na1-<uuid>' stays HubSpot and is not typed Hoppscotch."""
+    hub = "pat" + "-na1-" + _HOPP_UUID
+    types = {f.type for f in scan("HUBSPOT_TOKEN=" + hub, min_confidence=0.01)}
+    assert "hubspot_private_app_token" in types
+    assert "hoppscotch_personal_access_token" not in types
+    hub_eu = "pat" + "-eu1-" + _HOPP_UUID2
+    assert _hopp("HUBSPOT_TOKEN=" + hub_eu) == []
+
+
+def test_hoppscotch_personal_access_token_does_not_claim_glpat_or_cfpat():
+    """A 'pat-' + UUID tail inside glpat- / CFPAT- is not claimed as Hoppscotch."""
+    assert _hopp("GITLAB_TOKEN=gl" + _HOPP_TOK) == []
+    assert _hopp("CONTENTFUL_TOKEN=CF" + "PAT-" + _HOPP_UUID) == []
