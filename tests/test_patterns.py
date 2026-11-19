@@ -24979,3 +24979,447 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# 2026-11-16 WEEKLY BATCH — crypto keys, key files, K3s, Laravel, Jenkins
+# ═══════════════════════════════════════════════
+# Every value below is SYNTHETIC: random bytes encoded per the cited format
+# (bech32 / Base58Check / base64 / hex), split so no scannable literal exists.
+# Spec test vectors appear only as known test values.
+
+
+def _typed(text, pid):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == pid]
+
+
+def _assert_one(text, pid, tok, severity, floor=0.90):
+    matched = _typed(text, pid)
+    assert len(matched) == 1, matched
+    assert matched[0].confidence >= floor
+    assert matched[0].severity == severity
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+# ── Nostr nsec (NIP-19) ──
+# Source: https://github.com/nostr-protocol/nips/blob/master/19.md
+_NSEC = "nsec1" + "fm7n8ajl7swjgrl3km0v0659946kw5cwapg8jjjc8yqh3dlcdemsmuxlt3"
+_NSEC2 = "nsec1" + "7enn8ad9a0tufp9lfju2uyucl89ndu5w56wlnkd808qjnazquk2qgafs3x"
+_NPUB = "npub1" + "sm96n3wxaek6j34ljhz6fytmk7ujpe4dacnyfwtmadc0q5pccx9q4z8a0t"
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("NOSTR_PRIVATE_KEY=" + _NSEC, _NSEC),
+        ('{"nsec": "' + _NSEC2 + '"}', _NSEC2),
+        (_NSEC, _NSEC),
+    ],
+)
+def test_nostr_nsec_private_key_true_positives(text, tok):
+    assert len(_NSEC) == 63
+    _assert_one(text, "nostr_nsec_private_key", tok, "critical")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _NPUB,
+        "NOSTR_PRIVATE_KEY=" + _NSEC[:-1],
+        "NOSTR_PRIVATE_KEY=" + _NSEC + "q",
+        # 'b' is outside the bech32 alphabet.
+        "NOSTR_PRIVATE_KEY=" + _NSEC[:-1] + "b",
+        "my" + _NSEC,
+    ],
+)
+def test_nostr_nsec_private_key_true_negatives(text):
+    assert _typed(text, "nostr_nsec_private_key") == []
+
+
+def test_nostr_nsec_private_key_nip19_vector_is_test_value():
+    vector = "nsec1" + "vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5"
+    matched = _typed("nsec: " + vector, "nostr_nsec_private_key")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
+    assert matched[0].is_likely_test_value
+
+
+# ── BIP-32 / SLIP-132 extended private key ──
+# Source: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
+_XPRV = "xprv" + "Aw4z2Q47ef1wE9de89hotg8oa55Y42fpEV1EKcYniP2WsKsadXsr8XSPgwEUCn5sdiRkBKoxvB6fx5XnydfjuJ8AxzGnGScLcj1FCjLKynV"
+_TPRV = "tprv" + "EmApuMeDjfBwtEhtx34TJMHoAi3F8UitkJHDZUgtQULPivgTtGDUuGeELYWUG2cc7Jy7hy6KRrZdB11rkDi3HdnKkFCavmcF4sna9z4fKzR"
+_ZPRV = "zprv" + "JCUorviJBngETSnsdiJt71LeGrPG2SGk4ueEcmGtZxDDpZm8o9u9BfnY89JVLtWPcWd21QH4Fxe2K67qMYLYFtXwvyffrcsB3XnNUqsgTrP"
+_YPRV = "yprv" + "EUv7gU9o95obB45Y8Tj9CzVr5fKLcNU8xVfXXgZM5CzgdT8Ci1LpLYAJHHfmStjbVmdkZauJRFN9qLRLeZ6FtHEGLuBpm6GpQVcE3z788Hd"
+_XPUB = "xpub" + "CxAESiFu1ygMUBLqVr8SuHv1Y1rdWkLu1xac2Y98ghHUL46HMcQpDnY6CroSrz7s7k1QLVQvVMuPcKuYGtFqds54AaJxcmteZyXvpi4sywf"
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("WALLET_XPRV=" + _XPRV, _XPRV),
+        ("descriptor: wpkh(" + _TPRV + "/84h/1h/0h/0/*)", _TPRV),
+        ('"zprv": "' + _ZPRV + '"', _ZPRV),
+        (_YPRV, _YPRV),
+    ],
+)
+def test_bip32_extended_private_key_true_positives(text, tok):
+    assert len(tok) == 111
+    _assert_one(text, "bip32_extended_private_key", tok, "critical")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _XPUB,
+        "WALLET_XPRV=" + _XPRV[:-1],
+        "WALLET_XPRV=" + _XPRV + "a",
+        # '0' is outside the base58 alphabet.
+        "WALLET_XPRV=" + _XPRV[:-1] + "0",
+        # Not a private-key version prefix.
+        "Xprv" + _XPRV[4:],
+    ],
+)
+def test_bip32_extended_private_key_true_negatives(text):
+    assert _typed(text, "bip32_extended_private_key") == []
+
+
+def test_bip32_extended_private_key_spec_vector_is_test_value():
+    vector = (
+        "xprv" + "9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKm"
+        + "PGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
+    )
+    matched = _typed(vector, "bip32_extended_private_key")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
+
+
+def test_bip32_extended_private_key_does_not_collide_with_wif():
+    types = {f.type for f in scan("BITCOIN_PRIVATE_KEY=" + _XPRV, min_confidence=0.01)}
+    assert "bip32_extended_private_key" in types
+    assert "bitcoin_wif_key" not in types
+
+
+# ── Laravel APP_KEY ──
+# Source: https://github.com/laravel/framework/blob/12.x/src/Illuminate/Foundation/Console/KeyGenerateCommand.php
+_LRV = "base64:" + "bs5Isot6FmVulc3L7ONQ+CEvpyIgGBN+3VWJkNMxYME="
+_LRV2 = "base64:" + "HEGYdz/wm9u1wbZBwi/mtRgUneP5Xsr81++SmUGBGek="
+_LRV128 = "base64:" + "a3X3omFtk8fJgpVouqHv3Q=="
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("APP_KEY=" + _LRV, _LRV),
+        ("export APP_KEY='" + _LRV2 + "'", _LRV2),
+        ("      APP_KEY: \"" + _LRV128 + '"', _LRV128),
+        ("'key' => env('APP_KEY', '" + _LRV + "'),", _LRV),
+        ("APP_PREVIOUS_KEYS=" + _LRV2, _LRV2),
+    ],
+)
+def test_laravel_app_key_true_positives(text, tok):
+    _assert_one(text, "laravel_app_key", tok, "critical", floor=0.85)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "APP_KEY=",
+        "APP_KEY=SomeRandomString",
+        # Not anchored on APP_KEY.
+        "ENCRYPTION=" + _LRV,
+        "DATADOG_APP_KEY=" + _LRV,
+        # Body one short / impossible final character for 32 bytes.
+        "APP_KEY=" + _LRV[:-2] + "=",
+        "APP_KEY=" + _LRV[:-2] + "Z=",
+    ],
+)
+def test_laravel_app_key_true_negatives(text):
+    assert _typed(text, "laravel_app_key") == []
+
+
+def test_laravel_app_key_mask_is_test_value():
+    matched = _typed("APP_KEY=base64:" + "A" * 43 + "=", "laravel_app_key")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
+
+
+# ── PuTTY PPK ──
+# Source: https://the.earth.li/~sgtatham/putty/latest/htmldoc/AppendixC.html
+_PPK_L = [
+    "MiMSvngE7MXS9Bb54Rx8gsnFoJq0QdMsjsKKpH3vC6RxweT3CxIiR28VTQL90hvD",
+    "8gYswk86t6Rqv1YATGp5Rx0GCML14FM07/G1C1SXmWIPVmzN+ZzMocxk9gX8Yeqq",
+    "NpJL8mYZxvbrVT9INtmbX5xRTrC3OZw2r8dFtT/WXOwqhGPW6C3TDwZ8fMhjjkz8",
+    "KT3stYJWPP0WtFRWAIN5BSPc8uzsJqKHi8yBha+w1nrcgqY1N6KKPKs/V5L4TnzV",
+]
+_PPK_MAC3 = "dea22e005277e58dd3454454c597f252d0f81475609f40830b175ff67d3738f9"
+_PPK_MAC2 = "bf537e57bd24a03f084f12614cb1ee9de4c05e6e"
+_PPK_V3 = (
+    "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\nComment: eddsa-key-20261116\n"
+    "Public-Lines: 2\n" + _PPK_L[0] + "\n" + _PPK_L[1][:24] + "\n"
+    "Private-Lines: 1\n" + _PPK_L[2] + "\nPrivate-MAC: " + _PPK_MAC3
+)
+_PPK_V3_ENC = (
+    "PuTTY-User-Key-File-3: ssh-rsa\r\nEncryption: aes256-cbc\r\nComment: rsa-key\r\n"
+    "Public-Lines: 2\r\n" + _PPK_L[0] + "\r\n" + _PPK_L[1] + "\r\n"
+    "Key-Derivation: Argon2id\r\nArgon2-Memory: 8192\r\nArgon2-Passes: 13\r\n"
+    "Argon2-Parallelism: 1\r\nArgon2-Salt: de184014c3f06afb8d27a59f23d49b62\r\n"
+    "Private-Lines: 2\r\n" + _PPK_L[2] + "\r\n" + _PPK_L[3] + "\r\nPrivate-MAC: " + _PPK_MAC3
+)
+_PPK_V2 = (
+    "PuTTY-User-Key-File-2: ssh-dss\nEncryption: none\nComment: imported-openssh-key\n"
+    "Public-Lines: 1\n" + _PPK_L[0] + "\nPrivate-Lines: 1\n" + _PPK_L[2]
+    + "\nPrivate-MAC: " + _PPK_MAC2
+)
+
+
+@pytest.mark.parametrize("block", [_PPK_V3, _PPK_V3_ENC, _PPK_V2])
+def test_putty_ppk_private_key_true_positives(block):
+    text = "# id.ppk\n" + block + "\n"
+    _assert_one(text, "putty_ppk_private_key", block, "critical")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Header only.
+        "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\n",
+        # Missing MAC line.
+        _PPK_V3.rsplit("\nPrivate-MAC", 1)[0],
+        # Unknown format version.
+        _PPK_V3.replace("File-3", "File-4"),
+        # MAC too short.
+        _PPK_V2[:-10],
+    ],
+)
+def test_putty_ppk_private_key_true_negatives(text):
+    assert _typed(text, "putty_ppk_private_key") == []
+
+
+def test_putty_ppk_private_key_placeholder_is_test_value():
+    block = (
+        "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\nComment: example\n"
+        "Public-Lines: 1\n" + "A" * 64 + "\nPrivate-Lines: 1\n" + "A" * 64
+        + "\nPrivate-MAC: " + "0" * 64
+    )
+    matched = _typed(block, "putty_ppk_private_key")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
+
+
+def test_putty_ppk_private_key_single_finding():
+    """The whole block is one PuTTY finding; body lines do not surface as generic."""
+    findings = scan(_PPK_V3_ENC, min_confidence=0.01)
+    assert [f.type for f in findings] == ["putty_ppk_private_key"]
+
+
+# ── Cosign / Sigstore encrypted private key ──
+# Source: https://github.com/sigstore/cosign/blob/main/pkg/cosign/keys.go
+_COS_BODY = (
+    "oMAt4zeIfQt4KvhFCRDQos3HUHAk1R2GVf1FZV4BHef5jYpemUsj/isRh2F57xMX\n"
+    "i7SL9H1Qj9Gf8NvJrdS6/WQIT+dDjmE+8KTHNRKWNs/iX4JOhtZ5zfVZsJiW8xqT\n"
+    "AIjs3eHEt5YYy92ZfEGbI3u5niGl/AegdheOfAQuikN5ERX8PqaLYLiJXmZno4IW"
+)
+
+
+def _cos(label_begin, label_end=None):
+    label_end = label_end or label_begin
+    return (
+        f"-----BEGIN ENCRYPTED {label_begin} PRIVATE KEY-----\n{_COS_BODY}\n"
+        f"-----END ENCRYPTED {label_end} PRIVATE KEY-----"
+    )
+
+
+@pytest.mark.parametrize("label", ["SIGSTORE", "COSIGN"])
+def test_cosign_encrypted_private_key_true_positives(label):
+    block = _cos(label)
+    _assert_one("cosign.key:\n" + block + "\n", "cosign_encrypted_private_key", block, "high")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _cos("SIGSTORE", "COSIGN"),
+        _cos("SIGSTORE").replace("ENCRYPTED SIGSTORE ", "ENCRYPTED "),
+        "-----BEGIN PUBLIC KEY-----\n" + _COS_BODY + "\n-----END PUBLIC KEY-----",
+        "-----BEGIN ENCRYPTED SIGSTORE PRIVATE KEY-----\nabc\n-----END ENCRYPTED SIGSTORE PRIVATE KEY-----",
+    ],
+)
+def test_cosign_encrypted_private_key_true_negatives(text):
+    assert _typed(text, "cosign_encrypted_private_key") == []
+
+
+def test_cosign_encrypted_private_key_placeholder_is_test_value():
+    block = (
+        "-----BEGIN ENCRYPTED SIGSTORE PRIVATE KEY-----\n" + "x" * 64
+        + "\n-----END ENCRYPTED SIGSTORE PRIVATE KEY-----"
+    )
+    matched = _typed(block, "cosign_encrypted_private_key")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
+
+
+def test_cosign_encrypted_private_key_disjoint_from_pem_patterns():
+    findings = scan(_cos("SIGSTORE"), min_confidence=0.01)
+    assert [f.type for f in findings] == ["cosign_encrypted_private_key"]
+
+
+# ── K3s / RKE2 K10 join token ──
+# Source: https://github.com/k3s-io/k3s/blob/master/pkg/clientaccess/token.go
+_K3S_HASH = "55538d3380e9b940b58440febd92a66a9e669730fe001a76138c93ba8ae94d64"
+_K3S_HASH2 = "997ca3c9889aa0f8d14a2421bedc8be1876428075bf48b2bdbb3c501ec828275"
+_K3S_SERVER = "K10" + _K3S_HASH + "::server:" + "83f4aee6dfdb032b6f6fe495d87d1296"
+_K3S_BOOT = "K10" + _K3S_HASH2 + "::" + "4d9398.fe1369e6118535dc"
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("K3S_TOKEN=" + _K3S_SERVER, _K3S_SERVER),
+        ("curl -sfL https://get.k3s.io | K3S_TOKEN=\"" + _K3S_SERVER + "\" sh -", _K3S_SERVER),
+        ("k3s agent --token " + _K3S_BOOT + " --server https://10.0.0.1:6443", _K3S_BOOT),
+        ("token: " + _K3S_BOOT, _K3S_BOOT),
+        (_K3S_SERVER, _K3S_SERVER),
+    ],
+)
+def test_k3s_join_token_true_positives(text, tok):
+    _assert_one(text, "k3s_join_token", tok, "critical")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Short-format token.
+        "K3S_TOKEN=83f4aee6dfdb032b6f6fe495d87d1296",
+        # Digest one short.
+        "K3S_TOKEN=K10" + _K3S_HASH[:-1] + "::server:83f4aee6dfdb032b6f6fe495d87d1296",
+        # Uppercase digest (k3s emits lowercase hex).
+        "K3S_TOKEN=K10" + _K3S_HASH.upper() + "::server:83f4aee6dfdb032b6f6fe495d87d1296",
+        # Password too short to be a credential.
+        "K3S_TOKEN=K10" + _K3S_HASH + "::server:abc",
+        # Prose.
+        "K10 tokens look like K10<ca-hash>::<username>:<password>",
+    ],
+)
+def test_k3s_join_token_true_negatives(text):
+    assert _typed(text, "k3s_join_token") == []
+
+
+def test_k3s_join_token_masked_digest_is_test_value():
+    tok = "K10" + "0" * 64 + "::server:" + "0" * 32
+    matched = _typed("K3S_TOKEN=" + tok, "k3s_join_token")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
+
+
+def test_k3s_join_token_wins_dedup_over_bootstrap_tail():
+    """The bootstrap-token tail is not reported separately as kubernetes_bootstrap_token."""
+    for text in ("token: " + _K3S_BOOT, "kubeadm join --token " + _K3S_BOOT):
+        types = [f.type for f in scan(text, min_confidence=0.01)]
+        assert "k3s_join_token" in types
+        assert "kubernetes_bootstrap_token" not in types
+    # The bare bootstrap token on its own still belongs to the Kubernetes pattern.
+    types = {f.type for f in scan("token: 4d9398.fe1369e6118535dc", min_confidence=0.01)}
+    assert "kubernetes_bootstrap_token" in types and "k3s_join_token" not in types
+
+
+# ── Cardano CIP-5 signing keys ──
+# Source: https://github.com/cardano-foundation/CIPs/blob/master/CIP-0005/README.md
+_ADA_ADDR_SK = "addr" + "_sk1" + "5ee9n65jh9gjlvzmeqlvl0c3gm79readp6t4v873ry5sjw7y0f6sqlm47e"
+_ADA_ROOT_XSK = "root" + "_xsk1" + (
+    "w7zyg633khf26cvg6uzvvvnpx949e8zaarhtfh6jmds8atnezyanc9w9p9xeap6cdej0r49vfy7wkfh6f0fgkgkd8tsylnftev3waxtrcpt0kyf7epjjjm3p403vjx8fvp2309nfe7exw4725fz63xulmuhjkcwq"
+)
+_ADA_ED25519E = "ed25519e" + "_sk1" + (
+    "986ec5v40a4vflqtmf4s9489l7jltph0emvg37x0z5hs2tqucthj552fw35sgrwckv7u5lzsae7fnftk74vyzsem62a240dxthxy94cekcuuq"
+)
+_ADA_STAKE_SK = "stake" + "_sk1" + "dear37mn9hhqs77rhr8gdg3k2f794v2untg48eyhhg9ndwu5nj7st0a3cm"
+_ADA_SHARED_XSK = "acct_shared" + "_xsk1" + (
+    "85nvw3gzz0hqk0xnj8whhqxdkegqgeg6argjfl4nlfrverrxfdc4qgffanvqrvzursc7lm2lrajjsdzqfm2l0p6yw9ejsmq8up0xuq56uc6sg5xug5au7sge4994hx9trvv2mr8t2p98kgdnagjtn00kzsthwkha"
+)
+_ADA_ADDR_SK64 = "addr" + "_sk1" + (
+    "d09cdt2sv6yuv2j82zkzann4zpv8tj8rq4f2he44enepggn2seycw9vp09lzc9kz9aklk5usm2vx3wjhpqh2reutyt0mkezhlvxd73c75v3p8"
+)
+_ADA_ADDR_VK = "addr" + "_vk1" + "zfn42ytls0ua3xzpjfaj599nwzg8hahxscdjya5ptw4hhjaksduss02d56"
+_ADA_ROOT_XVK = "root" + "_xvk1" + (
+    "kyqmt6lpntdkqukx2s9cswn9lpf3jcyf4sff5wwqgm0v755dna4qxdx8mw47mn96tnkxpynjcf5qyftnjcuj5euummvshzhy8esunmgtchd4v"
+)
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [_ADA_ADDR_SK, _ADA_ROOT_XSK, _ADA_ED25519E, _ADA_STAKE_SK, _ADA_SHARED_XSK, _ADA_ADDR_SK64],
+)
+def test_cardano_signing_key_true_positives(tok):
+    _assert_one("CARDANO_SIGNING_KEY=" + tok, "cardano_signing_key", tok, "critical")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _ADA_ADDR_VK,
+        _ADA_ROOT_XVK,
+        _ADA_ADDR_SK[:-1],
+        _ADA_ROOT_XSK + "q",
+        # Unknown key role.
+        "wallet" + _ADA_ADDR_SK[4:],
+        # Uppercase (bech32 is lowercase as emitted by cardano tooling).
+        _ADA_ADDR_SK.upper(),
+    ],
+)
+def test_cardano_signing_key_true_negatives(text):
+    assert _typed(text, "cardano_signing_key") == []
+
+
+def test_cardano_signing_key_mask_is_test_value():
+    matched = _typed("addr" + "_sk1" + "q" * 58, "cardano_signing_key")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
+
+
+# ── Jenkins API token ──
+# Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/security/apitoken/ApiTokenStore.java
+_JK = "11" + "41051391c65b4c64022ff55072a6f5aa"
+_JK2 = "11" + "af08a0faa78ce8df0add3eac821b070b"
+_JK3 = "11" + "5a742d5deb7c033bd2269ba427a69bcf"
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("JENKINS_API_TOKEN=" + _JK, _JK),
+        ("export JENKINS_TOKEN=\"" + _JK2 + "\"", _JK2),
+        ("jenkins.token: '" + _JK + "'", _JK),
+        ('{"jenkinsApiToken": "' + _JK2 + '"}', _JK2),
+        ("JENKINS_PASSWORD=" + _JK3, _JK3),
+    ],
+)
+def test_jenkins_api_token_true_positives(text, tok):
+    assert len(tok) == 34
+    _assert_one(text, "jenkins_api_token", tok, "high", floor=0.85)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "JENKINS_API_TOKEN=" + _JK[:-1],
+        "JENKINS_API_TOKEN=" + _JK + "a",
+        "JENKINS_API_TOKEN=" + _JK.upper(),
+        # Legacy 32-hex token without the '11' version prefix.
+        "JENKINS_API_TOKEN=" + _JK[2:],
+        # Jenkins context but not a credential field.
+        "JENKINS_URL=" + _JK,
+    ],
+)
+def test_jenkins_api_token_true_negatives(text):
+    assert _typed(text, "jenkins_api_token") == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _JK3,
+        "API_TOKEN=" + _JK3,
+        "sha256: " + _JK3,
+        "GITHUB_TOKEN=" + _JK3,
+    ],
+)
+def test_jenkins_api_token_requires_jenkins_context(text):
+    """collision_ok=false: a bare '11' + 32-hex value is not claimed as Jenkins."""
+    assert _typed(text, "jenkins_api_token") == []
+
+
+def test_jenkins_api_token_mask_is_test_value():
+    matched = _typed("JENKINS_API_TOKEN=11" + "0" * 32, "jenkins_api_token")
+    assert len(matched) == 1 and matched[0].confidence <= 0.20
