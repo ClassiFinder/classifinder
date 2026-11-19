@@ -24979,3 +24979,109 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# LARAVEL SANCTUM PERSONAL ACCESS TOKEN (2026-11-19)
+# ═══════════════════════════════════════════════
+# createToken() returns '<id>|' + generateTokenString(), which is the optional
+# sanctum.token_prefix (empty by default) + Str::random(40) + hash('crc32b', ...).
+# SYNTHETIC bodies (seeded PRNG over 'classifinder-sanctum-synthetic-<n>'); each
+# tail is the real CRC32 of its body. Split so no scannable literal exists.
+# Source: https://github.com/laravel/sanctum/blob/4.x/src/HasApiTokens.php
+import zlib as _lss_zlib  # noqa: E402
+
+_LSS_BODY = "UU2V9bASrJP2tISAVZR204hpiJn431FljjMiYP52"
+_LSS_BODY2 = "93YfUGbZwZB9tMz5TfpBJ8Q48p9TnwzBWVvySzLw"
+_LSS_CRC = "b99e00ea"
+_LSS_CRC2 = "e8155854"
+_LSS_TOK = "7" + "|" + _LSS_BODY + _LSS_CRC
+_LSS_TOK2 = "1042" + "|" + _LSS_BODY2 + _LSS_CRC2
+
+
+def _lss(text):
+    return [
+        f
+        for f in scan(text, min_confidence=0.01)
+        if f.type == "laravel_sanctum_personal_access_token"
+    ]
+
+
+def test_laravel_sanctum_token_fixture_widths_and_checksums():
+    assert len(_LSS_BODY) == 40 and len(_LSS_BODY2) == 40
+    # The tail is PHP hash('crc32b', body) == zlib.crc32 as 8 lowercase hex.
+    assert format(_lss_zlib.crc32(_LSS_BODY.encode()), "08x") == _LSS_CRC
+    assert format(_lss_zlib.crc32(_LSS_BODY2.encode()), "08x") == _LSS_CRC2
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("SANCTUM_TOKEN=" + _LSS_TOK, _LSS_TOK),
+        ("Authorization: Bearer " + _LSS_TOK2, _LSS_TOK2),
+        ('{"token": "' + _LSS_TOK + '"}', _LSS_TOK),
+        ("curl -H 'Authorization: Bearer " + _LSS_TOK2 + "' https://app.example.com/api/user", _LSS_TOK2),
+        # Bare token with no context — the id|body|crc structure is the anchor.
+        (_LSS_TOK, _LSS_TOK),
+    ],
+)
+def test_laravel_sanctum_token_true_positives(text, tok):
+    matched = _lss(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.85
+    assert matched[0].severity == "high"
+    assert matched[0].provider == "laravel"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Legacy pre-3.3 token: no CRC32 tail.
+        "SANCTUM_TOKEN=7|" + _LSS_BODY,
+        # Body one character short / one character long.
+        "SANCTUM_TOKEN=7|" + _LSS_BODY[:-1] + _LSS_CRC,
+        "SANCTUM_TOKEN=7|" + _LSS_BODY + _LSS_CRC + "a",
+        # Uppercase checksum (hash('crc32b') emits lowercase).
+        "SANCTUM_TOKEN=7|" + _LSS_BODY + _LSS_CRC.upper(),
+        # Non-numeric id.
+        "SANCTUM_TOKEN=x|" + _LSS_BODY + _LSS_CRC,
+        # Id longer than 10 digits.
+        "SANCTUM_TOKEN=12345678901|" + _LSS_BODY + _LSS_CRC,
+        # Embedded after a word character or a pipe (table cell run-on).
+        "abc7|" + _LSS_BODY + _LSS_CRC,
+        "||7|" + _LSS_BODY + _LSS_CRC + "x",
+        # Prose naming the format.
+        "Sanctum tokens look like <id>|<40 random characters><crc32b>",
+    ],
+)
+def test_laravel_sanctum_token_true_negatives(text):
+    assert _lss(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        "1|" + "a" * 40 + "c95b8a25",
+        "1|" + "x" * 40 + "0" * 8,
+        "1|" + "0" * 40 + "963fbb8e",
+    ],
+)
+def test_laravel_sanctum_token_placeholders_are_test_values(tok):
+    matched = _lss("SANCTUM_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_laravel_sanctum_token_bearer_is_typed_laravel():
+    """In a Bearer header the token is reported as Laravel Sanctum, not only generic."""
+    findings = scan("Authorization: Bearer " + _LSS_TOK, min_confidence=0.01)
+    types = {f.type for f in findings}
+    assert "laravel_sanctum_personal_access_token" in types
+    assert "generic_high_entropy" not in types
+
+
+def test_laravel_sanctum_token_does_not_collide_with_neighbours():
+    """The 40-char body alone (no id, no tail) is not typed as Sanctum."""
+    types = {f.type for f in scan("token=" + _LSS_BODY, min_confidence=0.01)}
+    assert "laravel_sanctum_personal_access_token" not in types

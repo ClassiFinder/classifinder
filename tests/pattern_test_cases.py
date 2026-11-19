@@ -8661,6 +8661,23 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # Laravel Sanctum personal access token ('<id>|' + 40 alnum + crc32b hex).
+    # SYNTHETIC bodies (seeded PRNG over 'classifinder-sanctum-synthetic-<n>',
+    # tail = real CRC32 of the body), split so no scannable literal exists.
+    # Source: https://github.com/laravel/sanctum/blob/4.x/src/HasApiTokens.php
+    "laravel_sanctum_personal_access_token": {
+        "positives": [
+            "SANCTUM_TOKEN=7" + "|" + "UU2V9bASrJP2tISAVZR204hpiJn431FljjMiYP52" + "b99e00ea",
+            "Authorization: Bearer 1042" + "|" + "93YfUGbZwZB9tMz5TfpBJ8Q48p9TnwzBWVvySzLw" + "e8155854",
+        ],
+        "negatives": [
+            # Legacy pre-3.3 token: 40 characters, no CRC32 tail.
+            "SANCTUM_TOKEN=7" + "|" + "UU2V9bASrJP2tISAVZR204hpiJn431FljjMiYP52",
+            # Prose naming the format but carrying no token.
+            "Sanctum tokens look like <id>|<40 random characters><crc32b>",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on
