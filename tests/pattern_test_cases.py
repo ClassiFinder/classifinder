@@ -8661,6 +8661,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # Rill access token. SYNTHETIC bodies (base62 of SHA-256 over
+    # 'classifinder-rill-synthetic-<n>'), split so no scannable literal exists.
+    # Source: https://github.com/rilldata/rill/blob/main/admin/pkg/authtoken/authtoken.go
+    "rill_access_token": {
+        "positives": [
+            "RILL_ADMIN_TOKEN=rill" + "_usr_" + "jGMNd81VtGUyy1kKvZaCzLpykUm2QBCBf7H9JTp3cRWl1qThebHeFv",
+            "Authorization: Bearer rill" + "_svc_" + "t72tbXJlU3SaRtxlui5IyCxBqkCmLu23qG5VeDWqujKhEy0OKrwlL",
+        ],
+        "negatives": [
+            # Unknown token-type tag.
+            "RILL_ADMIN_TOKEN=rill" + "_adm_" + "jGMNd81VtGUyy1kKvZaCzLpykUm2QBCBf7H9JTp3cRWl1qThebHeFv",
+            # Prose naming the prefix but carrying no token.
+            "Rill user tokens start with rill_usr_ followed by base62",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
