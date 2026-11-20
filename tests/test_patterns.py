@@ -24979,3 +24979,109 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# RILL ACCESS TOKEN (2026-11-20)
+# ═══════════════════════════════════════════════
+# 'rill_' + type tag (usr|svc|dpl|mgc|mgs) + '_' + marshalBase62(40-byte payload)
+# per the vendor's own authtoken.go: big.Int.Text(62), no padding, so 54 chars
+# normally and shorter when the leading bytes are zero. SYNTHETIC bodies (base62
+# of SHA-256 over 'classifinder-rill-synthetic-<n>'), split so no scannable token
+# literal exists in source.
+# Source: https://github.com/rilldata/rill/blob/main/admin/pkg/authtoken/authtoken.go
+_RILL_B54 = "jGMNd81VtGUyy1kKvZaCzLpykUm2QBCBf7H9JTp3cRWl1qThebHeFv"
+_RILL_B54_2 = "5WIxCkcvHXhWI757PDi2Abq8FAHvtE61BzN3hgg8bxynMIHKFNcF5O"
+_RILL_B53 = "t72tbXJlU3SaRtxlui5IyCxBqkCmLu23qG5VeDWqujKhEy0OKrwlL"
+_RILL_VENDOR_EXAMPLE = "rill" + "_usr_" + "2Dws32dc2FxTThgCQjHerGM1rx9pJLCPQh5QbWjUiwpkZNkCCRrlrK"
+
+
+def _rill_tok(typ, body):
+    return "rill" + "_" + typ + "_" + body
+
+
+def _rill(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "rill_access_token"]
+
+
+def test_rill_access_token_fixture_widths():
+    assert len(_RILL_B54) == 54 and len(_RILL_B54_2) == 54
+    assert len(_RILL_B53) == 53
+    # A 40-byte payload in base 62 is at most 54 digits.
+    n, digits = (1 << 320) - 1, 0
+    while n:
+        n //= 62
+        digits += 1
+    assert digits == 54
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("RILL_ADMIN_TOKEN=" + _rill_tok("usr", _RILL_B54), _rill_tok("usr", _RILL_B54)),
+        ("export RILL_TOKEN='" + _rill_tok("svc", _RILL_B53) + "'", _rill_tok("svc", _RILL_B53)),
+        ("Authorization: Bearer " + _rill_tok("dpl", _RILL_B54_2), _rill_tok("dpl", _RILL_B54_2)),
+        (
+            "https://ui.rilldata.com/-/share/" + _rill_tok("mgc", _RILL_B54),
+            _rill_tok("mgc", _RILL_B54),
+        ),
+        ('{"token": "' + _rill_tok("mgs", _RILL_B53) + '"}', _rill_tok("mgs", _RILL_B53)),
+        # Short body (leading zero bytes) still matches.
+        ("RILL_TOKEN=" + _rill_tok("usr", _RILL_B54[:50]), _rill_tok("usr", _RILL_B54[:50])),
+        # Bare token with no context — prefix + type tag is the anchor.
+        (_rill_tok("usr", _RILL_B54_2), _rill_tok("usr", _RILL_B54_2)),
+    ],
+)
+def test_rill_access_token_true_positives(text, tok):
+    matched = _rill(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+    assert matched[0].provider == "rill"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body too short / too long.
+        "RILL_TOKEN=" + _rill_tok("usr", _RILL_B54[:49]),
+        "RILL_TOKEN=" + _rill_tok("usr", _RILL_B54 + "a"),
+        # Unknown type tags.
+        "RILL_TOKEN=" + _rill_tok("adm", _RILL_B54),
+        "RILL_TOKEN=" + _rill_tok("USR", _RILL_B54),
+        # Non-base62 character in the body.
+        "RILL_TOKEN=" + _rill_tok("usr", _RILL_B54[:30] + "-" + _RILL_B54[31:]),
+        # Embedded after a word character.
+        "d" + _rill_tok("usr", _RILL_B54),
+        # Prose naming the format.
+        "Rill user tokens look like rill_usr_<base62>",
+    ],
+)
+def test_rill_access_token_true_negatives(text):
+    assert _rill(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _RILL_VENDOR_EXAMPLE,
+        _rill_tok("usr", "0" * 54),
+        _rill_tok("svc", "x" * 54),
+        _rill_tok("mgc", "X" * 54),
+    ],
+)
+def test_rill_access_token_placeholders_are_test_values(tok):
+    matched = _rill("RILL_ADMIN_TOKEN=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_rill_access_token_bearer_is_typed_rill():
+    """In a Bearer header the token is reported as Rill, not generic high-entropy."""
+    types = {
+        f.type
+        for f in scan("Authorization: Bearer " + _rill_tok("usr", _RILL_B54), min_confidence=0.01)
+    }
+    assert "rill_access_token" in types
+    assert "generic_high_entropy" not in types
