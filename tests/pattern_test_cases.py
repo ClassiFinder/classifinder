@@ -8661,6 +8661,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # Cloudsmith API key. SYNTHETIC bodies (SHA-256 over
+    # 'classifinder-cloudsmith-synthetic-<n>'), split so no scannable literal exists.
+    # Source: https://github.com/cloudsmith-io/cloudsmith-cli/blob/31bbadd8d2b9255bcaf7b82335ce3d3cdcbf9841/cloudsmith_cli/core/telemetry.py#L548-L551
+    "cloudsmith_api_key": {
+        "positives": [
+            "CLOUDSMITH_API_KEY=csa" + "_" + "450d0783fcb4b9d42fabf47a0da4ff" + "I_uznf",
+            "X-Api-Key: CSA" + "_" + "03BD24BAC787882B256D00CA899DBE" + "l_YfG8",
+        ],
+        "negatives": [
+            # Hex part one character short.
+            "CLOUDSMITH_API_KEY=csa" + "_" + "450d0783fcb4b9d42fabf47a0da4f" + "I_uznf",
+            # Prose naming the prefix but carrying no key.
+            "Cloudsmith API keys start with csa_ followed by hex and a checksum",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
