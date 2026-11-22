@@ -24979,3 +24979,94 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# CLOUDSMITH API KEY (2026-11-22)
+# ═══════════════════════════════════════════════
+# 'csa_' / 'CSA_' + 30 hex + 6-character checksum from [A-Za-z0-9+/_-], per the
+# vendor's own CLI redaction rule. SYNTHETIC bodies (SHA-256 over
+# 'classifinder-cloudsmith-synthetic-<n>'), split so no scannable key literal
+# exists in source.
+# Source: https://github.com/cloudsmith-io/cloudsmith-cli/blob/31bbadd8d2b9255bcaf7b82335ce3d3cdcbf9841/cloudsmith_cli/core/telemetry.py#L548-L551
+_CSM_HEX = "450d0783fcb4b9d42fabf47a0da4ff"
+_CSM_HEX2 = "1d31aecb9aa091cada6652198163f2"
+_CSM_TOK = "csa" + "_" + _CSM_HEX + "I_uznf"
+_CSM_TOK2 = "csa" + "_" + _CSM_HEX2 + "qp0Nov"
+_CSM_TOK_UP = "CSA" + "_" + "03BD24BAC787882B256D00CA899DBE" + "l_YfG8"
+_CSM_TOK_SYM = "csa" + "_" + _CSM_HEX2 + "a+/b-9"
+
+
+def _csm(text):
+    return [f for f in scan(text, min_confidence=0.01) if f.type == "cloudsmith_api_key"]
+
+
+def test_cloudsmith_api_key_fixture_widths():
+    assert len(_CSM_HEX) == 30 and len(_CSM_HEX2) == 30
+    for tok in (_CSM_TOK, _CSM_TOK2, _CSM_TOK_UP, _CSM_TOK_SYM):
+        assert len(tok) == 40
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("CLOUDSMITH_API_KEY=" + _CSM_TOK, _CSM_TOK),
+        ("export CLOUDSMITH_API_KEY='" + _CSM_TOK2 + "'", _CSM_TOK2),
+        ("X-Api-Key: " + _CSM_TOK_UP, _CSM_TOK_UP),
+        ('{"api_key": "' + _CSM_TOK_SYM + '"}', _CSM_TOK_SYM),
+        # Bare key with no context — the literal prefix + fixed width is the anchor.
+        (_CSM_TOK, _CSM_TOK),
+    ],
+)
+def test_cloudsmith_api_key_true_positives(text, tok):
+    matched = _csm(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert matched[0].provider == "cloudsmith"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Hex part one short; whole key one character long.
+        "CLOUDSMITH_API_KEY=csa" + "_" + _CSM_HEX[:-1] + "I_uznf",
+        "CLOUDSMITH_API_KEY=" + _CSM_TOK + "x",
+        # Non-hex character in the 30-hex part.
+        "CLOUDSMITH_API_KEY=csa" + "_" + _CSM_HEX[:-1] + "g" + "I_uznf",
+        # Mixed-case prefix is not a vendor prefix.
+        "CLOUDSMITH_API_KEY=Csa" + "_" + _CSM_HEX + "I_uznf",
+        # Embedded after a word character.
+        "my" + _CSM_TOK,
+        # Legacy bare 40-hex key / git SHA is deliberately not matched as Cloudsmith.
+        "CLOUDSMITH_API_KEY=" + _CSM_HEX + "0123456789",
+        # Prose naming the format.
+        "Cloudsmith API keys look like csa_<30 hex><6 checksum>",
+    ],
+)
+def test_cloudsmith_api_key_true_negatives(text):
+    assert _csm(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        "csa" + "_" + "0" * 36,
+        "csa" + "_" + "a" * 36,
+        "CSA" + "_" + "F" * 36,
+        "csa" + "_" + "0123456789abcdef0123456789abcd" + "efghij",
+    ],
+)
+def test_cloudsmith_api_key_placeholders_are_test_values(tok):
+    matched = _csm("CLOUDSMITH_API_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_cloudsmith_api_key_is_typed_cloudsmith_not_generic():
+    """In an env assignment the key is reported as Cloudsmith, not generic."""
+    types = {f.type for f in scan("CLOUDSMITH_API_KEY=" + _CSM_TOK, min_confidence=0.01)}
+    assert "cloudsmith_api_key" in types
+    assert "generic_api_key_env" not in types
+    assert "generic_high_entropy" not in types
