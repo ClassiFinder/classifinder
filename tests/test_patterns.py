@@ -24979,3 +24979,98 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# NAVER CLOUD IAM ACCESS KEY SECRET (2026-11-23)
+# ═══════════════════════════════════════════════
+# 'ncp_iam_' + 34-character body (6 upper-case head + 28 alphanumerics). Prefix and
+# widths per the vendor's Create Access Key API response example (accessKey body 20,
+# keySecret body 34). SYNTHETIC bodies (base62 of SHA-256 over
+# 'classifinder-naver-synthetic-<n>'), split so no scannable key literal exists.
+# Source: https://api.ncloud-docs.com/docs/en/management-subaccount-createaccesskey
+_NCP_PREFIX = "ncp" + "_iam_"
+_NCP_BODY = "BPKMKR" + "b0Xw3miSb6hR80sZYJxLK1CxQW6q"
+_NCP_BODY2 = "BPKMKR" + "UYKzv6MFRCgmdGnMnAm2q7ddMjQp"
+_NCP_SECRET = _NCP_PREFIX + _NCP_BODY
+_NCP_SECRET2 = _NCP_PREFIX + _NCP_BODY2
+_NCP_ACCESS_ID = _NCP_PREFIX + "BPAMKR" + "QKcxHHOoSyoZkT"
+
+
+def _ncp(text):
+    return [
+        f
+        for f in scan(text, min_confidence=0.01)
+        if f.type == "naver_cloud_iam_access_key_secret"
+    ]
+
+
+def test_naver_cloud_iam_access_key_secret_fixture_widths():
+    assert len(_NCP_BODY) == 34 and len(_NCP_BODY2) == 34
+    assert len(_NCP_SECRET) == 42 and len(_NCP_SECRET2) == 42
+    # The access key ID body is 20 characters (28 in all).
+    assert len(_NCP_ACCESS_ID) == 28
+
+
+@pytest.mark.parametrize(
+    "text,tok",
+    [
+        ("NCLOUD_SECRET_KEY=" + _NCP_SECRET, _NCP_SECRET),
+        ("export NCP_SECRET_KEY='" + _NCP_SECRET2 + "'", _NCP_SECRET2),
+        ('{"accessKey": "' + _NCP_ACCESS_ID + '", "keySecret": "' + _NCP_SECRET + '"}', _NCP_SECRET),
+        ("[DEFAULT]\nncloud_secret_key = " + _NCP_SECRET2, _NCP_SECRET2),
+        # Bare secret with no context — the literal prefix + fixed width is the anchor.
+        (_NCP_SECRET, _NCP_SECRET),
+    ],
+)
+def test_naver_cloud_iam_access_key_secret_true_positives(text, tok):
+    matched = _ncp(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "critical"
+    assert matched[0].provider == "naver_cloud"
+    assert text[matched[0].span_start : matched[0].span_end] == tok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The access key ID (20-character body) is an identifier, not matched.
+        "NCLOUD_ACCESS_KEY=" + _NCP_ACCESS_ID,
+        # Body one short / one long.
+        "NCLOUD_SECRET_KEY=" + _NCP_SECRET[:-1],
+        "NCLOUD_SECRET_KEY=" + _NCP_SECRET + "a",
+        # Lower-case head (the head is six upper-case letters).
+        "NCLOUD_SECRET_KEY=" + _NCP_PREFIX + "bpkmkr" + _NCP_BODY[6:],
+        # Different prefix.
+        "NCLOUD_SECRET_KEY=ncp" + "_key_" + _NCP_BODY,
+        # Embedded after a word character.
+        "x" + _NCP_SECRET,
+        # The vendor's masked doc example and prose naming the format.
+        '{"keySecret": "ncp_iam_****"}',
+        "Naver Cloud key secrets look like ncp_iam_<34 characters>",
+    ],
+)
+def test_naver_cloud_iam_access_key_secret_true_negatives(text):
+    assert _ncp(text) == []
+
+
+@pytest.mark.parametrize(
+    "tok",
+    [
+        _NCP_PREFIX + "BPKMKR" + "x" * 28,
+        _NCP_PREFIX + "BPKMKR" + "0" * 28,
+        _NCP_PREFIX + "X" * 34,
+    ],
+)
+def test_naver_cloud_iam_access_key_secret_placeholders_are_test_values(tok):
+    matched = _ncp("NCLOUD_SECRET_KEY=" + tok)
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+
+
+def test_naver_cloud_iam_access_key_secret_is_typed_naver():
+    """The secret is reported as Naver Cloud, not generic high-entropy."""
+    types = {f.type for f in scan("NCLOUD_SECRET_KEY=" + _NCP_SECRET, min_confidence=0.01)}
+    assert "naver_cloud_iam_access_key_secret" in types
+    assert "generic_high_entropy" not in types

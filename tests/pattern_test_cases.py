@@ -8661,6 +8661,22 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # Naver Cloud IAM access key secret. SYNTHETIC bodies (base62 of SHA-256 over
+    # 'classifinder-naver-synthetic-<n>'), split so no scannable literal exists.
+    # Source: https://api.ncloud-docs.com/docs/en/management-subaccount-createaccesskey
+    "naver_cloud_iam_access_key_secret": {
+        "positives": [
+            "NCLOUD_SECRET_KEY=ncp" + "_iam_" + "BPKMKR" + "b0Xw3miSb6hR80sZYJxLK1CxQW6q",
+            '{"keySecret": "ncp' + "_iam_" + "BPKMKR" + 'UYKzv6MFRCgmdGnMnAm2q7ddMjQp"}',
+        ],
+        "negatives": [
+            # Access key ID width (20-character body) is an identifier, not the secret.
+            "NCLOUD_ACCESS_KEY=ncp" + "_iam_" + "BPAMKR" + "b0Xw3miSb6hR80",
+            # Body one character short.
+            "NCLOUD_SECRET_KEY=ncp" + "_iam_" + "BPKMKR" + "b0Xw3miSb6hR80sZYJxLK1CxQW6",
+        ],
+        "min_confidence": 0.90,
+    },
 }
 
 # fmt: on
