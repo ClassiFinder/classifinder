@@ -8661,6 +8661,28 @@ PATTERN_TEST_CASES: dict[str, dict] = {
         ],
         "min_confidence": 0.70,
     },
+    # ── 2026-11-24 — Gitalk 1.x GitHub OAuth client secret (40 hex in new Gitalk({...})) ──
+    # SYNTHETIC hex (SHA-1 over 'classifinder-gitalk-synthetic-<n>'), split so no contiguous literal sits in source.
+    # Source: https://github.com/gitalk/gitalk/blob/v1.8.1/readme.md
+    "gitalk_v1_github_oauth_client_secret": {
+        "positives": [
+            "new Gitalk({ clientID: '3ced06e939e395ebac4d', clientSecret: '685cfaa8ff7da0ee"
+            + "33413a3b8222552bb2475466', repo: 'comments', owner: 'me', admin: ['me'] })",
+            'const g = new Gitalk({\n  "clientID": "3ced06e939e395ebac4d",\n  "clientSecret": "7f9dfce3f411a371'
+            + '24317a5e664f98305e057cd1",\n  "repo": "blog"\n})',
+        ],
+        "negatives": [
+            # 39-hex body, uppercase hex, escaped-quote string-in-string copy, no constructor.
+            "new Gitalk({ clientID: '3ced06e939e395ebac4d', clientSecret: '685cfaa8ff7da0ee"
+            + "33413a3b8222552bb247546' })",
+            "new Gitalk({ clientID: '3ced06e939e395ebac4d', clientSecret: '685CFAA8FF7DA0EE"
+            + "33413A3B8222552BB2475466' })",
+            "html = 'new Gitalk({ clientID: \\'3ced06e939e395ebac4d\\', clientSecret: \\'685cfaa8ff7da0ee"
+            + "33413a3b8222552bb2475466\\' })'",
+            "gitalk: { clientID: '3ced06e939e395ebac4d', clientSecret: 'GitHub Application Client Secret' }",
+        ],
+        "min_confidence": 0.85,
+    },
 }
 
 # fmt: on

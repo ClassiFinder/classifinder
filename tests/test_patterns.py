@@ -24979,3 +24979,126 @@ def test_onyx_scim_token_does_not_collide_with_onyx_pat():
     pat_types = {f.type for f in scan("ONYX_PAT=" + _ONYX_TOKEN, min_confidence=0.01)}
     assert "onyx_personal_access_token" in pat_types
     assert "onyx_scim_token" not in pat_types
+
+
+# ═══════════════════════════════════════════════
+# GITALK 1.x GITHUB OAUTH CLIENT SECRET (2026-11-24)
+# ═══════════════════════════════════════════════
+# Gitalk 1.x put the GitHub OAuth App clientSecret (legacy 40 lowercase hex) in
+# the page: new Gitalk({ clientID: '<20 hex>', clientSecret: '<40 hex>', ... }).
+# SYNTHETIC values (SHA-1 over 'classifinder-gitalk-synthetic-<n>'), split so no
+# scannable literal exists in source.
+# Source: https://github.com/gitalk/gitalk/blob/v1.8.1/readme.md
+_GTK_SECRET = "685cfaa8ff7da0ee" + "33413a3b8222552bb2475466"
+_GTK_SECRET2 = "7f9dfce3f411a371" + "24317a5e664f98305e057cd1"
+_GTK_ID = "3ced06e939e395eb" + "ac4d"
+
+
+def _gtk(text):
+    return [
+        f
+        for f in scan(text, min_confidence=0.01)
+        if f.type == "gitalk_v1_github_oauth_client_secret"
+    ]
+
+
+def _gtk_block(secret, q="'", key_q="", order="id_first"):
+    sec = f"{key_q}clientSecret{key_q}: {q}{secret}{q}"
+    cid = f"{key_q}clientID{key_q}: {q}{_GTK_ID}{q}"
+    body = [cid, sec] if order == "id_first" else [sec, cid]
+    return (
+        "var gitalk = new Gitalk({\n  "
+        + ",\n  ".join(body + [f"{key_q}repo{key_q}: {q}blog-comments{q}", f"{key_q}admin{key_q}: [{q}me{q}]"])
+        + ",\n  id: location.pathname\n})\ngitalk.render('gitalk-container')"
+    )
+
+
+def test_gitalk_fixture_widths():
+    assert len(_GTK_SECRET) == 40 and len(_GTK_SECRET2) == 40
+    assert len(_GTK_ID) == 20
+
+
+@pytest.mark.parametrize(
+    "text,secret",
+    [
+        (_gtk_block(_GTK_SECRET), _GTK_SECRET),
+        (_gtk_block(_GTK_SECRET2, q='"'), _GTK_SECRET2),
+        (_gtk_block(_GTK_SECRET, q='"', key_q='"'), _GTK_SECRET),
+        (_gtk_block(_GTK_SECRET2, order="secret_first"), _GTK_SECRET2),
+        # Single-line minified form.
+        (
+            "new Gitalk({clientID:'" + _GTK_ID + "',clientSecret:'" + _GTK_SECRET + "',repo:'c'})",
+            _GTK_SECRET,
+        ),
+    ],
+)
+def test_gitalk_true_positives(text, secret):
+    matched = _gtk(text)
+    assert len(matched) == 1
+    assert matched[0].confidence >= 0.90
+    assert matched[0].severity == "high"
+    assert matched[0].provider == "gitalk"
+    # Only the 40-hex clientSecret is captured, never the public clientID.
+    assert text[matched[0].span_start : matched[0].span_end] == secret
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Body one short / one long.
+        _gtk_block(_GTK_SECRET[:-1]),
+        _gtk_block(_GTK_SECRET + "a"),
+        # Uppercase hex (GitHub emits lowercase).
+        _gtk_block(_GTK_SECRET.upper()),
+        # Non-hex character in the body.
+        _gtk_block(_GTK_SECRET[:-1] + "g"),
+        # Escaped-quote string-in-string copies.
+        "s = 'new Gitalk({ clientID: \\'" + _GTK_ID + "\\', clientSecret: \\'" + _GTK_SECRET + "\\' })'",
+        's = "new Gitalk({ \\"clientSecret\\": \\"' + _GTK_SECRET + '\\" })"',
+        # README placeholder.
+        "new Gitalk({ clientID: 'GitHub Application Client ID',"
+        " clientSecret: 'GitHub Application Client Secret' })",
+        # No Gitalk constructor.
+        "new Gitment({ clientID: '" + _GTK_ID + "', clientSecret: '" + _GTK_SECRET + "' })",
+        # clientSecret outside the constructor's object literal.
+        "new Gitalk({ id: 'x' })\nconst cfg = { clientSecret: '" + _GTK_SECRET + "' }",
+    ],
+)
+def test_gitalk_true_negatives(text):
+    assert _gtk(text) == []
+
+
+@pytest.mark.parametrize("secret", ["0" * 40, "a" * 40, "0123456789abcdef" * 2 + "01234567"])
+def test_gitalk_placeholders_are_test_values(secret):
+    # Filter to this pattern: at 0.15 a placeholder can lose the overlap dedup to
+    # the keyword-anchored azure_ad_client_secret, which is fine for a fake value.
+    matched = scan(
+        _gtk_block(secret),
+        types=["gitalk_v1_github_oauth_client_secret"],
+        min_confidence=0.01,
+    )
+    assert len(matched) == 1
+    assert matched[0].confidence <= 0.20
+    assert matched[0].is_likely_test_value
+
+
+def test_gitalk_block_is_not_misattributed_to_azure():
+    """A Gitalk 1.x block is reported as gitalk, not azure_ad_client_secret."""
+    text = _gtk_block(_GTK_SECRET)
+    findings = scan(text)
+    secret_findings = [
+        f for f in findings if text[f.span_start : f.span_end] == _GTK_SECRET
+    ]
+    assert [f.type for f in secret_findings] == ["gitalk_v1_github_oauth_client_secret"]
+    assert "azure_ad_client_secret" not in {f.type for f in findings}
+    # The public 20-hex clientID is not reported.
+    assert not any(_GTK_ID in text[f.span_start : f.span_end] for f in findings)
+
+
+def test_gitalk_no_superlinear_on_repeated_constructor():
+    import time
+
+    text = ("new Gitalk({ " * 2000)[:16384]
+    t0 = time.perf_counter()
+    scan(text)
+    assert time.perf_counter() - t0 < 2.0
